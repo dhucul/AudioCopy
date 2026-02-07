@@ -106,28 +106,46 @@ bool AudioCDCopier::AnalyzeAudioContent(DiscInfo& disc, AudioAnalysisResult& res
 	std::cout << "  Sectors sampled:   " << tested << "\n";
 	std::cout << "  Read failures:     " << readFailures << "\n";
 
-	std::cout << "\n--- Content Issues ---\n";
-	std::cout << "  Silent sectors:    " << result.silentSectors;
-	if (tested > 0)
-		std::cout << " (" << std::fixed << std::setprecision(1)
-		<< (result.silentSectors * 100.0 / tested) << "%)";
-	std::cout << "\n";
+	std::cout << "\n--- Content Analysis ---\n";
 
-	std::cout << "  Clipped sectors:   " << result.clippedSectors;
-	if (tested > 0)
-		std::cout << " (" << std::fixed << std::setprecision(1)
-		<< (result.clippedSectors * 100.0 / tested) << "%)";
-	std::cout << "\n";
+	auto printMetric = [&](const char* label, int count, const char* explanation, const char* concern) {
+		std::cout << "  " << label << count;
+		if (tested > 0)
+			std::cout << " (" << std::fixed << std::setprecision(1)
+			<< (count * 100.0 / tested) << "%)";
+		std::cout << "\n";
+		if (count > 0)
+			std::cout << "    " << (count > tested / 10 ? ">> " : "   ") << concern << "\n";
+		else
+			std::cout << "    " << explanation << "\n";
+	};
 
-	std::cout << "  Low-level sectors: " << result.lowLevelSectors << "\n";
-	std::cout << "  DC offset sectors: " << result.dcOffsetSectors << "\n";
+	printMetric("Silent sectors:    ", result.silentSectors,
+		"No silence anomalies detected.",
+		"Sectors with near-zero audio. Could be track gaps or damaged data.");
+	printMetric("Clipped sectors:   ", result.clippedSectors,
+		"No digital clipping detected.",
+		"Audio peaks hit max value. May indicate mastering choices or read errors.");
+	printMetric("Low-level sectors: ", result.lowLevelSectors,
+		"Normal signal levels throughout.",
+		"Very quiet non-silent audio. Could indicate partial data loss.");
+	printMetric("DC offset sectors: ", result.dcOffsetSectors,
+		"No DC offset detected.",
+		"Waveform shifted off center. Often a sign of read errors or bad sectors.");
 
 	if (!result.suspiciousLBAs.empty()) {
 		int showCount = std::min(10, static_cast<int>(result.suspiciousLBAs.size()));
-		std::cout << "\n--- Suspicious Sectors (showing " << showCount << " of "
+		std::cout << "\n--- Suspicious Sectors (" << showCount << " of "
 			<< result.suspiciousLBAs.size() << ") ---\n";
+		std::cout << "  (Sectors flagged for clipping or DC offset - may need re-read)\n";
 		for (int i = 0; i < showCount; i++) {
-			std::cout << "  LBA " << result.suspiciousLBAs[i] << "\n";
+			DWORD lba = result.suspiciousLBAs[i];
+			int trackNum = 0;
+			for (const auto& t : disc.tracks) {
+				DWORD tStart = (t.trackNumber == 1) ? 0 : t.pregapLBA;
+				if (lba >= tStart && lba <= t.endLBA) { trackNum = t.trackNumber; break; }
+			}
+			std::cout << "  LBA " << std::setw(8) << lba << "  (Track " << trackNum << ")\n";
 		}
 	}
 

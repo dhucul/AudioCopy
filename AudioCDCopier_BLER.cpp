@@ -246,6 +246,8 @@ void AudioCDCopier::PrintBlerGraph(const BlerResult& result, int width, int heig
 	if (result.perSecondC2.empty() || width <= 0 || height <= 0) return;
 
 	std::cout << "\n=== C2 Error Distribution ===\n";
+	std::cout << "  Each column = a time slice of the disc; height = C2 error count\n\n";
+
 	int maxC2 = 1;
 	for (const auto& p : result.perSecondC2) {
 		if (p.second > maxC2) maxC2 = p.second;
@@ -259,12 +261,51 @@ void AudioCDCopier::PrintBlerGraph(const BlerResult& result, int width, int heig
 		buckets[bucket] = std::max(buckets[bucket], result.perSecondC2[i].second);
 	}
 
+	int labelWidth = std::max(4, static_cast<int>(std::to_string(maxC2).length()) + 1);
+
 	for (int row = height; row > 0; row--) {
 		int threshold = (maxC2 * row) / height;
+
+		// Y-axis labels at top, middle, and bottom rows
+		if (row == height)
+			std::cout << std::setw(labelWidth) << maxC2 << " |";
+		else if (row == (height + 1) / 2)
+			std::cout << std::setw(labelWidth) << (maxC2 / 2) << " |";
+		else if (row == 1)
+			std::cout << std::setw(labelWidth) << 0 << " |";
+		else
+			std::cout << std::string(labelWidth, ' ') << " |";
+
 		for (int col = 0; col < width; col++) {
-			std::cout << (buckets[col] >= threshold ? '#' : ' ');
+			if (buckets[col] >= threshold) {
+				double severity = static_cast<double>(buckets[col]) / maxC2;
+				if (severity > 0.66) std::cout << '#';
+				else if (severity > 0.33) std::cout << '+';
+				else std::cout << '.';
+			}
+			else {
+				std::cout << ' ';
+			}
 		}
 		std::cout << "\n";
 	}
-	std::cout << std::string(width, '-') << "\n";
+
+	// X-axis line
+	std::cout << std::string(labelWidth, ' ') << " +" << std::string(width, '-') << "\n";
+
+	// Time labels along X-axis
+	int padding = labelWidth + 2;
+	int endMin = result.totalSeconds / 60;
+	int endSec = result.totalSeconds % 60;
+	std::string endStr = std::to_string(endMin) + ":"
+		+ (endSec < 10 ? "0" : "") + std::to_string(endSec);
+
+	std::cout << std::string(padding, ' ') << "0:00";
+	int gap = width - 4 - static_cast<int>(endStr.length());
+	if (gap > 0) std::cout << std::string(gap, ' ');
+	std::cout << endStr << "\n";
+
+	// Legend
+	std::cout << std::string(padding, ' ')
+		<< "# = high (>66%)  + = moderate (33-66%)  . = low (<33%)\n";
 }

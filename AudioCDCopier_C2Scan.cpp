@@ -353,14 +353,29 @@ void AudioCDCopier::PrintC2ScanReport(const DiscInfo& disc, int sensitivity, int
 		}
 		int totalErrs = innerErrs + middleErrs + outerErrs;
 
-		std::cout << "\n--- Error Distribution ---\n";
-		std::cout << "  Inner  (0-33%):   " << std::setw(4) << innerErrs << " error sectors";
-		if (totalErrs > 0 && innerErrs * 100 / totalErrs > 50) std::cout << "  << concentration";
-		std::cout << "\n";
-		std::cout << "  Middle (33-66%):  " << std::setw(4) << middleErrs << " error sectors\n";
-		std::cout << "  Outer  (66-100%): " << std::setw(4) << outerErrs << " error sectors";
-		if (totalErrs > 0 && outerErrs * 100 / totalErrs > 50) std::cout << "  << concentration";
-		std::cout << "\n";
+		std::cout << "\n--- Error Distribution (by disc region) ---\n";
+		std::cout << "  (Inner = near center hub, Outer = near disc edge)\n\n";
+
+		auto printBar = [&](const char* label, int count) {
+			int pct = totalErrs > 0 ? (count * 100 / totalErrs) : 0;
+			int barLen = pct / 5;
+			std::cout << "  " << label << std::setw(4) << count << " [";
+			for (int i = 0; i < 20; i++) std::cout << (i < barLen ? '#' : ' ');
+			std::cout << "] " << std::setw(3) << pct << "%";
+			if (totalErrs > 0 && pct > 50) std::cout << "  << concentrated here";
+			std::cout << "\n";
+		};
+
+		printBar("Inner  (0-33%):   ", innerErrs);
+		printBar("Middle (33-66%):  ", middleErrs);
+		printBar("Outer  (66-100%): ", outerErrs);
+
+		if (totalErrs > 0) {
+			if (outerErrs * 100 / totalErrs > 60)
+				std::cout << "\n  Note: Edge-concentrated errors often indicate disc rot or handling damage.\n";
+			else if (innerErrs * 100 / totalErrs > 60)
+				std::cout << "\n  Note: Hub-concentrated errors may indicate hub crack or spindle damage.\n";
+		}
 	}
 
 	std::cout << "\n" << std::string(60, '-') << "\n";

@@ -307,12 +307,22 @@ void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& analysis) {
 	std::cout << std::string(60, '=') << "\n";
 
 	std::cout << "\n--- Zone Error Rates ---\n";
-	std::cout << "  Inner  (0-33%):  " << analysis.zones.InnerErrorRate() << "% ("
-		<< analysis.zones.innerErrors << "/" << analysis.zones.innerSectors << ")\n";
-	std::cout << "  Middle (33-66%): " << analysis.zones.MiddleErrorRate() << "% ("
-		<< analysis.zones.middleErrors << "/" << analysis.zones.middleSectors << ")\n";
-	std::cout << "  Outer  (66-100%):" << analysis.zones.OuterErrorRate() << "% ("
-		<< analysis.zones.outerErrors << "/" << analysis.zones.outerSectors << ")\n";
+	std::cout << "  (Disc surface divided into three radial zones)\n\n";
+
+	auto printZone = [](const char* label, double rate, int errors, int sectors) {
+		int barLen = std::min(20, static_cast<int>(rate * 2));
+		std::cout << "  " << label << std::fixed << std::setprecision(2) << rate << "% ("
+			<< errors << "/" << sectors << ")  [";
+		for (int i = 0; i < 20; i++) std::cout << (i < barLen ? '#' : ' ');
+		std::cout << "]\n";
+		};
+
+	printZone("Inner  (0-33%):   ", analysis.zones.InnerErrorRate(),
+		analysis.zones.innerErrors, analysis.zones.innerSectors);
+	printZone("Middle (33-66%):  ", analysis.zones.MiddleErrorRate(),
+		analysis.zones.middleErrors, analysis.zones.middleSectors);
+	printZone("Outer  (66-100%): ", analysis.zones.OuterErrorRate(),
+		analysis.zones.outerErrors, analysis.zones.outerSectors);
 
 	std::cout << "\n--- Error Clusters ---\n";
 	std::cout << "  Total clusters:  " << analysis.clusters.size() << "\n";
@@ -320,22 +330,43 @@ void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& analysis) {
 		int maxSize = 0;
 		for (const auto& c : analysis.clusters)
 			if (c.size() > maxSize) maxSize = c.size();
-		std::cout << "  Largest cluster: " << maxSize << " sectors\n";
+		std::cout << "  Largest cluster: " << maxSize << " sectors";
+		if (maxSize > 100) std::cout << "  (severe - large contiguous damage)";
+		else if (maxSize > 20) std::cout << "  (moderate - localized damage)";
+		else std::cout << "  (minor - small scratch or defect)";
+		std::cout << "\n";
 	}
 
 	std::cout << "\n--- Disc Rot Indicators ---\n";
-	auto yn = [](bool v) -> const char* { return v ? "YES" : "NO"; };
-	std::cout << "  Edge concentration:    " << yn(analysis.edgeConcentration) << "\n";
-	std::cout << "  Progressive pattern:   " << yn(analysis.progressivePattern) << "\n";
-	std::cout << "  Pinhole pattern:       " << yn(analysis.pinholePattern) << "\n";
-	std::cout << "  Read instability:      " << yn(analysis.readInstability) << "\n";
-	std::cout << "  Inconsistency rate:    " << analysis.inconsistencyRate << "%\n";
+	auto indicator = [](bool v, const char* yesExplain, const char* noExplain) {
+		if (v) std::cout << "YES  - " << yesExplain << "\n";
+		else std::cout << "NO   - " << noExplain << "\n";
+		};
+
+	std::cout << "  Edge concentration:  ";
+	indicator(analysis.edgeConcentration,
+		"Errors concentrated at disc edges (classic rot pattern)",
+		"Errors not edge-concentrated");
+	std::cout << "  Progressive pattern: ";
+	indicator(analysis.progressivePattern,
+		"Error rate increases toward outer edge (spreading damage)",
+		"No progressive error increase");
+	std::cout << "  Pinhole pattern:     ";
+	indicator(analysis.pinholePattern,
+		"Small scattered error spots (early-stage pitting)",
+		"No pinhole defects detected");
+	std::cout << "  Read instability:    ";
+	if (analysis.readInstability)
+		std::cout << "YES  - Same sectors return different data on re-read ("
+		<< static_cast<int>(analysis.inconsistencyRate) << "% unstable)\n";
+	else
+		std::cout << "NO   - Reads are consistent across re-reads\n";
 
 	std::cout << "\n--- Risk Assessment ---\n";
 	std::cout << "  Disc Rot Risk: " << analysis.rotRiskLevel << "\n";
 
 	if (!analysis.recommendation.empty())
-		std::cout << "  Recommendation: " << analysis.recommendation << "\n";
+		std::cout << "\n  >> " << analysis.recommendation << "\n";
 
 	std::cout << std::string(60, '=') << "\n";
 }

@@ -85,32 +85,56 @@ bool AudioCDCopier::RunSpeedComparisonTest(DiscInfo& disc, std::vector<SpeedComp
 		if (r.inconsistent) inconsistentCount++;
 	}
 
-	std::cout << "\n=== Speed Test Results ===\n";
-	std::cout << "Sectors tested:                    " << tested << "\n";
-	std::cout << "Low speed  (4x)  total C2 errors:  " << lowSpeedErrors;
+	std::cout << "\n" << std::string(60, '=') << "\n";
+	std::cout << "              SPEED COMPARISON REPORT\n";
+	std::cout << std::string(60, '=') << "\n";
+	std::cout << "  (Compares read errors at slow vs fast speed to find optimal rip speed)\n\n";
+
+	std::cout << "--- Results ---\n";
+	std::cout << "  Sectors tested:       " << tested << "\n";
+	std::cout << "  Low speed  (4x)  C2:  " << lowSpeedErrors;
 	if (lowFailures > 0) std::cout << " (+" << lowFailures << " read failures)";
 	std::cout << "\n";
-	std::cout << "High speed (24x) total C2 errors:  " << highSpeedErrors;
+	std::cout << "  High speed (24x) C2:  " << highSpeedErrors;
 	if (highFailures > 0) std::cout << " (+" << highFailures << " read failures)";
 	std::cout << "\n";
-	std::cout << "Inconsistent sectors:              " << inconsistentCount << "\n\n";
+	std::cout << "  Inconsistent sectors: " << inconsistentCount;
+	if (tested > 0)
+		std::cout << " (" << std::fixed << std::setprecision(1)
+		<< (inconsistentCount * 100.0 / tested) << "%)";
+	std::cout << "\n";
 
-	std::cout << "Recommended optimal speed: ";
+	if (highSpeedErrors > 0 && lowSpeedErrors > 0) {
+		double ratio = static_cast<double>(highSpeedErrors) / lowSpeedErrors;
+		std::cout << "  Error ratio (24x/4x): " << std::fixed << std::setprecision(1) << ratio << "x";
+		if (ratio > 3.0) std::cout << "  (high speed significantly worse)";
+		else if (ratio < 0.5) std::cout << "  (low speed worse - unusual)";
+		else std::cout << "  (similar at both speeds)";
+		std::cout << "\n";
+	}
+
+	std::cout << "\n--- Recommendation ---\n  Optimal rip speed: ";
 	if (lowFailures > 0 || highFailures > 0) {
-		std::cout << "2-4x (read failures detected - use slowest reliable speed)\n";
+		std::cout << "2-4x\n";
+		std::cout << "  Read failures detected. Use the slowest reliable speed.\n";
 	}
 	else if (results.empty() || (lowSpeedErrors == 0 && highSpeedErrors == 0)) {
-		std::cout << "24x (disc reads cleanly at any speed)\n";
+		std::cout << "Any (24x safe)\n";
+		std::cout << "  Disc reads cleanly at all speeds. No benefit from slowing down.\n";
 	}
 	else if (highSpeedErrors > lowSpeedErrors * 2 || inconsistentCount > tested / 10) {
-		std::cout << "4x (significant errors at high speed)\n";
+		std::cout << "4x\n";
+		std::cout << "  Significant error increase at high speed. Slow rip strongly recommended.\n";
 	}
 	else if (highSpeedErrors > lowSpeedErrors) {
-		std::cout << "8-12x (moderate speed recommended)\n";
+		std::cout << "8-12x\n";
+		std::cout << "  Moderate error increase at high speed. Mid-range speed is a good balance.\n";
 	}
 	else {
-		std::cout << "24x (no significant benefit from slower speeds)\n";
+		std::cout << "Any (24x safe)\n";
+		std::cout << "  No significant benefit from slower speeds.\n";
 	}
+	std::cout << std::string(60, '=') << "\n";
 
 	return true;
 }
@@ -242,13 +266,32 @@ bool AudioCDCopier::RunSeekTimeAnalysis(DiscInfo& disc, std::vector<SeekTimeResu
 		}
 	}
 
-	std::cout << "Tests performed: " << results.size() << "\n";
-	std::cout << "Average seek time: " << std::fixed << std::setprecision(1) << avgSeek << " ms\n";
-	std::cout << "Std deviation:     " << stddev << " ms\n";
-	std::cout << "Maximum seek time: " << maxSeek << " ms\n";
-	std::cout << "Abnormal threshold:" << abnormalThreshold << " ms\n";
-	if (abnormalCount > 0)
-		std::cout << "Abnormal seeks:    " << abnormalCount << "\n";
+	std::cout << "\n" << std::string(60, '=') << "\n";
+	std::cout << "              SEEK TIME ANALYSIS REPORT\n";
+	std::cout << std::string(60, '=') << "\n";
+	std::cout << "  (Measures head movement speed to detect mechanical or surface issues)\n\n";
+
+	std::cout << "--- Timing Statistics ---\n";
+	std::cout << "  Tests performed:  " << results.size() << "\n";
+	std::cout << "  Average seek:     " << std::fixed << std::setprecision(1) << avgSeek << " ms";
+	if (avgSeek < 100) std::cout << "  (normal)";
+	else if (avgSeek < 200) std::cout << "  (slow - may indicate surface issues)";
+	else std::cout << "  (very slow - possible mechanical problem)";
+	std::cout << "\n";
+	std::cout << "  Std deviation:    " << std::setprecision(1) << stddev << " ms";
+	if (stddev > avgSeek * 0.5) std::cout << "  (high variability)";
+	std::cout << "\n";
+	std::cout << "  Maximum seek:     " << std::setprecision(1) << maxSeek << " ms\n";
+	std::cout << "  Abnormal cutoff:  " << std::setprecision(1) << abnormalThreshold << " ms  (avg + 3 std dev)\n";
+	if (abnormalCount > 0) {
+		std::cout << "  Abnormal seeks:   " << abnormalCount;
+		std::cout << " (" << std::setprecision(1) << (abnormalCount * 100.0 / results.size()) << "%)";
+		std::cout << "  ** regions where head struggled to read **\n";
+	}
+	else {
+		std::cout << "  Abnormal seeks:   None - consistent mechanical performance\n";
+	}
+	std::cout << std::string(60, '=') << "\n";
 
 	return true;
 }
