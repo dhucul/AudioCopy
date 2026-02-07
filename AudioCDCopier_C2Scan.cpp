@@ -38,11 +38,11 @@ ScsiDrive::C2ReadOptions AudioCDCopier::BuildC2ReadOptions(int sensitivity, bool
 		c2Opts.defeatCache = true;
 		useConditionalMultiPass = true;
 		break;
-	case 3:  // PlexTools-style (multi-pass with cache defeat)
+	case 3:  // PlexTools-style (multi-pass, NO cache defeat - faster)
 		c2Opts.multiPass = true;
 		c2Opts.passCount = 2;
 		c2Opts.countBytes = true;
-		c2Opts.defeatCache = true;
+		c2Opts.defeatCache = false;
 		useConditionalMultiPass = false;
 		break;
 	case 4:  // Paranoid
