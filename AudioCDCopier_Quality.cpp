@@ -532,6 +532,23 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 	int middleInterval = calcSampleInterval(middleRate);
 	int outerInterval = calcSampleInterval(outerRate);
 
+	// Pre-calculate total expected samples for accurate progress
+	int expectedSamples = 0;
+	for (const auto& t : disc.tracks) {
+		if (!t.isAudio) continue;
+		DWORD start = (t.trackNumber == 1) ? 0 : t.pregapLBA;
+		for (DWORD lba = start; lba <= t.endLBA; lba++) {
+			DWORD range = lastLBA - firstLBA;
+			DWORD pos = lba - firstLBA;
+			double pct = range > 0 ? static_cast<double>(pos) / range : 0;
+			int sampleInterval = 200;
+			if (pct < 0.33) sampleInterval = innerInterval;
+			else if (pct < 0.66) sampleInterval = middleInterval;
+			else sampleInterval = outerInterval;
+			if ((lba - start) % sampleInterval == 0) expectedSamples++;
+		}
+	}
+
 	int samplesChecked = 0;
 	int inconsistentSamples = 0;
 
@@ -567,7 +584,7 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 				}
 			}
 
-			progress.Update(samplesChecked, 150);  // Estimated ~150 samples
+			progress.Update(samplesChecked, expectedSamples);
 		}
 	}
 	progress.Finish(true);
@@ -611,49 +628,95 @@ bool AudioCDCopier::RunSpeedComparisonTest(DiscInfo& disc, std::vector<SpeedComp
 	std::cout << "\n=== Speed Comparison Test ===\n";
 	if (!m_drive.CheckC2Support()) { std::cout << "ERROR: C2 support required.\n"; return false; }
 
-	DWORD totalSectors = 0;
-	for (const auto& t : disc.tracks) {
-		if (t.isAudio) totalSectors += t.endLBA - ((t.trackNumber == 1) ? 0 : t.pregapLBA) + 1;
-	}
+	DWORD totalSectors = CalculateTotalAudioSectors(disc);
 	if (totalSectors == 0) return false;
 
 	int sampleInterval = std::max(1, static_cast<int>(totalSectors / 100));
+	int totalSamples = static_cast<int>(totalSectors / sampleInterval) + 1;
 	results.clear();
 	int tested = 0;
+
+	std::cout << "Testing ~" << totalSamples << " sample sectors at 4x vs 24x...\n";
+	std::cout << "  (Press ESC or Ctrl+C to cancel)\n\n";
+
+	ProgressIndicator progress(40);
+	progress.SetLabel("  Speed Test");
+	progress.Start();
+
+	// Allocate buffer once outside the loop
+	std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
 
 	for (const auto& t : disc.tracks) {
 		if (!t.isAudio) continue;
 		DWORD start = (t.trackNumber == 1) ? 0 : t.pregapLBA;
 		for (DWORD lba = start; lba <= t.endLBA; lba += sampleInterval) {
+			if (g_interrupt.IsInterrupted() || g_interrupt.CheckEscapeKey()) {
+				std::cout << "\n\n*** Test cancelled by user ***\n";
+				m_drive.SetSpeed(0);
+				progress.Finish(false);
+				return false;
+			}
+
 			SpeedComparisonResult r = { lba, 0, 0, false };
-			std::vector<BYTE> buf(SECTOR_WITH_C2_SIZE);
-			m_drive.SetSpeed(4); Sleep(20);
-			m_drive.ReadSectorWithC2(lba, buf.data(), nullptr, r.lowSpeedC2);
-			m_drive.SetSpeed(24); Sleep(20);
-			m_drive.ReadSectorWithC2(lba, buf.data(), nullptr, r.highSpeedC2);
-			r.inconsistent = (r.highSpeedC2 > r.lowSpeedC2 * 2 && r.highSpeedC2 > 10);
-			if (r.lowSpeedC2 > 0 || r.highSpeedC2 > 0) results.push_back(r);
+			bool lowOk = false, highOk = false;
+
+			// Low-speed read with proper settle time
+			m_drive.SetSpeed(4);
+			Sleep(100);  // Allow drive to spin down
+			lowOk = m_drive.ReadSectorWithC2(lba, buf.data(), nullptr, r.lowSpeedC2);
+
+			// Defeat cache before re-reading the same sector at a different speed
+			DefeatDriveCache(lba, t.endLBA);
+
+			// High-speed read with proper settle time
+			m_drive.SetSpeed(24);
+			Sleep(100);  // Allow drive to spin up
+			highOk = m_drive.ReadSectorWithC2(lba, buf.data(), nullptr, r.highSpeedC2);
+
+			// Track read failures as max-error markers
+			if (!lowOk) r.lowSpeedC2 = -1;
+			if (!highOk) r.highSpeedC2 = -1;
+
+			// Flag inconsistency in either direction
+			r.inconsistent =
+				(!lowOk || !highOk) ||
+				(r.highSpeedC2 > r.lowSpeedC2 * 2 && r.highSpeedC2 > 10) ||
+				(r.lowSpeedC2 > r.highSpeedC2 * 2 && r.lowSpeedC2 > 10);
+
+			if (r.lowSpeedC2 != 0 || r.highSpeedC2 != 0) results.push_back(r);
 			tested++;
+			progress.Update(tested, totalSamples);
 		}
 	}
+	progress.Finish(true);
 	m_drive.SetSpeed(0);
-	std::cout << "Tested " << tested << " sectors\n";
 
-	// Analyze results and determine optimal speed
+	// Analyze results
 	int lowSpeedErrors = 0, highSpeedErrors = 0, inconsistentCount = 0;
+	int lowFailures = 0, highFailures = 0;
 	for (const auto& r : results) {
-		lowSpeedErrors += r.lowSpeedC2;
-		highSpeedErrors += r.highSpeedC2;
+		if (r.lowSpeedC2 < 0) lowFailures++;
+		else lowSpeedErrors += r.lowSpeedC2;
+		if (r.highSpeedC2 < 0) highFailures++;
+		else highSpeedErrors += r.highSpeedC2;
 		if (r.inconsistent) inconsistentCount++;
 	}
 
 	std::cout << "\n=== Speed Test Results ===\n";
-	std::cout << "Low speed (4x) total C2 errors:  " << lowSpeedErrors << "\n";
-	std::cout << "High speed (24x) total C2 errors: " << highSpeedErrors << "\n";
-	std::cout << "Inconsistent sectors: " << inconsistentCount << "\n\n";
+	std::cout << "Sectors tested:                    " << tested << "\n";
+	std::cout << "Low speed  (4x)  total C2 errors:  " << lowSpeedErrors;
+	if (lowFailures > 0) std::cout << " (+" << lowFailures << " read failures)";
+	std::cout << "\n";
+	std::cout << "High speed (24x) total C2 errors:  " << highSpeedErrors;
+	if (highFailures > 0) std::cout << " (+" << highFailures << " read failures)";
+	std::cout << "\n";
+	std::cout << "Inconsistent sectors:              " << inconsistentCount << "\n\n";
 
 	std::cout << "Recommended optimal speed: ";
-	if (results.empty() || (lowSpeedErrors == 0 && highSpeedErrors == 0)) {
+	if (lowFailures > 0 || highFailures > 0) {
+		std::cout << "2-4x (read failures detected - use slowest reliable speed)\n";
+	}
+	else if (results.empty() || (lowSpeedErrors == 0 && highSpeedErrors == 0)) {
 		std::cout << "24x (disc reads cleanly at any speed)\n";
 	}
 	else if (highSpeedErrors > lowSpeedErrors * 2 || inconsistentCount > tested / 10) {
@@ -763,40 +826,46 @@ bool AudioCDCopier::RunMultiPassVerification(DiscInfo& disc, std::vector<MultiPa
 	std::cout << "Testing read consistency with hash-based comparison...\n\n";
 	results.clear();
 
-	// Use user-selected speed for accurate reading
-	m_drive.SetSpeed(scanSpeed);  // <-- USE PARAMETER
+	m_drive.SetSpeed(scanSpeed);
 
-
-	DWORD totalSectors = 0;
-	for (const auto& t : disc.tracks) {
-		if (t.isAudio) totalSectors += t.endLBA - ((t.trackNumber == 1) ? 0 : t.pregapLBA) + 1;
+	DWORD totalSectors = CalculateTotalAudioSectors(disc);
+	if (totalSectors == 0) {
+		std::cout << "No audio tracks to verify.\n";
+		return false;
 	}
 
-	// Test more samples for better accuracy (every 25 sectors instead of 500)
 	int sampleInterval = std::max(1, static_cast<int>(totalSectors / 1000));
+	int totalSamples = std::max(1, static_cast<int>(totalSectors / sampleInterval));
 	int tested = 0, perfectMatches = 0, partialMatches = 0, failures = 0;
+
+	std::cout << "Testing ~" << totalSamples << " sample sectors...\n";
+	std::cout << "  (Press ESC or Ctrl+C to cancel)\n\n";
 
 	ProgressIndicator progress(40);
 	progress.SetLabel("  Multi-Pass");
 	progress.Start();
+
+	// Pre-allocate all buffers once outside the loop
+	std::vector<std::vector<BYTE>> reads(passes, std::vector<BYTE>(AUDIO_SECTOR_SIZE));
+	std::vector<uint32_t> hashes(passes);
 
 	for (const auto& t : disc.tracks) {
 		if (!t.isAudio) continue;
 		DWORD start = (t.trackNumber == 1) ? 0 : t.pregapLBA;
 
 		for (DWORD lba = start; lba <= t.endLBA; lba += sampleInterval) {
-			std::vector<std::vector<BYTE>> reads(passes);
-			std::map<uint32_t, int> hashCounts;  // Track hash occurrences
+			if (g_interrupt.IsInterrupted() || g_interrupt.CheckEscapeKey()) {
+				std::cout << "\n\n*** Verification cancelled by user ***\n";
+				m_drive.SetSpeed(0);
+				progress.Finish(false);
+				return false;
+			}
+
 			bool readSuccess = true;
 
-			// Perform multiple reads with cache defeat
 			for (int i = 0; i < passes; i++) {
-				reads[i].resize(AUDIO_SECTOR_SIZE);
-
-				// Cache defeat: read a random distant sector between passes
-				if (i > 0 && lba + 10000 < disc.tracks.back().endLBA) {
-					std::vector<BYTE> dummy(AUDIO_SECTOR_SIZE);
-					m_drive.ReadSectorAudioOnly(lba + 10000 + (i * 1000), dummy.data());
+				if (i > 0) {
+					DefeatDriveCache(lba, t.endLBA);
 				}
 
 				if (!m_drive.ReadSectorAudioOnly(lba, reads[i].data())) {
@@ -804,30 +873,74 @@ bool AudioCDCopier::RunMultiPassVerification(DiscInfo& disc, std::vector<MultiPa
 					break;
 				}
 
-				// Calculate hash for this read
-				uint32_t hash = CalculateSectorHash(reads[i].data());
-				hashCounts[hash]++;
-
-				Sleep(10);  // Small delay between reads
+				hashes[i] = CalculateSectorHash(reads[i].data());
 			}
 
 			if (!readSuccess) {
+				// Record the failing LBA so the caller can see it
+				MultiPassResult r{};
+				r.lba = lba;
+				r.passesMatched = 0;
+				r.totalPasses = passes;
+				r.allMatch = false;
+				r.majorityHash = 0;
+				results.push_back(r);
 				failures++;
+				tested++;
+				progress.Update(tested, totalSamples);
 				continue;
 			}
 
-			// Find majority hash (most common result)
-			uint32_t majorityHash = 0;
-			int maxCount = 0;
-			for (const auto& [hash, count] : hashCounts) {
-				if (count > maxCount) {
-					maxCount = count;
-					majorityHash = hash;
+			// Count occurrences of each hash using a small flat list
+			// (typically 1-3 distinct values — a map is overkill)
+			struct HashCount { uint32_t hash; int count; };
+			HashCount counts[8] = {};  // More than enough for typical pass counts
+			int distinctCount = 0;
+
+			for (int i = 0; i < passes; i++) {
+				bool found = false;
+				for (int j = 0; j < distinctCount; j++) {
+					if (counts[j].hash == hashes[i]) {
+						counts[j].count++;
+						found = true;
+						break;
+					}
+				}
+				if (!found && distinctCount < 8) {
+					counts[distinctCount++] = { hashes[i], 1 };
 				}
 			}
 
-			// Count how many passes match the majority
-			int matchCount = hashCounts[majorityHash];
+			// Find majority hash
+			uint32_t majorityHash = counts[0].hash;
+			int maxCount = counts[0].count;
+			for (int j = 1; j < distinctCount; j++) {
+				if (counts[j].count > maxCount) {
+					maxCount = counts[j].count;
+					majorityHash = counts[j].hash;
+				}
+			}
+
+			// Confirm hash mismatches with byte-level comparison to rule out collisions
+			int matchCount = 0;
+			int majorityIdx = -1;
+			for (int i = 0; i < passes; i++) {
+				if (hashes[i] == majorityHash) {
+					if (majorityIdx < 0) majorityIdx = i;
+					matchCount++;
+				}
+			}
+			if (distinctCount > 1 && majorityIdx >= 0) {
+				// Re-check: a hash collision could falsely merge two different reads
+				for (int i = 0; i < passes; i++) {
+					if (i == majorityIdx) continue;
+					if (hashes[i] == majorityHash &&
+						memcmp(reads[i].data(), reads[majorityIdx].data(), AUDIO_SECTOR_SIZE) != 0) {
+						matchCount--;  // Hash collision — not actually a match
+					}
+				}
+			}
+
 			bool allMatch = (matchCount == passes);
 
 			MultiPassResult r{};
@@ -840,9 +953,9 @@ bool AudioCDCopier::RunMultiPassVerification(DiscInfo& disc, std::vector<MultiPa
 			if (allMatch) {
 				perfectMatches++;
 			}
-			else if (matchCount >= passes / 2) {
+			else if (matchCount >= (passes + 1) / 2) {
 				partialMatches++;
-				results.push_back(r);  // Only log inconsistencies
+				results.push_back(r);
 			}
 			else {
 				failures++;
@@ -850,7 +963,7 @@ bool AudioCDCopier::RunMultiPassVerification(DiscInfo& disc, std::vector<MultiPa
 			}
 
 			tested++;
-			progress.Update(tested, totalSectors / sampleInterval);
+			progress.Update(tested, totalSamples);
 		}
 	}
 
@@ -885,7 +998,10 @@ bool AudioCDCopier::RunMultiPassVerification(DiscInfo& disc, std::vector<MultiPa
 		int shown = 0;
 		for (const auto& r : results) {
 			if (shown++ >= 10) break;
-			std::cout << "  LBA " << std::setw(6) << r.lba
+			if (r.passesMatched == 0 && r.majorityHash == 0)
+				std::cout << "  LBA " << std::setw(6) << r.lba << ": READ FAILURE\n";
+			else
+				std::cout << "  LBA " << std::setw(6) << r.lba
 				<< ": " << r.passesMatched << "/" << r.totalPasses
 				<< " matches (hash: " << std::hex << r.majorityHash << std::dec << ")\n";
 		}
@@ -905,7 +1021,6 @@ uint32_t AudioCDCopier::CalculateSectorHash(const BYTE* data) {
 	return hash;
 }
 
-
 bool AudioCDCopier::FlushDriveCache() {
 	BYTE cdb[10] = { 0x35, 0, 0, 0, 0, 0, 0, 0, 0, 0 };  // SYNCHRONIZE CACHE(10)
 	return m_drive.SendSCSI(cdb, 10, nullptr, 0);
@@ -914,21 +1029,128 @@ bool AudioCDCopier::FlushDriveCache() {
 bool AudioCDCopier::AnalyzeAudioContent(DiscInfo& disc, AudioAnalysisResult& result, int scanSpeed) {
 	std::cout << "\n=== Audio Content Analysis ===\n";
 	result = AudioAnalysisResult{};
-	m_drive.SetSpeed(scanSpeed);  // <-- USE PARAMETER
+	m_drive.SetSpeed(scanSpeed);
+
+	DWORD totalSectors = CalculateTotalAudioSectors(disc);
+	if (totalSectors == 0) {
+		std::cout << "No audio tracks to analyze.\n";
+		return false;
+	}
+
+	int sampleInterval = 100;
+	int totalSamples = static_cast<int>(totalSectors / sampleInterval) + 1;
+	std::cout << "Sampling ~" << totalSamples << " sectors (every " << sampleInterval << ")...\n";
+	std::cout << "  (Press ESC or Ctrl+C to cancel)\n\n";
+
+	ProgressIndicator progress(40);
+	progress.SetLabel("  Audio Analysis");
+	progress.Start();
+
+	std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
+	int tested = 0;
+	int readFailures = 0;
 
 	for (const auto& t : disc.tracks) {
 		if (!t.isAudio) continue;
 		DWORD start = (t.trackNumber == 1) ? 0 : t.pregapLBA;
-		for (DWORD lba = start; lba <= t.endLBA; lba += 100) {
-			std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
-			if (m_drive.ReadSectorAudioOnly(lba, buf.data())) {
-				if (IsSectorSilent(buf.data())) result.silentSectors++;
-				if (IsSectorClipped(buf.data())) result.clippedSectors++;
+
+		for (DWORD lba = start; lba <= t.endLBA; lba += sampleInterval) {
+			if (g_interrupt.IsInterrupted() || g_interrupt.CheckEscapeKey()) {
+				std::cout << "\n\n*** Analysis cancelled by user ***\n";
+				m_drive.SetSpeed(0);
+				progress.Finish(false);
+				return false;
 			}
+
+			if (!m_drive.ReadSectorAudioOnly(lba, buf.data())) {
+				readFailures++;
+				tested++;
+				progress.Update(tested, totalSamples);
+				continue;
+			}
+
+			bool suspicious = false;
+
+			if (IsSectorSilent(buf.data())) {
+				result.silentSectors++;
+			}
+			if (IsSectorClipped(buf.data())) {
+				result.clippedSectors++;
+				suspicious = true;
+			}
+
+			// Detect low-level sectors (all samples below ~1% of full scale)
+			bool lowLevel = true;
+			for (int i = 0; i < AUDIO_SECTOR_SIZE; i += 2) {
+				int16_t sample = *reinterpret_cast<const int16_t*>(buf.data() + i);
+				if (std::abs(sample) > 327) {  // ~1% of 32767
+					lowLevel = false;
+					break;
+				}
+			}
+			if (lowLevel && !IsSectorSilent(buf.data())) {
+				result.lowLevelSectors++;
+			}
+
+			// Detect DC offset (average sample value significantly non-zero)
+			int64_t sampleSum = 0;
+			int sampleCount = AUDIO_SECTOR_SIZE / 2;
+			for (int i = 0; i < AUDIO_SECTOR_SIZE; i += 2) {
+				sampleSum += *reinterpret_cast<const int16_t*>(buf.data() + i);
+			}
+			double avgSample = static_cast<double>(sampleSum) / sampleCount;
+			if (std::abs(avgSample) > 500.0) {  // Significant DC bias
+				result.dcOffsetSectors++;
+				suspicious = true;
+			}
+
+			if (suspicious) {
+				result.suspiciousLBAs.push_back(lba);
+			}
+
+			tested++;
+			progress.Update(tested, totalSamples);
 		}
 	}
+
+	progress.Finish(true);
 	m_drive.SetSpeed(0);
-	std::cout << "Silent: " << result.silentSectors << ", Clipped: " << result.clippedSectors << "\n";
+
+	// Detailed report
+	std::cout << "\n" << std::string(60, '=') << "\n";
+	std::cout << "           AUDIO CONTENT ANALYSIS REPORT\n";
+	std::cout << std::string(60, '=') << "\n";
+
+	std::cout << "\n--- Scan Summary ---\n";
+	std::cout << "  Sectors sampled:   " << tested << "\n";
+	std::cout << "  Read failures:     " << readFailures << "\n";
+
+	std::cout << "\n--- Content Issues ---\n";
+	std::cout << "  Silent sectors:    " << result.silentSectors;
+	if (tested > 0)
+		std::cout << " (" << std::fixed << std::setprecision(1)
+		<< (result.silentSectors * 100.0 / tested) << "%)";
+	std::cout << "\n";
+
+	std::cout << "  Clipped sectors:   " << result.clippedSectors;
+	if (tested > 0)
+		std::cout << " (" << std::fixed << std::setprecision(1)
+		<< (result.clippedSectors * 100.0 / tested) << "%)";
+	std::cout << "\n";
+
+	std::cout << "  Low-level sectors: " << result.lowLevelSectors << "\n";
+	std::cout << "  DC offset sectors: " << result.dcOffsetSectors << "\n";
+
+	if (!result.suspiciousLBAs.empty()) {
+		int showCount = std::min(10, static_cast<int>(result.suspiciousLBAs.size()));
+		std::cout << "\n--- Suspicious Sectors (showing " << showCount << " of "
+			<< result.suspiciousLBAs.size() << ") ---\n";
+		for (int i = 0; i < showCount; i++) {
+			std::cout << "  LBA " << result.suspiciousLBAs[i] << "\n";
+		}
+	}
+
+	std::cout << std::string(60, '=') << "\n";
 	return true;
 }
 
@@ -943,13 +1165,14 @@ bool AudioCDCopier::IsSectorSilent(const BYTE* data) {
 
 bool AudioCDCopier::IsSectorClipped(const BYTE* data) {
 	int clippedSamples = 0;
+	int totalSamples = AUDIO_SECTOR_SIZE / 2;
 	for (int i = 0; i < AUDIO_SECTOR_SIZE; i += 2) {
 		int16_t sample = *reinterpret_cast<const int16_t*>(data + i);
 		if (sample == 32767 || sample == -32768) clippedSamples++;
 	}
-	return clippedSamples > 10;
+	// Flag if >1% of samples are clipped (dynamic threshold based on sector size)
+	return clippedSamples > (totalSamples / 100);
 }
-
 bool AudioCDCopier::RunComprehensiveScan(DiscInfo& disc, ComprehensiveScanResult& result, int speed) {
 	std::cout << "\n=== COMPREHENSIVE DISC QUALITY SCAN ===\n";
 	result = ComprehensiveScanResult{};
@@ -1004,9 +1227,14 @@ bool AudioCDCopier::RunSeekTimeAnalysis(DiscInfo& disc, std::vector<SeekTimeResu
 	std::cout << "\n=== Seek Time Analysis ===\n";
 	results.clear();
 
+	// Build a list of actual audio LBA positions to test against
+	std::vector<std::pair<DWORD, DWORD>> audioRanges; // {startLBA, endLBA}
 	DWORD totalSectors = 0;
 	for (const auto& t : disc.tracks) {
-		if (t.isAudio) totalSectors += t.endLBA - ((t.trackNumber == 1) ? 0 : t.pregapLBA) + 1;
+		if (!t.isAudio) continue;
+		DWORD start = (t.trackNumber == 1) ? 0 : t.pregapLBA;
+		audioRanges.push_back({ start, t.endLBA });
+		totalSectors += t.endLBA - start + 1;
 	}
 
 	if (totalSectors == 0) {
@@ -1017,11 +1245,34 @@ bool AudioCDCopier::RunSeekTimeAnalysis(DiscInfo& disc, std::vector<SeekTimeResu
 	m_drive.SetSpeed(0);
 	std::cout << "Testing seek times across disc surface...\n";
 
+	// Map fractional positions to real audio LBAs
+	auto mapToAudioLBA = [&](double fraction) -> DWORD {
+		DWORD target = static_cast<DWORD>(totalSectors * fraction);
+		DWORD cumulative = 0;
+		for (const auto& [start, end] : audioRanges) {
+			DWORD rangeLen = end - start + 1;
+			if (cumulative + rangeLen > target) {
+				return start + (target - cumulative);
+			}
+			cumulative += rangeLen;
+		}
+		return audioRanges.back().second; // clamp to last audio LBA
+		};
+
+	constexpr int NUM_POSITIONS = 11;
+	constexpr int REPEATS_PER_PAIR = 3;
+
 	std::vector<DWORD> testPositions;
-	for (int i = 0; i <= 10; i++) {
-		testPositions.push_back(static_cast<DWORD>((totalSectors * i) / 10));
+	for (int i = 0; i < NUM_POSITIONS; i++) {
+		testPositions.push_back(mapToAudioLBA(static_cast<double>(i) / (NUM_POSITIONS - 1)));
 	}
 
+	// Warm-up pass: move the head to settle the drive
+	std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
+	m_drive.ReadSectorAudioOnly(testPositions.front(), buf.data());
+	m_drive.ReadSectorAudioOnly(testPositions.back(), buf.data());
+
+	int totalTests = static_cast<int>(testPositions.size() * (testPositions.size() - 1));
 	ProgressIndicator progress(40);
 	progress.SetLabel("  Seek Test");
 	progress.Start();
@@ -1040,47 +1291,81 @@ bool AudioCDCopier::RunSeekTimeAnalysis(DiscInfo& disc, std::vector<SeekTimeResu
 			DWORD fromLBA = testPositions[i];
 			DWORD toLBA = testPositions[j];
 
-			std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
-			m_drive.ReadSectorAudioOnly(fromLBA, buf.data());
+			// Take multiple measurements and use the median
+			std::vector<double> timings;
+			timings.reserve(REPEATS_PER_PAIR);
+			bool anyReadFailed = false;
 
-			auto startTime = std::chrono::high_resolution_clock::now();
-			bool readOk = m_drive.ReadSectorAudioOnly(toLBA, buf.data());
-			auto endTime = std::chrono::high_resolution_clock::now();
+			for (int rep = 0; rep < REPEATS_PER_PAIR; rep++) {
+				m_drive.ReadSectorAudioOnly(fromLBA, buf.data());
 
-			double seekMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+				auto startTime = std::chrono::high_resolution_clock::now();
+				bool readOk = m_drive.ReadSectorAudioOnly(toLBA, buf.data());
+				auto endTime = std::chrono::high_resolution_clock::now();
+
+				double seekMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+				timings.push_back(seekMs);
+				if (!readOk) anyReadFailed = true;
+			}
+
+			std::sort(timings.begin(), timings.end());
+			double medianSeekMs = timings[REPEATS_PER_PAIR / 2];
 
 			SeekTimeResult r;
 			r.fromLBA = fromLBA;
 			r.toLBA = toLBA;
-			r.seekTimeMs = seekMs;
-			r.abnormal = !readOk || (seekMs > 500.0);  // Mark as abnormal if failed or very slow
+			r.seekTimeMs = medianSeekMs;
+			r.abnormal = anyReadFailed; // threshold set below via statistics
 			results.push_back(r);
 
 			tested++;
-			progress.Update(tested, static_cast<int>(testPositions.size() * (testPositions.size() - 1)));
+			progress.Update(tested, totalTests);
 		}
 	}
 
 	progress.Finish(true);
 	m_drive.SetSpeed(0);
 
-	double avgSeek = 0, maxSeek = 0;
-	int abnormalCount = 0;
-	for (const auto& r : results) {
-		avgSeek += r.seekTimeMs;
-		if (r.seekTimeMs > maxSeek) maxSeek = r.seekTimeMs;
-		if (r.abnormal) abnormalCount++;
+	if (results.empty()) {
+		std::cout << "No seek tests completed.\n";
+		return false;
 	}
-	avgSeek /= results.size();
+
+	// Compute statistics
+	double sum = 0, maxSeek = 0;
+	for (const auto& r : results) {
+		sum += r.seekTimeMs;
+		if (r.seekTimeMs > maxSeek) maxSeek = r.seekTimeMs;
+	}
+	double avgSeek = sum / results.size();
+
+	double varianceSum = 0;
+	for (const auto& r : results) {
+		double diff = r.seekTimeMs - avgSeek;
+		varianceSum += diff * diff;
+	}
+	double stddev = std::sqrt(varianceSum / results.size());
+
+	// Mark outliers: beyond mean + 3 standard deviations
+	double abnormalThreshold = avgSeek + 3.0 * stddev;
+	int abnormalCount = 0;
+	for (auto& r : results) {
+		if (r.seekTimeMs > abnormalThreshold || r.abnormal) {
+			r.abnormal = true;
+			abnormalCount++;
+		}
+	}
 
 	std::cout << "Tests performed: " << results.size() << "\n";
 	std::cout << "Average seek time: " << std::fixed << std::setprecision(1) << avgSeek << " ms\n";
+	std::cout << "Std deviation:     " << stddev << " ms\n";
 	std::cout << "Maximum seek time: " << maxSeek << " ms\n";
-	if (abnormalCount > 0) std::cout << "Abnormal seeks: " << abnormalCount << "\n";
+	std::cout << "Abnormal threshold:" << abnormalThreshold << " ms\n";
+	if (abnormalCount > 0)
+		std::cout << "Abnormal seeks:    " << abnormalCount << "\n";
 
 	return true;
 }
-
 
 bool AudioCDCopier::VerifySubchannelIntegrity(DiscInfo& disc, int& errorCount, int scanSpeed) {
 	std::cout << "\n=== Subchannel Integrity Verification ===\n";
@@ -1096,7 +1381,6 @@ bool AudioCDCopier::VerifySubchannelIntegrity(DiscInfo& disc, int& errorCount, i
 		return false;
 	}
 
-	// Use requested scan speed
 	m_drive.SetSpeed(scanSpeed);
 	if (scanSpeed == 0) std::cout << "Using max speed for subchannel verification...\n";
 	else std::cout << "Using " << scanSpeed << "x speed for subchannel verification...\n";
@@ -1112,10 +1396,9 @@ bool AudioCDCopier::VerifySubchannelIntegrity(DiscInfo& disc, int& errorCount, i
 	int trackMismatches = 0;
 	int indexErrors = 0;
 
-	// Real-time throughput tracking
 	auto startTime = std::chrono::steady_clock::now();
 	auto lastSpeedUpdate = startTime;
-	constexpr double CD_1X_BYTES_PER_SEC = 176400.0;  // 1x CD speed in bytes/sec
+	constexpr double CD_1X_BYTES_PER_SEC = 176400.0;
 
 	for (const auto& t : disc.tracks) {
 		if (!t.isAudio) continue;
@@ -1130,7 +1413,10 @@ bool AudioCDCopier::VerifySubchannelIntegrity(DiscInfo& disc, int& errorCount, i
 
 			int qTrack = 0, qIndex = -1;
 			if (m_drive.ReadSectorQ(lba, qTrack, qIndex)) {
-				if (qTrack != t.trackNumber && qTrack != 0) {
+				bool trackOk = (qTrack == t.trackNumber) ||
+					(qTrack == 0) ||
+					(lba <= t.startLBA && qTrack == t.trackNumber - 1);
+				if (!trackOk) {
 					trackMismatches++;
 					errorCount++;
 				}
@@ -1147,7 +1433,6 @@ bool AudioCDCopier::VerifySubchannelIntegrity(DiscInfo& disc, int& errorCount, i
 
 			scannedSectors++;
 
-			// Update progress with real-time speed every 500ms
 			auto now = std::chrono::steady_clock::now();
 			auto timeSinceUpdate = std::chrono::duration<double>(now - lastSpeedUpdate).count();
 
@@ -1157,7 +1442,6 @@ bool AudioCDCopier::VerifySubchannelIntegrity(DiscInfo& disc, int& errorCount, i
 					double bytesRead = scannedSectors * 2352.0;
 					double actualSpeedX = bytesRead / (totalElapsed * CD_1X_BYTES_PER_SEC);
 
-					// Update progress label with speed info
 					char speedLabel[64];
 					snprintf(speedLabel, sizeof(speedLabel), "  Subchannel [%.1fx]", actualSpeedX);
 					progress.SetLabel(speedLabel);
@@ -1172,7 +1456,6 @@ bool AudioCDCopier::VerifySubchannelIntegrity(DiscInfo& disc, int& errorCount, i
 	progress.Finish(true);
 	m_drive.SetSpeed(0);
 
-	// Calculate final throughput
 	auto endTime = std::chrono::steady_clock::now();
 	double totalSeconds = std::chrono::duration<double>(endTime - startTime).count();
 	double avgSpeedX = 0.0;
@@ -1181,7 +1464,6 @@ bool AudioCDCopier::VerifySubchannelIntegrity(DiscInfo& disc, int& errorCount, i
 		avgSpeedX = totalBytes / (totalSeconds * CD_1X_BYTES_PER_SEC);
 	}
 
-	// Report drive-reported vs measured speed
 	std::cout << "\n=== Speed Verification ===\n";
 	std::cout << "Requested speed: " << (scanSpeed == 0 ? "Max" : std::to_string(scanSpeed) + "x") << "\n";
 	std::cout << "Measured throughput: " << std::fixed << std::setprecision(1) << avgSpeedX << "x\n";
@@ -1192,7 +1474,6 @@ bool AudioCDCopier::VerifySubchannelIntegrity(DiscInfo& disc, int& errorCount, i
 		std::cout << "Drive-reported speed: " << std::fixed << std::setprecision(1)
 			<< reportedSpeedX << "x (" << actualRead << " KB/s)\n";
 
-		// Warn if there's a significant discrepancy
 		if (scanSpeed > 0 && avgSpeedX > scanSpeed * 1.5) {
 			std::cout << "** Warning: Drive may be ignoring speed limit **\n";
 		}
@@ -1243,7 +1524,6 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 
 	result = BlerResult{};
 	result.totalSectors = totalSectors;
-	// FIX 5: Correct seconds calculation
 	result.totalSeconds = (totalSectors + 74) / 75;
 	result.perSecondC2.resize(result.totalSeconds + 1, { 0, 0 });
 
@@ -1258,9 +1538,6 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 	progress.SetLabel("  BLER Scan");
 	progress.Start();
 
-	// FIX 2: Single-pass for BLER — multi-pass with cache defeat on every sector
-	// is far too slow for a full-disc scan. BLER is meant to be a single-pass
-	// error rate measurement like a real BLER analyzer.
 	ScsiDrive::C2ReadOptions c2Opts;
 	c2Opts.multiPass = false;
 	c2Opts.countBytes = true;
@@ -1279,7 +1556,6 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 			std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
 			int c2Errors = 0;
 
-			// FIX 3: Guard against unsigned underflow when lba < firstLBA
 			size_t secIdx = 0;
 			if (lba >= firstLBA) {
 				secIdx = static_cast<size_t>((lba - firstLBA) / 75);
@@ -1310,7 +1586,6 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 			}
 			else {
 				result.totalReadFailures++;
-				// FIX 4: Use max C2 bytes per sector (296), not audio byte count (2352)
 				result.perSecondC2[secIdx].second += C2_ERROR_SIZE;
 				currentErrorRun++;
 				if (currentErrorRun > result.consecutiveErrorSectors) {
@@ -1342,9 +1617,6 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 	else if (result.avgC2PerSecond < 10.0 && result.consecutiveErrorSectors < 10) result.qualityRating = "ACCEPTABLE";
 	else result.qualityRating = "POOR";
 
-	// =========================================================================
-	// DETAILED BLER SCAN REPORT
-	// =========================================================================
 	std::cout << "\n" << std::string(60, '=') << "\n";
 	std::cout << "              BLER QUALITY SCAN REPORT\n";
 	std::cout << std::string(60, '=') << "\n";
@@ -1356,7 +1628,6 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 		<< (result.totalSeconds / 60) << ":" << std::setfill('0') << std::setw(2) << (result.totalSeconds % 60)
 		<< std::setfill(' ') << " (mm:ss)\n";
 
-	// Red Book compliance
 	std::cout << "\n--- Red Book Compliance ---\n";
 	bool blerPass = result.avgC2PerSecond < 220.0;
 	std::cout << "  Avg C2/sec:       " << std::fixed << std::setprecision(2) << result.avgC2PerSecond;
@@ -1369,7 +1640,6 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 	}
 	std::cout << "\n";
 
-	// Overall statistics
 	std::cout << "\n--- Error Statistics ---\n";
 	std::cout << "  Total C2 errors:      " << result.totalC2Errors << "\n";
 	std::cout << "  Sectors with C2:      " << result.totalC2Sectors;
@@ -1383,7 +1653,6 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 	std::cout << "\n";
 	std::cout << "  Longest error run:    " << result.consecutiveErrorSectors << " sectors\n";
 
-	// Per-track error summary
 	std::cout << "\n--- Per-Track Summary ---\n";
 	std::cout << "  Track  Length     C2 Errors  Sectors  Avg/sec   Status\n";
 	std::cout << "  " << std::string(58, '-') << "\n";
@@ -1421,10 +1690,8 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 			<< status << "\n";
 	}
 
-	// Error distribution graph
 	PrintBlerGraph(result);
 
-	// Quality verdict
 	std::cout << "\n" << std::string(60, '-') << "\n";
 	std::cout << "  QUALITY: " << result.qualityRating << "\n";
 
@@ -1448,63 +1715,149 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 	return true;
 }
 
-
 // ============================================================================
 // Drive Capabilities
 // ============================================================================
 
 bool AudioCDCopier::DetectDriveCapabilities(DriveCapabilities& caps) {
-	caps = DriveCapabilities{};
-
-	std::string vendor, model;
-	if (m_drive.GetDriveInfo(vendor, model)) {
-		caps.vendor = vendor;
-		caps.model = model;
-	}
-
-	caps.supportsC2ErrorReporting = m_drive.CheckC2Support();
-
-	BYTE cdb[10] = { 0x5A, 0, 0x2A, 0, 0, 0, 0, 0, 28, 0 };
-	std::vector<BYTE> buf(28);
-
-	if (m_drive.SendSCSI(cdb, 10, buf.data(), 28)) {
-		if (buf.size() >= 20) {
-			caps.supportsAccurateStream = (buf[12] & 0x02) != 0;
-			caps.supportsCDText = (buf[12] & 0x01) != 0;
-			caps.supportsSubchannelRaw = true;
-
-			if (buf.size() >= 22) {
-				caps.maxReadSpeedKB = (buf[14] << 8) | buf[15];
-				caps.currentReadSpeedKB = (buf[20] << 8) | buf[21];
-			}
-		}
-	}
-
-	return true;
+	// Delegate to the comprehensive ScsiDrive::DetectCapabilities
+	// which queries INQUIRY, VPD 0x80, Mode Page 2A, GET PERFORMANCE,
+	// C2 support, raw read, and overread capabilities
+	return m_drive.DetectCapabilities(caps);
 }
 
 void AudioCDCopier::PrintDriveCapabilities(const DriveCapabilities& caps) {
-	std::cout << "\n=== Drive Capabilities ===\n";
-	std::cout << "Drive: " << caps.vendor << " " << caps.model << "\n";
-	std::cout << "C2 Error Reporting: " << (caps.supportsC2ErrorReporting ? "YES" : "NO") << "\n";
-	std::cout << "Accurate Stream: " << (caps.supportsAccurateStream ? "YES" : "NO") << "\n";
-	std::cout << "CD-TEXT Reading: " << (caps.supportsCDText ? "YES" : "NO") << "\n";
-	std::cout << "Subchannel Reading: " << (caps.supportsSubchannelRaw ? "YES" : "NO") << "\n";
-	if (caps.maxReadSpeedKB > 0) {
-		std::cout << "Max Read Speed: " << caps.maxReadSpeedKB << " KB/s (" << caps.maxReadSpeedKB / 176 << "x)\n";
+	auto yn = [](bool v) -> const char* { return v ? "YES" : "NO"; };
+
+	std::cout << "\n" << std::string(60, '=') << "\n";
+	std::cout << "              DRIVE CAPABILITIES REPORT\n";
+	std::cout << std::string(60, '=') << "\n";
+
+	// --- Identification ---
+	std::cout << "\n--- Identification ---\n";
+	std::cout << "  Vendor:          " << caps.vendor << "\n";
+	std::cout << "  Model:           " << caps.model << "\n";
+	std::cout << "  Firmware:        " << (caps.firmware.empty() ? "(unknown)" : caps.firmware) << "\n";
+	std::cout << "  Serial Number:   " << (caps.serialNumber.empty() ? "(not reported)" : caps.serialNumber) << "\n";
+
+	// --- Core Ripping Capabilities ---
+	std::cout << "\n--- Core Ripping Capabilities ---\n";
+	std::cout << "  CD-DA Extraction:      " << yn(caps.supportsCDDA) << "\n";
+	std::cout << "  Accurate Stream:       " << yn(caps.supportsAccurateStream) << "\n";
+	std::cout << "  C2 Error Reporting:    " << yn(caps.supportsC2ErrorReporting) << "\n";
+	std::cout << "  Raw Read:              " << yn(caps.supportsRawRead) << "\n";
+	std::cout << "  CD-TEXT Reading:       " << yn(caps.supportsCDText) << "\n";
+
+	// --- Subchannel & Overread ---
+	std::cout << "\n--- Subchannel & Overread ---\n";
+	std::cout << "  Raw Subchannel:        " << yn(caps.supportsSubchannelRaw) << "\n";
+	std::cout << "  Q-Channel:             " << yn(caps.supportsSubchannelQ) << "\n";
+	std::cout << "  Overread Lead-In:      " << yn(caps.supportsOverreadLeadIn) << "\n";
+	std::cout << "  Overread Lead-Out:     " << yn(caps.supportsOverreadLeadOut) << "\n";
+
+	// --- Media Type Support ---
+	std::cout << "\n--- Media Type Support ---\n";
+	std::cout << "  Reads:  CD-R=" << yn(caps.readsCDR)
+		<< "  CD-RW=" << yn(caps.readsCDRW)
+		<< "  DVD=" << yn(caps.readsDVD)
+		<< "  BD=" << yn(caps.readsBD) << "\n";
+	std::cout << "  Writes: CD-R=" << yn(caps.writesCDR)
+		<< "  CD-RW=" << yn(caps.writesCDRW)
+		<< "  DVD=" << yn(caps.writesDVD) << "\n";
+
+	// --- Audio Playback ---
+	std::cout << "\n--- Audio Playback ---\n";
+	std::cout << "  Digital Audio Play:    " << yn(caps.supportsDigitalAudioPlay) << "\n";
+	std::cout << "  Separate Volume:       " << yn(caps.supportsSeparateVolume) << "\n";
+	std::cout << "  Separate Mute:         " << yn(caps.supportsSeparateMute) << "\n";
+	std::cout << "  Composite Output:      " << yn(caps.supportsCompositeOutput) << "\n";
+
+	// --- Mechanical Features ---
+	std::cout << "\n--- Mechanical Features ---\n";
+	const char* mechNames[] = { "Caddy", "Tray", "Pop-up", "Changer", "Reserved", "Slot" };
+	const char* mechName = (caps.loadingMechanism >= 0 && caps.loadingMechanism <= 5)
+		? mechNames[caps.loadingMechanism] : "Unknown";
+	std::cout << "  Loading Mechanism:     " << mechName << "\n";
+	std::cout << "  Eject:                 " << yn(caps.supportsEject) << "\n";
+	std::cout << "  Lock Media:            " << yn(caps.supportsLockMedia) << "\n";
+	std::cout << "  Multi-Session:         " << yn(caps.supportsMultiSession) << "\n";
+	std::cout << "  Disc Changer:          " << yn(caps.isChanger) << "\n";
+
+	// --- Performance ---
+	std::cout << "\n--- Performance ---\n";
+	if (caps.maxReadSpeedKB > 0)
+		std::cout << "  Max Read Speed:        " << caps.maxReadSpeedKB << " KB/s ("
+			<< caps.maxReadSpeedKB / 176 << "x)\n";
+	if (caps.currentReadSpeedKB > 0)
+		std::cout << "  Current Read Speed:    " << caps.currentReadSpeedKB << " KB/s ("
+			<< caps.currentReadSpeedKB / 176 << "x)\n";
+	if (caps.maxWriteSpeedKB > 0)
+		std::cout << "  Max Write Speed:       " << caps.maxWriteSpeedKB << " KB/s ("
+			<< caps.maxWriteSpeedKB / 176 << "x)\n";
+	else
+		std::cout << "  Max Write Speed:       (read-only drive)\n";
+	if (caps.bufferSizeKB > 0)
+		std::cout << "  Buffer Size:           " << caps.bufferSizeKB << " KB\n";
+
+	if (!caps.supportedReadSpeeds.empty()) {
+		std::cout << "  Supported Read Speeds: ";
+		for (size_t i = 0; i < caps.supportedReadSpeeds.size(); i++) {
+			if (i > 0) std::cout << ", ";
+			std::cout << caps.supportedReadSpeeds[i] / 176 << "x";
+		}
+		std::cout << "\n";
 	}
 
-	int qualityScore = 50;
-	if (caps.supportsC2ErrorReporting) qualityScore += 20;
-	if (caps.supportsAccurateStream) qualityScore += 15;
-	if (caps.supportsCDText) qualityScore += 5;
-	if (caps.supportsSubchannelRaw) qualityScore += 10;
+	// --- Media Status ---
+	std::cout << "\n--- Media Status ---\n";
+	std::cout << "  Media Present:         " << yn(caps.mediaPresent) << "\n";
+	if (!caps.currentMediaType.empty())
+		std::cout << "  Media Type:            " << caps.currentMediaType << "\n";
 
-	std::cout << "\nRipping Quality Score: " << qualityScore << "/100\n";
+	// --- Ripping Quality Score ---
+	int qualityScore = 0;
+	// Core ripping features (70 points max)
+	if (caps.supportsCDDA)               qualityScore += 15;
+	if (caps.supportsC2ErrorReporting)   qualityScore += 20;
+	if (caps.supportsAccurateStream)     qualityScore += 15;
+	if (caps.supportsRawRead)            qualityScore += 10;
+	if (caps.supportsCDText)             qualityScore += 5;
+	if (caps.supportsSubchannelRaw)      qualityScore += 5;
+	// Advanced features (30 points max)
+	if (caps.supportsOverreadLeadIn)     qualityScore += 10;
+	if (caps.supportsOverreadLeadOut)    qualityScore += 5;
+	if (caps.supportsSubchannelQ)        qualityScore += 5;
+	if (caps.supportsMultiSession)       qualityScore += 5;
+	if (caps.bufferSizeKB >= 512)        qualityScore += 5;
 
-	if (qualityScore >= 80) std::cout << "Rating: EXCELLENT - Ideal for accurate ripping\n";
-	else if (qualityScore >= 60) std::cout << "Rating: GOOD - Suitable for most ripping tasks\n";
-	else std::cout << "Rating: BASIC - May have limitations for damaged discs\n";
+	std::cout << "\n" << std::string(60, '-') << "\n";
+	std::cout << "  RIPPING QUALITY SCORE: " << qualityScore << "/100\n";
+
+	if (qualityScore >= 90)
+		std::cout << "  Rating: EXCELLENT - Ideal for accurate, bit-perfect ripping\n";
+	else if (qualityScore >= 70)
+		std::cout << "  Rating: VERY GOOD - Handles most ripping tasks well\n";
+	else if (qualityScore >= 50)
+		std::cout << "  Rating: GOOD - Suitable for standard ripping\n";
+	else if (qualityScore >= 30)
+		std::cout << "  Rating: BASIC - Limited accuracy on damaged discs\n";
+	else
+		std::cout << "  Rating: POOR - Not recommended for accurate ripping\n";
+
+	// Feature recommendations
+	std::cout << "\n--- Recommendations ---\n";
+	if (!caps.supportsC2ErrorReporting)
+		std::cout << "  * No C2 support: cannot detect uncorrectable read errors\n";
+	if (!caps.supportsAccurateStream)
+		std::cout << "  * No Accurate Stream: drive may insert/drop samples during jitter\n";
+	if (!caps.supportsOverreadLeadIn)
+		std::cout << "  * No lead-in overread: first track offset correction may be incomplete\n";
+	if (!caps.supportsRawRead)
+		std::cout << "  * No raw read: limited extraction modes available\n";
+	if (caps.supportsCDDA && caps.supportsC2ErrorReporting && caps.supportsAccurateStream)
+		std::cout << "  * Drive is well-suited for secure ripping with offset correction\n";
+
+	std::cout << std::string(60, '=') << "\n";
 }
 
 // ============================================================================
@@ -1516,10 +1869,8 @@ bool AudioCDCopier::ValidateC2Accuracy(DWORD testLBA) {
 }
 
 // ============================================================================
-// Missing BLER and Disc Rot Helper Functions
+// BLER and Disc Rot Helper Functions
 // ============================================================================
-
-
 
 void AudioCDCopier::PrintBlerGraph(const BlerResult& result, int width, int height) {
 	if (result.perSecondC2.empty() || width <= 0 || height <= 0) return;
@@ -1600,7 +1951,6 @@ bool AudioCDCopier::TestReadConsistency(DWORD lba, int passes, int& inconsistent
 	inconsistentCount = 0;
 
 	for (int i = 0; i < passes; i++) {
-		// Defeat drive cache between reads so each pass is a fresh disc read
 		if (i > 0) {
 			DefeatDriveCache(lba, 0);
 		}
@@ -1680,7 +2030,6 @@ void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& result) {
 	std::cout << "            DISC ROT ANALYSIS REPORT\n";
 	std::cout << std::string(60, '=') << "\n";
 
-	// Zone error distribution with visual bars
 	std::cout << "\n--- Zone Error Distribution ---\n";
 	std::cout << std::fixed << std::setprecision(2);
 
@@ -1693,7 +2042,7 @@ void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& result) {
 		int len = static_cast<int>(rate / maxRate * 20);
 		for (int i = 0; i < len; i++) std::cout << '#';
 		for (int i = len; i < 20; i++) std::cout << ' ';
-	};
+		};
 
 	std::cout << "  Inner  (0-33%):   ";
 	drawBar(innerRate);
@@ -1707,7 +2056,6 @@ void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& result) {
 	drawBar(outerRate);
 	std::cout << " " << std::setw(6) << outerRate << "%  (" << result.zones.outerErrors << "/" << result.zones.outerSectors << ")\n";
 
-	// Zone interpretation
 	if (outerRate > innerRate * 2 && outerRate > 0.5) {
 		std::cout << "  >> Outer edge has significantly more errors (typical of disc rot)\n";
 	}
@@ -1715,7 +2063,6 @@ void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& result) {
 		std::cout << "  >> Inner hub area has more errors (possible hub cracking)\n";
 	}
 
-	// Read consistency
 	std::cout << "\n--- Read Consistency ---\n";
 	std::cout << "  Sectors tested:       " << result.totalRereadTests << "\n";
 	std::cout << "  Inconsistent reads:   " << result.inconsistentSectors;
@@ -1730,7 +2077,6 @@ void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& result) {
 	else if (result.totalRereadTests > 0)
 		std::cout << "  >> Reads are consistent\n";
 
-	// Degradation pattern analysis
 	std::cout << "\n--- Degradation Pattern Analysis ---\n";
 	int patternsDetected = 0;
 
@@ -1769,7 +2115,6 @@ void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& result) {
 	if (patternsDetected == 0)
 		std::cout << "\n  No degradation patterns detected.\n";
 
-	// Error clusters
 	std::cout << "\n--- Error Clusters ---\n";
 	if (result.clusters.empty()) {
 		std::cout << "  No significant error clusters found.\n";
@@ -1787,7 +2132,6 @@ void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& result) {
 		}
 		std::cout << "  Largest cluster:  " << largest << " sectors (starting at LBA " << largestStart << ")\n";
 
-		// Show up to 8 clusters
 		int shown = 0;
 		std::cout << "\n  Start LBA    End LBA    Size      Errors   Density\n";
 		std::cout << "  " << std::string(55, '-') << "\n";
@@ -1805,7 +2149,6 @@ void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& result) {
 		}
 	}
 
-	// Risk assessment
 	std::cout << "\n" << std::string(60, '=') << "\n";
 	std::cout << "  DISC ROT RISK: ";
 
@@ -1823,7 +2166,7 @@ void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& result) {
 	}
 	else if (result.rotRiskLevel == "HIGH") {
 		std::cout << "HIGH [!!!]";
-		std::cout << "\n  Significant degradation detected. Data loss is likely without action.\n";
+		std::cout << "\n  Significant degradation detected. Back up NOW - data loss likely.\n";
 	}
 	else {
 		std::cout << "CRITICAL [!!!!]";

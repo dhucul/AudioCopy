@@ -264,36 +264,47 @@ int main() {
 
 		case 16: {
 			Console::Info("\n=== C2 Validation Test ===\n");
-			Console::Info("This test reads a sector at different speeds to verify C2 accuracy.\n");
+			Console::Info("This test reads sectors at different speeds to verify C2 accuracy.\n");
 			Console::Info("Inconsistent C2 results may indicate unreliable C2 reporting.\n\n");
 
-			DWORD trackLength = disc.tracks[0].endLBA - disc.tracks[0].startLBA;
-			DWORD testLBA = disc.tracks[0].startLBA + 1000;
-			if (testLBA >= disc.tracks[0].endLBA) {
-				testLBA = disc.tracks[0].startLBA + (trackLength / 2);
+			// Test 3 spread-out LBAs instead of one
+			std::vector<DWORD> testLBAs;
+			for (const auto& t : disc.tracks) {
+				if (!t.isAudio) continue;
+				DWORD mid = t.startLBA + (t.endLBA - t.startLBA) / 2;
+				testLBAs.push_back(mid);
+				if (testLBAs.size() >= 3) break;
 			}
-
-			Console::Info("Testing LBA: ");
-			std::cout << testLBA << " (Track 1, middle section)\n";
+			if (testLBAs.empty()) {
+				Console::Warning("No audio tracks found.\n");
+				break;
+			}
 
 			ProgressIndicator prog;
 			prog.SetLabel("Validating C2");
 			prog.Start();
 
-			bool isReliable = copier.ValidateC2Accuracy(testLBA);
+			int passed = 0;
+			for (DWORD lba : testLBAs) {
+				Console::Info("Testing LBA: ");
+				std::cout << lba << "\n";
+				if (copier.ValidateC2Accuracy(lba))
+					passed++;
+			}
 
 			prog.Finish(true);
 
-			if (isReliable) {
+			if (passed == static_cast<int>(testLBAs.size())) {
 				Console::Success("\nC2 Validation: PASSED\n");
 				Console::Success("Your drive's C2 error reporting appears reliable.\n");
-				Console::Info("C2 results were consistent across different read speeds.\n");
+				std::string infoMsg = "C2 pointers were consistent across " + std::to_string(testLBAs.size()) + " sectors and multiple speeds.\n";
+				Console::Info(infoMsg.c_str());
 			}
 			else {
-				Console::Warning("\nC2 Validation: FAILED\n");
+				std::string failMsg = "\nC2 Validation: FAILED (" + std::to_string(passed) + "/" + std::to_string(testLBAs.size()) + " sectors passed)\n";
+				Console::Warning(failMsg.c_str());
 				Console::Warning("Your drive's C2 error reporting may be unreliable.\n");
-				Console::Warning("C2 results differed at different speeds - this drive may report\n");
-				Console::Warning("false positives. Consider using BLER scan instead for quality checks.\n");
+				Console::Warning("Consider using BLER scan instead for quality checks.\n");
 			}
 			break;
 		}

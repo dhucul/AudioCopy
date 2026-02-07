@@ -5,6 +5,51 @@
 #include <climits>
 #include <vector>
 
+static BYTE BcdToBin(BYTE bcd) {
+	return ((bcd >> 4) & 0x0F) * 10 + (bcd & 0x0F);
+}
+
+static uint16_t SubchannelCRC16(const BYTE* data, int len) {
+	// CRC-16-CCITT used by Q subchannel (polynomial 0x1021)
+	uint16_t crc = 0;
+	for (int i = 0; i < len; i++) {
+		crc ^= static_cast<uint16_t>(data[i]) << 8;
+		for (int bit = 0; bit < 8; bit++) {
+			crc = (crc & 0x8000) ? (crc << 1) ^ 0x1021 : crc << 1;
+		}
+	}
+	return crc;
+}
+
+bool ScsiDrive::ParseRawSubchannel(const BYTE* sub, int& qTrack, int& qIndex) {
+	BYTE qchannel[12] = {};
+	for (int i = 0; i < 96; i++) {
+		int byteIdx = i / 8;
+		int bitIdx = 7 - (i % 8);
+		if (sub[i] & 0x40) {
+			qchannel[byteIdx] |= (1 << bitIdx);
+		}
+	}
+
+	// Validate CRC-16 (bytes 0-9 checked against bytes 10-11)
+	uint16_t calcCrc = SubchannelCRC16(qchannel, 10);
+	uint16_t storedCrc = (static_cast<uint16_t>(qchannel[10]) << 8) | qchannel[11];
+	if (calcCrc != storedCrc) {
+		return false;  // CRC mismatch — data is unreliable
+	}
+
+	// Only ADR=1 frames carry track/index position data
+	BYTE adr = qchannel[0] & 0x0F;
+	if (adr != 1) {
+		return false;  // Not a position frame (MCN or ISRC)
+	}
+
+	// Q subchannel stores track/index in BCD
+	qTrack = BcdToBin(qchannel[1]);
+	qIndex = BcdToBin(qchannel[2]);
+	return true;
+}
+
 bool ScsiDrive::ReadSector(DWORD lba, BYTE* audio, BYTE* subchannel) {
 	BYTE cdb[12] = {};
 	std::vector<BYTE> buffer(RAW_SECTOR_SIZE);
@@ -95,7 +140,8 @@ bool ScsiDrive::ReadSectorWithC2Ex(DWORD lba, BYTE* audio, BYTE* subchannel,
 	for (int i = 0; i < c2ByteCount; i++) {
 		if (options.countBytes) {
 			if (c2Data[i] != 0) c2Errors++;
-		} else {
+		}
+		else {
 			BYTE b = c2Data[i];
 			while (b) { c2Errors += b & 1; b >>= 1; }
 		}
@@ -157,7 +203,8 @@ bool ScsiDrive::ReadSectorWithC2ExMultiPass(DWORD lba, BYTE* audio, BYTE* subcha
 	for (int i = 0; i < C2_ERROR_SIZE; i++) {
 		if (options.countBytes) {
 			if (aggregatedC2[i] != 0) c2Errors++;
-		} else {
+		}
+		else {
 			BYTE b = aggregatedC2[i];
 			while (b) { c2Errors += b & 1; b >>= 1; }
 		}
@@ -192,7 +239,8 @@ bool ScsiDrive::PlextorReadC2(DWORD lba, BYTE* audio, int& c2Errors, BYTE* c2Raw
 	for (int i = 0; i < C2_ERROR_SIZE; i++) {
 		if (countBytes) {
 			if (c2Data[i] != 0) c2Errors++;
-		} else {
+		}
+		else {
 			BYTE b = c2Data[i];
 			while (b) { c2Errors += b & 1; b >>= 1; }
 		}
@@ -208,22 +256,70 @@ bool ScsiDrive::PlextorReadC2(DWORD lba, BYTE* audio, int& c2Errors, BYTE* c2Raw
 // FIX C & D: Restore missing functions (unresolved externals)
 
 bool ScsiDrive::ValidateC2Accuracy(DWORD testLBA) {
-	std::vector<BYTE> audio(AUDIO_SECTOR_SIZE);
-	int errors1 = 0, errors2 = 0;
+	constexpr int NUM_READS = 4;
+	constexpr int SPEEDS[] = { 4, 8, 16, 0 }; // 0 = max
+	constexpr DWORD CACHE_DEFEAT_DISTANCE = 500;
 
-	SetSpeed(4);
+	std::vector<BYTE> audio(AUDIO_SECTOR_SIZE);
+	std::vector<BYTE> c2First(C2_ERROR_SIZE);
+	std::vector<BYTE> c2Current(C2_ERROR_SIZE);
+
 	C2ReadOptions opts;
-	if (!ReadSectorWithC2Ex(testLBA, audio.data(), nullptr, errors1, nullptr, opts)) {
-		SetSpeed(0);
-		return false;
+	opts.countBytes = true;
+
+	int baselineErrors = 0;
+	bool baselineHasC2 = false;
+
+	for (int i = 0; i < NUM_READS; i++) {
+		SetSpeed(SPEEDS[i]);
+
+		// Defeat the drive cache by seeking away then settling
+		DWORD farLBA = (testLBA > CACHE_DEFEAT_DISTANCE)
+			? testLBA - CACHE_DEFEAT_DISTANCE
+			: testLBA + CACHE_DEFEAT_DISTANCE;
+		ReadSectorAudioOnly(farLBA, audio.data());
+		Sleep(10);
+
+		int c2Errors = 0;
+		BYTE* c2Buf = (i == 0) ? c2First.data() : c2Current.data();
+
+		if (!ReadSectorWithC2Ex(testLBA, audio.data(), c2Buf, c2Errors, nullptr, opts)) {
+			SetSpeed(0);
+			return false; // read failure — can't validate
+		}
+
+		if (i == 0) {
+			baselineErrors = c2Errors;
+			baselineHasC2 = (c2Errors > 0);
+		}
+		else {
+			bool currentHasC2 = (c2Errors > 0);
+
+			// Check 1: error presence must be consistent
+			if (currentHasC2 != baselineHasC2) {
+				SetSpeed(0);
+				return false;
+			}
+
+			// Check 2: if errors are reported, the C2 pointers should
+			//           substantially overlap (allow minor bit variation)
+			if (baselineHasC2) {
+				int mismatchBits = 0;
+				for (int b = 0; b < C2_ERROR_SIZE; b++) {
+					BYTE diff = c2First[b] ^ c2Current[b];
+					while (diff) { mismatchBits += diff & 1; diff >>= 1; }
+				}
+				// More than 25% new/missing bits → unreliable
+				if (mismatchBits > baselineErrors / 4 + 2) {
+					SetSpeed(0);
+					return false;
+				}
+			}
+		}
 	}
 
 	SetSpeed(0);
-	if (!ReadSectorWithC2Ex(testLBA, audio.data(), nullptr, errors2, nullptr, opts)) {
-		return false;
-	}
-
-	return (errors1 > 0) == (errors2 > 0);
+	return true;
 }
 
 bool ScsiDrive::ReadSectorAudioOnly(DWORD lba, BYTE* audio) {
@@ -254,24 +350,9 @@ bool ScsiDrive::ReadDataSector(DWORD lba, BYTE* data) {
 	return SendSCSI(cdb, 12, data, AUDIO_SECTOR_SIZE);
 }
 
-bool ScsiDrive::ParseRawSubchannel(const BYTE* sub, int& qTrack, int& qIndex) {
-	BYTE qchannel[12] = {};
-	for (int i = 0; i < 96; i++) {
-		int byteIdx = i / 8;
-		int bitIdx = 7 - (i % 8);
-		if (sub[i] & 0x40) {
-			qchannel[byteIdx] |= (1 << bitIdx);
-		}
-	}
-
-	qTrack = qchannel[1];
-	qIndex = qchannel[2];
-	return true;
-}
-
 bool ScsiDrive::ReadSectorQRaw(DWORD lba, int& qTrack, int& qIndex) {
 	BYTE cdb[12] = {};
-	std::vector<BYTE> buffer(RAW_SECTOR_SIZE);
+	BYTE buffer[RAW_SECTOR_SIZE];  // Stack allocation — avoids heap churn
 
 	cdb[0] = SCSI_READ_CD;
 	cdb[1] = 0x04;
@@ -283,9 +364,9 @@ bool ScsiDrive::ReadSectorQRaw(DWORD lba, int& qTrack, int& qIndex) {
 	cdb[9] = 0xF8;
 	cdb[10] = 0x01;  // Raw subchannel
 
-	if (!SendSCSI(cdb, 12, buffer.data(), RAW_SECTOR_SIZE)) return false;
+	if (!SendSCSI(cdb, 12, buffer, RAW_SECTOR_SIZE)) return false;
 
-	return ParseRawSubchannel(buffer.data() + AUDIO_SECTOR_SIZE, qTrack, qIndex);
+	return ParseRawSubchannel(buffer + AUDIO_SECTOR_SIZE, qTrack, qIndex);
 }
 
 bool ScsiDrive::ReadSectorQ(DWORD lba, int& qTrack, int& qIndex) {
@@ -295,7 +376,7 @@ bool ScsiDrive::ReadSectorQ(DWORD lba, int& qTrack, int& qIndex) {
 
 	// Fallback: formatted Q subchannel
 	BYTE cdb[12] = {};
-	std::vector<BYTE> buffer(AUDIO_SECTOR_SIZE + 16);
+	BYTE buffer[AUDIO_SECTOR_SIZE + 16];  // Stack allocation
 
 	cdb[0] = SCSI_READ_CD;
 	cdb[1] = 0x04;
@@ -307,10 +388,10 @@ bool ScsiDrive::ReadSectorQ(DWORD lba, int& qTrack, int& qIndex) {
 	cdb[9] = 0xF8;
 	cdb[10] = 0x02;  // Formatted Q subchannel
 
-	if (!SendSCSI(cdb, 12, buffer.data(), AUDIO_SECTOR_SIZE + 16)) return false;
+	if (!SendSCSI(cdb, 12, buffer, AUDIO_SECTOR_SIZE + 16)) return false;
 
-	const BYTE* qData = buffer.data() + AUDIO_SECTOR_SIZE;
-	qTrack = qData[1];
-	qIndex = qData[2];
+	const BYTE* qData = buffer + AUDIO_SECTOR_SIZE;
+	qTrack = BcdToBin(qData[1]);
+	qIndex = BcdToBin(qData[2]);
 	return true;
 }

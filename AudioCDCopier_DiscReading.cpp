@@ -412,31 +412,34 @@ bool AudioCDCopier::ReadSectorSecure(DWORD lba, BYTE* data, int sectorSize, bool
 }
 // Keep the old single-parameter version for backward compatibility
 bool AudioCDCopier::DefeatDriveCache(DWORD currentLBA, DWORD maxLBA) {
+	// Most drives have 75-150 sector cache; 500 sectors is sufficient
+	// to defeat the cache without causing aggressive mechanical seeks
+	constexpr DWORD CACHE_DEFEAT_DISTANCE = 500;
+
 	DWORD farLBA;
 
-	// Try seeking backwards first (less likely to exceed bounds)
-	if (currentLBA > 10000) {
-		farLBA = currentLBA - 5000;
+	if (currentLBA > CACHE_DEFEAT_DISTANCE) {
+		farLBA = currentLBA - CACHE_DEFEAT_DISTANCE;
 	}
-	// Only seek forward if we have room
-	else if (maxLBA > 0 && currentLBA + 10000 < maxLBA) {
-		farLBA = currentLBA + 5000;
-	}
-	// Fallback: seek to a safe distance backward, or use lead-in area
-	else if (currentLBA > 5000) {
-		farLBA = currentLBA - 5000;
+	else if (maxLBA > 0 && currentLBA + CACHE_DEFEAT_DISTANCE * 2 < maxLBA) {
+		farLBA = currentLBA + CACHE_DEFEAT_DISTANCE;
 	}
 	else {
-		// Last resort: try reading near current position but offset enough to defeat cache
-		// Most drives have ~75-150 sector cache, so 1000 should be sufficient
-		farLBA = (currentLBA > 1000) ? currentLBA - 1000 : currentLBA + 1000;
+		farLBA = (currentLBA > CACHE_DEFEAT_DISTANCE)
+			? currentLBA - CACHE_DEFEAT_DISTANCE
+			: currentLBA + CACHE_DEFEAT_DISTANCE;
 		if (maxLBA > 0 && farLBA >= maxLBA) {
-			farLBA = maxLBA > 1000 ? maxLBA - 1000 : 0;
+			farLBA = maxLBA > CACHE_DEFEAT_DISTANCE ? maxLBA - CACHE_DEFEAT_DISTANCE : 0;
 		}
 	}
 
 	std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
-	return m_drive.ReadSectorAudioOnly(farLBA, buf.data());
+	bool ok = m_drive.ReadSectorAudioOnly(farLBA, buf.data());
+
+	// Brief settle time so the laser assembly isn't stressed by rapid seeks
+	Sleep(10);
+
+	return ok;
 }
 
 uint32_t AudioCDCopier::HashSector(const BYTE* data, int size) {
