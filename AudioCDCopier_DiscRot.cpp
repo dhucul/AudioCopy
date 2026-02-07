@@ -165,7 +165,7 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 
 	AnalyzeErrorPatterns(errorLBAs, result);
 
-	result.rotRiskLevel = AssessRotRisk(result);
+	result.rotRiskLevel = AssessRotRisk(result); // redundant — same result, called twice
 
 	if (result.rotRiskLevel == "NONE") {
 		result.recommendation = "Disc appears healthy. Store properly to prevent future damage.";

@@ -69,18 +69,20 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 			std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
 			int c2Errors = 0;
 
-			size_t secIdx = 0;
-			if (lba >= firstLBA) {
-				secIdx = static_cast<size_t>((lba - firstLBA) / 75);
-			}
+			// Use audio-relative sector count for indexing to handle
+			// mixed-mode discs with non-audio gaps between tracks
+			size_t secIdx = static_cast<size_t>(scannedSectors / 75);
 			if (secIdx >= result.perSecondC2.size())
 				secIdx = result.perSecondC2.size() - 1;
+
+			// Record the starting LBA for each time bucket
+			if (scannedSectors % 75 == 0)
+				result.perSecondC2[secIdx].first = static_cast<int>(lba);
 
 			if (m_drive.ReadSectorWithC2Ex(lba, buf.data(), nullptr, c2Errors, nullptr, c2Opts)) {
 				if (c2Errors > 0) {
 					result.totalC2Errors += c2Errors;
 					result.totalC2Sectors++;
-					result.perSecondC2[secIdx].first = static_cast<int>(firstLBA + secIdx * 75);
 					result.perSecondC2[secIdx].second += c2Errors;
 
 					if (c2Errors > result.maxC2InSingleSector) {
@@ -120,7 +122,7 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 	for (size_t i = 0; i < result.perSecondC2.size(); i++) {
 		if (result.perSecondC2[i].second > result.maxC2PerSecond) {
 			result.maxC2PerSecond = result.perSecondC2[i].second;
-			result.worstSecondLBA = static_cast<int>(firstLBA + static_cast<DWORD>(i * 75));
+			result.worstSecondLBA = result.perSecondC2[i].first;
 		}
 	}
 
@@ -145,6 +147,18 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 	bool blerPass = result.avgC2PerSecond < 220.0;
 	std::cout << "  Avg C2/sec:       " << std::fixed << std::setprecision(2) << result.avgC2PerSecond;
 	std::cout << (blerPass ? "  [PASS]" : "  [FAIL]") << "  (limit: 220/sec)\n";
+	std::cout << "  Max C2/sec:       " << result.maxC2PerSecond;
+	if (result.maxC2PerSecond > 0) {
+		int worstMin = (result.worstSecondLBA / 75) / 60;
+		int worstSec = (result.worstSecondLBA / 75) % 60;
+		std::cout << "  at " << worstMin << ":" << std::setfill('0') << std::setw(2) << worstSec << std::setfill(' ');
+	}
+	std::cout << "\n";
+
+	std::cout << "\n--- C2 Error Assessment ---\n";
+	bool c2Pass = result.avgC2PerSecond < 1.0;
+	std::cout << "  Avg C2/sec:       " << std::fixed << std::setprecision(2) << result.avgC2PerSecond;
+	std::cout << (c2Pass ? "  [PASS]" : "  [FAIL]") << "  (limit: <1.0/sec for good quality)\n";
 	std::cout << "  Max C2/sec:       " << result.maxC2PerSecond;
 	if (result.maxC2PerSecond > 0) {
 		int worstMin = (result.worstSecondLBA / 75) / 60;
@@ -179,7 +193,7 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 		int trackC2 = 0;
 		int trackC2Sectors = 0;
 		for (size_t i = 0; i < result.perSecondC2.size(); i++) {
-			DWORD secLBA = firstLBA + static_cast<DWORD>(i * 75);
+			DWORD secLBA = static_cast<DWORD>(result.perSecondC2[i].first);
 			if (secLBA >= tStart && secLBA <= tEnd && result.perSecondC2[i].second > 0) {
 				trackC2 += result.perSecondC2[i].second;
 				trackC2Sectors++;
