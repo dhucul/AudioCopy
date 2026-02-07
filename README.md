@@ -1,3 +1,4 @@
+Other copiers have lead the way. But other copiers have had their day. Try the new AudioCopy written from scratch.
 # AudioCopy
 
 A Windows command-line tool for high-quality audio CD ripping with advanced disc diagnostics, written in C++.
