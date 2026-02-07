@@ -136,6 +136,22 @@ private:
 	uint32_t HashSector(const BYTE* data, int size);
 	uint32_t CalculateSectorHash(const BYTE* data);
 
+	// C2 scan helpers
+	DWORD CalculateTotalAudioSectors(const DiscInfo& disc) const;
+	ScsiDrive::C2ReadOptions BuildC2ReadOptions(int sensitivity, bool& useConditionalMultiPass) const;
+	bool RunC2ScanPass1(const DiscInfo& disc, const ScsiDrive::C2ReadOptions& c2Opts,
+		DWORD totalSectors, std::vector<std::pair<DWORD, int>>& errorSectors,
+		std::vector<DWORD>& pass1ErrorLBAs, int& totalC2Errors, DWORD& scannedSectors);
+	void RunConditionalC2ReRead(const ScsiDrive::C2ReadOptions& c2Opts, int sensitivity,
+		std::vector<std::pair<DWORD, int>>& errorSectors, std::vector<DWORD>& pass1ErrorLBAs,
+		int& totalC2Errors);
+	void RunDualSpeedValidation(const DiscInfo& disc, const std::vector<std::pair<DWORD, int>>& errorSectors,
+		int totalC2Errors, int scanSpeed);
+	void PrintC2ScanReport(const DiscInfo& disc, int sensitivity, int scanSpeed,
+		const ScsiDrive::C2ReadOptions& c2Opts, bool useConditionalMultiPass,
+		const std::vector<std::pair<DWORD, int>>& errorSectors,
+		const std::vector<DWORD>& pass1ErrorLBAs, DWORD scannedSectors);
+
 	// Disc rot analysis helpers
 	void ClassifyZone(DWORD lba, DWORD firstLBA, DWORD lastLBA, int c2Errors, DiscZoneStats& zones);
 	void DetectErrorClusters(const std::vector<DWORD>& errorLBAs, std::vector<ErrorCluster>& clusters);
