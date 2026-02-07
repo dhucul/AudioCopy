@@ -236,34 +236,187 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 
 	m_drive.SetSpeed(0);
 
-	// FIX 5: Report the refined total (updated by Pass 2 if it ran)
-	std::cout << "\n=== C2 Scan Results ===\n";
-	std::cout << "Sectors scanned: " << scannedSectors << "\n";
+	// =========================================================================
+	// DETAILED C2 SCAN REPORT
+	// =========================================================================
+	std::cout << "\n" << std::string(60, '=') << "\n";
+	std::cout << "              C2 ERROR SCAN REPORT\n";
+	std::cout << std::string(60, '=') << "\n";
 
-	if (errorSectors.empty()) {
-		std::cout << "\n*** DISC IS CLEAN - No C2 errors detected! ***\n";
+	// Scan configuration
+	const char* modeNames[] = { "Default", "Standard", "PlexTools (cache defeat)",
+								"PlexTools (multi-pass)", "Paranoid" };
+	std::cout << "\n--- Scan Configuration ---\n";
+	std::cout << "  Mode:       " << modeNames[sensitivity] << "\n";
+	std::cout << "  Speed:      " << (scanSpeed == 0 ? "Max" : std::to_string(scanSpeed) + "x") << "\n";
+	if (sensitivity == 3)
+		std::cout << "  Multi-pass: " << c2Opts.passCount << " passes with cache defeat\n";
+	else if (useConditionalMultiPass)
+		std::cout << "  Verify:     Re-read error sectors with cache defeat\n";
+
+	// Count totals from final errorSectors data
+	int finalErrorSectors = 0;
+	int finalReadFailures = 0;
+	int finalC2Total = 0;
+	int maxC2InSector = 0;
+	DWORD worstLBA = 0;
+	for (const auto& p : errorSectors) {
+		if (p.second > 0) {
+			finalErrorSectors++;
+			finalC2Total += p.second;
+			if (p.second > maxC2InSector) {
+				maxC2InSector = p.second;
+				worstLBA = p.first;
+			}
+		}
+		else if (p.second == -1) {
+			finalReadFailures++;
+		}
+	}
+
+	// Overall results
+	std::cout << "\n--- Overall Results ---\n";
+	std::cout << "  Sectors scanned:      " << scannedSectors << "\n";
+	std::cout << "  Sectors with C2:      " << finalErrorSectors;
+	if (scannedSectors > 0)
+		std::cout << " (" << std::fixed << std::setprecision(3)
+		<< (finalErrorSectors * 100.0 / scannedSectors) << "%)";
+	std::cout << "\n";
+	std::cout << "  Read failures:        " << finalReadFailures << "\n";
+	std::cout << "  Total C2 errors:      " << finalC2Total << "\n";
+	if (maxC2InSector > 0)
+		std::cout << "  Worst sector:         LBA " << worstLBA << " (" << maxC2InSector << " errors)\n";
+	if (scannedSectors > 0)
+		std::cout << "  Error rate:           " << std::fixed << std::setprecision(2)
+		<< (finalC2Total * 1000.0 / scannedSectors) << " errors/1000 sectors\n";
+	if (useConditionalMultiPass)
+		std::cout << "  Multi-pass verified:  " << pass1ErrorLBAs.size() << " sectors re-read\n";
+
+	// Per-track breakdown
+	std::cout << "\n--- Per-Track Breakdown ---\n";
+	std::cout << "  Track  Sectors   C2 Errors  Error Sectors  Quality\n";
+	std::cout << "  " << std::string(55, '-') << "\n";
+	for (const auto& t : disc.tracks) {
+		if (!t.isAudio) continue;
+		DWORD tStart = (t.trackNumber == 1) ? 0 : t.pregapLBA;
+		DWORD tEnd = t.endLBA;
+		DWORD tSectors = tEnd - tStart + 1;
+
+		int trackC2 = 0;
+		int trackErrorSectors = 0;
+		int trackFailures = 0;
+		for (const auto& p : errorSectors) {
+			if (p.first >= tStart && p.first <= tEnd) {
+				if (p.second > 0) {
+					trackC2 += p.second;
+					trackErrorSectors++;
+				}
+				else if (p.second == -1) {
+					trackFailures++;
+				}
+			}
+		}
+
+		const char* quality = "Perfect";
+		if (trackFailures > 0) quality = "BAD";
+		else if (trackC2 > 50) quality = "Poor";
+		else if (trackC2 > 10) quality = "Fair";
+		else if (trackC2 > 0) quality = "Good";
+
+		std::cout << "  " << std::setw(3) << t.trackNumber << "    "
+			<< std::setw(7) << tSectors << "   "
+			<< std::setw(7) << trackC2 << "     "
+			<< std::setw(7) << trackErrorSectors;
+		if (trackFailures > 0)
+			std::cout << " (+" << trackFailures << " fail)";
+		std::cout << "     " << quality << "\n";
+	}
+
+	// Top worst sectors (up to 10)
+	if (!errorSectors.empty()) {
+		// Sort a copy by error count descending
+		auto sorted = errorSectors;
+		std::sort(sorted.begin(), sorted.end(),
+			[](const std::pair<DWORD, int>& a, const std::pair<DWORD, int>& b) {
+				return a.second > b.second;
+			});
+
+		int showCount = std::min(10, static_cast<int>(sorted.size()));
+		std::cout << "\n--- Top " << showCount << " Worst Sectors ---\n";
+		for (int i = 0; i < showCount; i++) {
+			DWORD lba = sorted[i].first;
+			int errs = sorted[i].second;
+
+			// Find which track this belongs to
+			int trackNum = 0;
+			for (const auto& t : disc.tracks) {
+				DWORD tStart = (t.trackNumber == 1) ? 0 : t.pregapLBA;
+				if (lba >= tStart && lba <= t.endLBA) { trackNum = t.trackNumber; break; }
+			}
+
+			if (errs == -1)
+				std::cout << "  LBA " << std::setw(8) << lba << "  (Track " << std::setw(2) << trackNum << ")  READ FAILURE\n";
+			else
+				std::cout << "  LBA " << std::setw(8) << lba << "  (Track " << std::setw(2) << trackNum << ")  " << errs << " C2 errors\n";
+		}
+	}
+
+	// Error distribution across disc zones
+	if (finalErrorSectors > 0 || finalReadFailures > 0) {
+		DWORD firstLBA = 0, lastLBA = 0;
+		for (const auto& t : disc.tracks) {
+			if (t.isAudio) {
+				DWORD s = (t.trackNumber == 1) ? 0 : t.pregapLBA;
+				if (firstLBA == 0) firstLBA = s;
+				lastLBA = t.endLBA;
+			}
+		}
+		DWORD range = lastLBA - firstLBA;
+		int innerErrs = 0, middleErrs = 0, outerErrs = 0;
+		for (const auto& p : errorSectors) {
+			if (p.second == 0) continue;
+			double pct = range > 0 ? static_cast<double>(p.first - firstLBA) / range : 0;
+			if (pct < 0.33) innerErrs++;
+			else if (pct < 0.66) middleErrs++;
+			else outerErrs++;
+		}
+		int totalErrs = innerErrs + middleErrs + outerErrs;
+
+		std::cout << "\n--- Error Distribution ---\n";
+		std::cout << "  Inner  (0-33%):   " << std::setw(4) << innerErrs << " error sectors";
+		if (totalErrs > 0 && innerErrs * 100 / totalErrs > 50) std::cout << "  << concentration";
+		std::cout << "\n";
+		std::cout << "  Middle (33-66%):  " << std::setw(4) << middleErrs << " error sectors\n";
+		std::cout << "  Outer  (66-100%): " << std::setw(4) << outerErrs << " error sectors";
+		if (totalErrs > 0 && outerErrs * 100 / totalErrs > 50) std::cout << "  << concentration";
+		std::cout << "\n";
+	}
+
+	// Quality assessment
+	std::cout << "\n" << std::string(60, '-') << "\n";
+	std::cout << "  QUALITY: ";
+	if (finalReadFailures > 0) {
+		std::cout << "BAD - Unreadable sectors detected\n";
+		std::cout << "  Recommendation: Rip with secure mode (Paranoid). Some data may be lost.\n";
+	}
+	else if (finalErrorSectors == 0) {
+		std::cout << "PERFECT - No C2 errors detected\n";
+		std::cout << "  Disc reads cleanly. Standard rip mode is sufficient.\n";
+	}
+	else if (finalC2Total < 20 && finalErrorSectors < 5) {
+		std::cout << "GOOD - Minor C2 errors, fully correctable\n";
+		std::cout << "  Standard rip mode should produce a perfect copy.\n";
+	}
+	else if (finalC2Total < 200 && finalReadFailures == 0) {
+		std::cout << "FAIR - Moderate C2 errors detected\n";
+		std::cout << "  Recommend secure rip mode for best results.\n";
 	}
 	else {
-		// Recount to get accurate final total
-		int finalErrorSectors = 0;
-		int finalC2Total = 0;
-		for (const auto& p : errorSectors) {
-			if (p.second > 0) {
-				finalErrorSectors++;
-				finalC2Total += p.second;
-			}
-			else if (p.second == -1) {
-				finalErrorSectors++;  // Read failure still counts
-			}
-		}
-
-		std::cout << "\n*** ERRORS DETECTED ***\n";
-		std::cout << "Sectors with errors: " << finalErrorSectors << "\n";
-		std::cout << "Total C2 errors: " << finalC2Total << "\n";
-		if (useConditionalMultiPass) {
-			std::cout << "Multi-pass verification: ENABLED\n";
-		}
+		std::cout << "POOR - Significant C2 errors\n";
+		std::cout << "  Use Paranoid rip mode. Consider cleaning the disc.\n";
 	}
+	std::cout << std::string(60, '=') << "\n";
+
 	return true;
 }
 
@@ -1172,15 +1325,109 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 	else if (result.avgC2PerSecond < 10.0 && result.consecutiveErrorSectors < 10) result.qualityRating = "ACCEPTABLE";
 	else result.qualityRating = "POOR";
 
-	std::cout << "\n=== BLER Scan Results ===\n";
-	std::cout << "C2 errors: " << result.totalC2Errors << " bits in " << result.totalC2Sectors << " sectors\n";
-	std::cout << "Read failures: " << result.totalReadFailures << "\n";
-	std::cout << "Avg C2/sec: " << std::fixed << std::setprecision(2) << result.avgC2PerSecond << "\n";
-	std::cout << "Max C2 in single sector: " << result.maxC2InSingleSector;
-	if (result.maxC2InSingleSector > 0) std::cout << " (LBA " << result.worstSectorLBA << ")";
+	// =========================================================================
+	// DETAILED BLER SCAN REPORT
+	// =========================================================================
+	std::cout << "\n" << std::string(60, '=') << "\n";
+	std::cout << "              BLER QUALITY SCAN REPORT\n";
+	std::cout << std::string(60, '=') << "\n";
+
+	std::cout << "\n--- Scan Configuration ---\n";
+	std::cout << "  Speed:           " << (scanSpeed == 0 ? "Max" : std::to_string(scanSpeed) + "x") << "\n";
+	std::cout << "  Sectors scanned: " << scannedSectors << "\n";
+	std::cout << "  Disc length:     "
+		<< (result.totalSeconds / 60) << ":" << std::setfill('0') << std::setw(2) << (result.totalSeconds % 60)
+		<< std::setfill(' ') << " (mm:ss)\n";
+
+	// Red Book compliance
+	std::cout << "\n--- Red Book Compliance ---\n";
+	bool blerPass = result.avgC2PerSecond < 220.0;
+	std::cout << "  Avg C2/sec:       " << std::fixed << std::setprecision(2) << result.avgC2PerSecond;
+	std::cout << (blerPass ? "  [PASS]" : "  [FAIL]") << "  (limit: 220/sec)\n";
+	std::cout << "  Max C2/sec:       " << result.maxC2PerSecond;
+	if (result.maxC2PerSecond > 0) {
+		int worstMin = (result.worstSecondLBA / 75) / 60;
+		int worstSec = (result.worstSecondLBA / 75) % 60;
+		std::cout << "  at " << worstMin << ":" << std::setfill('0') << std::setw(2) << worstSec << std::setfill(' ');
+	}
 	std::cout << "\n";
-	std::cout << "Longest error run: " << result.consecutiveErrorSectors << " sectors\n";
-	std::cout << "Quality: " << result.qualityRating << "\n";
+
+	// Overall statistics
+	std::cout << "\n--- Error Statistics ---\n";
+	std::cout << "  Total C2 errors:      " << result.totalC2Errors << "\n";
+	std::cout << "  Sectors with C2:      " << result.totalC2Sectors;
+	if (result.totalSectors > 0)
+		std::cout << " (" << std::fixed << std::setprecision(3)
+		<< (result.totalC2Sectors * 100.0 / result.totalSectors) << "%)";
+	std::cout << "\n";
+	std::cout << "  Read failures:        " << result.totalReadFailures << "\n";
+	std::cout << "  Max C2 in one sector: " << result.maxC2InSingleSector;
+	if (result.maxC2InSingleSector > 0) std::cout << "  (LBA " << result.worstSectorLBA << ")";
+	std::cout << "\n";
+	std::cout << "  Longest error run:    " << result.consecutiveErrorSectors << " sectors\n";
+
+	// Per-track error summary
+	std::cout << "\n--- Per-Track Summary ---\n";
+	std::cout << "  Track  Length     C2 Errors  Sectors  Avg/sec   Status\n";
+	std::cout << "  " << std::string(58, '-') << "\n";
+	for (const auto& t : disc.tracks) {
+		if (!t.isAudio) continue;
+		DWORD tStart = (t.trackNumber == 1) ? 0 : t.pregapLBA;
+		DWORD tEnd = t.endLBA;
+		DWORD tSectors = tEnd - tStart + 1;
+		DWORD tSeconds = (tSectors + 74) / 75;
+
+		int trackC2 = 0;
+		int trackC2Sectors = 0;
+		for (size_t i = 0; i < result.perSecondC2.size(); i++) {
+			DWORD secLBA = firstLBA + static_cast<DWORD>(i * 75);
+			if (secLBA >= tStart && secLBA <= tEnd && result.perSecondC2[i].second > 0) {
+				trackC2 += result.perSecondC2[i].second;
+				trackC2Sectors++;
+			}
+		}
+
+		double trackAvg = tSeconds > 0 ? static_cast<double>(trackC2) / tSeconds : 0;
+		int trackMin = tSeconds / 60;
+		int trackSec = tSeconds % 60;
+
+		const char* status = "Perfect";
+		if (trackC2 > 100) status = "Poor";
+		else if (trackC2 > 20) status = "Fair";
+		else if (trackC2 > 0) status = "Good";
+
+		std::cout << "  " << std::setw(3) << t.trackNumber << "    "
+			<< trackMin << ":" << std::setfill('0') << std::setw(2) << trackSec << std::setfill(' ') << "   "
+			<< std::setw(7) << trackC2 << "     "
+			<< std::setw(4) << trackC2Sectors << "     "
+			<< std::fixed << std::setprecision(1) << std::setw(6) << trackAvg << "  "
+			<< status << "\n";
+	}
+
+	// Error distribution graph
+	PrintBlerGraph(result);
+
+	// Quality verdict
+	std::cout << "\n" << std::string(60, '-') << "\n";
+	std::cout << "  QUALITY: " << result.qualityRating << "\n";
+
+	if (result.qualityRating == "EXCELLENT") {
+		std::cout << "  No C2 errors. Disc is in excellent condition.\n";
+	}
+	else if (result.qualityRating == "GOOD") {
+		std::cout << "  Minor errors within acceptable limits. Disc is safe to rip.\n";
+	}
+	else if (result.qualityRating == "ACCEPTABLE") {
+		std::cout << "  Moderate error rate. Recommend secure rip mode.\n";
+	}
+	else if (result.qualityRating == "POOR") {
+		std::cout << "  High error rate. Use Paranoid rip mode. Consider cleaning disc.\n";
+	}
+	else {
+		std::cout << "  Read failures detected. Some data may be unrecoverable.\n";
+	}
+	std::cout << std::string(60, '=') << "\n";
+
 	return true;
 }
 
@@ -1412,60 +1659,162 @@ std::string AudioCDCopier::AssessRotRisk(const DiscRotAnalysis& result) {
 }
 
 void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& result) {
-	std::cout << "\n" << std::string(50, '=') << "\n";
-	std::cout << "          DISC ROT ANALYSIS REPORT\n";
-	std::cout << std::string(50, '=') << "\n\n";
+	std::cout << "\n" << std::string(60, '=') << "\n";
+	std::cout << "            DISC ROT ANALYSIS REPORT\n";
+	std::cout << std::string(60, '=') << "\n";
 
-	std::cout << "=== Zone Error Distribution ===\n";
+	// Zone error distribution with visual bars
+	std::cout << "\n--- Zone Error Distribution ---\n";
 	std::cout << std::fixed << std::setprecision(2);
-	std::cout << "  Inner zone  (0-33%):  " << std::setw(6) << result.zones.InnerErrorRate()
-		<< "% errors (" << result.zones.innerErrors << "/" << result.zones.innerSectors << ")\n";
-	std::cout << "  Middle zone (33-66%): " << std::setw(6) << result.zones.MiddleErrorRate()
-		<< "% errors (" << result.zones.middleErrors << "/" << result.zones.middleSectors << ")\n";
-	std::cout << "  Outer zone  (66-100%):" << std::setw(6) << result.zones.OuterErrorRate()
-		<< "% errors (" << result.zones.outerErrors << "/" << result.zones.outerSectors << ")\n";
 
-	std::cout << "\n=== Read Consistency ===\n";
-	std::cout << "  Sectors tested: " << result.totalRereadTests << "\n";
-	std::cout << "  Inconsistent reads: " << result.inconsistentSectors
-		<< " (" << std::setprecision(1) << result.inconsistencyRate << "%)\n";
+	double innerRate = result.zones.InnerErrorRate();
+	double middleRate = result.zones.MiddleErrorRate();
+	double outerRate = result.zones.OuterErrorRate();
+	double maxRate = std::max({ innerRate, middleRate, outerRate, 0.01 });
 
-	std::cout << "\n=== Detected Patterns ===\n";
-	std::cout << "  Edge concentration:    " << (result.edgeConcentration ? "YES (typical of disc rot)" : "No") << "\n";
-	std::cout << "  Progressive degradation:" << (result.progressivePattern ? "YES (spreading damage)" : "No") << "\n";
-	std::cout << "  Pinhole pattern:       " << (result.pinholePattern ? "YES (scattered micro-damage)" : "No") << "\n";
-	std::cout << "  Read instability:      " << (result.readInstability ? "YES (unstable surface)" : "No") << "\n";
+	auto drawBar = [&](double rate) {
+		int len = static_cast<int>(rate / maxRate * 20);
+		for (int i = 0; i < len; i++) std::cout << '#';
+		for (int i = len; i < 20; i++) std::cout << ' ';
+	};
 
-	std::cout << "\n=== Error Clusters ===\n";
-	std::cout << "  Total clusters found: " << result.clusters.size() << "\n";
-	if (!result.clusters.empty()) {
+	std::cout << "  Inner  (0-33%):   ";
+	drawBar(innerRate);
+	std::cout << " " << std::setw(6) << innerRate << "%  (" << result.zones.innerErrors << "/" << result.zones.innerSectors << ")\n";
+
+	std::cout << "  Middle (33-66%):  ";
+	drawBar(middleRate);
+	std::cout << " " << std::setw(6) << middleRate << "%  (" << result.zones.middleErrors << "/" << result.zones.middleSectors << ")\n";
+
+	std::cout << "  Outer  (66-100%): ";
+	drawBar(outerRate);
+	std::cout << " " << std::setw(6) << outerRate << "%  (" << result.zones.outerErrors << "/" << result.zones.outerSectors << ")\n";
+
+	// Zone interpretation
+	if (outerRate > innerRate * 2 && outerRate > 0.5) {
+		std::cout << "  >> Outer edge has significantly more errors (typical of disc rot)\n";
+	}
+	else if (innerRate > outerRate * 2 && innerRate > 0.5) {
+		std::cout << "  >> Inner hub area has more errors (possible hub cracking)\n";
+	}
+
+	// Read consistency
+	std::cout << "\n--- Read Consistency ---\n";
+	std::cout << "  Sectors tested:       " << result.totalRereadTests << "\n";
+	std::cout << "  Inconsistent reads:   " << result.inconsistentSectors;
+	if (result.totalRereadTests > 0) {
+		std::cout << " (" << std::setprecision(1) << result.inconsistencyRate << "%)";
+	}
+	std::cout << "\n";
+	if (result.inconsistencyRate > 5.0)
+		std::cout << "  >> HIGH instability: disc surface is deteriorating\n";
+	else if (result.inconsistencyRate > 1.0)
+		std::cout << "  >> Moderate instability: early signs of degradation\n";
+	else if (result.totalRereadTests > 0)
+		std::cout << "  >> Reads are consistent\n";
+
+	// Degradation pattern analysis
+	std::cout << "\n--- Degradation Pattern Analysis ---\n";
+	int patternsDetected = 0;
+
+	std::cout << "  Edge concentration:     ";
+	if (result.edgeConcentration) {
+		std::cout << "YES - Errors cluster at disc edges\n";
+		std::cout << "                            Typical cause: oxidation of reflective layer\n";
+		patternsDetected++;
+	}
+	else std::cout << "No\n";
+
+	std::cout << "  Progressive degradation:";
+	if (result.progressivePattern) {
+		std::cout << " YES - Error rate increases toward outer edge\n";
+		std::cout << "                            Typical cause: spreading chemical breakdown\n";
+		patternsDetected++;
+	}
+	else std::cout << " No\n";
+
+	std::cout << "  Pinhole pattern:        ";
+	if (result.pinholePattern) {
+		std::cout << "YES - Scattered small damage clusters\n";
+		std::cout << "                            Typical cause: micro-pitting of lacquer layer\n";
+		patternsDetected++;
+	}
+	else std::cout << "No\n";
+
+	std::cout << "  Read instability:       ";
+	if (result.readInstability) {
+		std::cout << "YES - Sectors return different data on re-read\n";
+		std::cout << "                            Typical cause: advanced surface degradation\n";
+		patternsDetected++;
+	}
+	else std::cout << "No\n";
+
+	if (patternsDetected == 0)
+		std::cout << "\n  No degradation patterns detected.\n";
+
+	// Error clusters
+	std::cout << "\n--- Error Clusters ---\n";
+	if (result.clusters.empty()) {
+		std::cout << "  No significant error clusters found.\n";
+	}
+	else {
+		std::cout << "  Total clusters:   " << result.clusters.size() << "\n";
+
 		int largest = 0;
+		DWORD largestStart = 0;
 		for (const auto& c : result.clusters) {
-			if (c.size() > largest) largest = c.size();
-		}
-		std::cout << "  Largest cluster: " << largest << " sectors\n";
-
-		if (result.clusters.size() <= 5) {
-			std::cout << "  Cluster locations:\n";
-			for (const auto& c : result.clusters) {
-				std::cout << "    LBA " << c.startLBA << "-" << c.endLBA
-					<< " (" << c.size() << " sectors, " << c.errorCount << " errors)\n";
+			if (c.size() > largest) {
+				largest = c.size();
+				largestStart = c.startLBA;
 			}
+		}
+		std::cout << "  Largest cluster:  " << largest << " sectors (starting at LBA " << largestStart << ")\n";
+
+		// Show up to 8 clusters
+		int shown = 0;
+		std::cout << "\n  Start LBA    End LBA    Size      Errors   Density\n";
+		std::cout << "  " << std::string(55, '-') << "\n";
+		for (const auto& c : result.clusters) {
+			if (shown++ >= 8) {
+				std::cout << "  ... and " << (result.clusters.size() - 8) << " more clusters\n";
+				break;
+			}
+			double density = c.size() > 0 ? static_cast<double>(c.errorCount) / c.size() * 100.0 : 0;
+			std::cout << "  " << std::setw(9) << c.startLBA
+				<< "  " << std::setw(9) << c.endLBA
+				<< "  " << std::setw(5) << c.size() << " sec"
+				<< "  " << std::setw(5) << c.errorCount
+				<< "    " << std::fixed << std::setprecision(0) << std::setw(3) << density << "%\n";
 		}
 	}
 
-	std::cout << "\n" << std::string(50, '=') << "\n";
+	// Risk assessment
+	std::cout << "\n" << std::string(60, '=') << "\n";
 	std::cout << "  DISC ROT RISK: ";
 
-	if (result.rotRiskLevel == "NONE") std::cout << "[OK] ";
-	else if (result.rotRiskLevel == "LOW") std::cout << "[!] ";
-	else if (result.rotRiskLevel == "MODERATE") std::cout << "[!!] ";
-	else if (result.rotRiskLevel == "HIGH") std::cout << "[!!!] ";
-	else std::cout << "[CRITICAL] ";
+	if (result.rotRiskLevel == "NONE") {
+		std::cout << "NONE";
+		std::cout << "\n  No signs of physical deterioration detected.\n";
+	}
+	else if (result.rotRiskLevel == "LOW") {
+		std::cout << "LOW [!]";
+		std::cout << "\n  Minor anomalies found. Disc is still in good condition.\n";
+	}
+	else if (result.rotRiskLevel == "MODERATE") {
+		std::cout << "MODERATE [!!]";
+		std::cout << "\n  Early degradation signs present. Damage may progress over time.\n";
+	}
+	else if (result.rotRiskLevel == "HIGH") {
+		std::cout << "HIGH [!!!]";
+		std::cout << "\n  Significant degradation detected. Data loss is likely without action.\n";
+	}
+	else {
+		std::cout << "CRITICAL [!!!!]";
+		std::cout << "\n  Severe disc damage. Immediate action required.\n";
+	}
 
-	std::cout << result.rotRiskLevel << "\n";
-	std::cout << std::string(50, '=') << "\n";
-	std::cout << "\n  >> " << result.recommendation << "\n\n";
+	std::cout << "\n  >> " << result.recommendation << "\n";
+	std::cout << std::string(60, '=') << "\n";
 }
 
 bool AudioCDCopier::SaveDiscRotLog(const DiscRotAnalysis& result, const std::wstring& filename) {
