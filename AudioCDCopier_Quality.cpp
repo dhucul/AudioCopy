@@ -758,12 +758,9 @@ bool AudioCDCopier::CheckLeadAreas(DiscInfo& disc, int scanSpeed) {
 void AudioCDCopier::GenerateSurfaceMap(DiscInfo& disc, const std::wstring& filename, int scanSpeed) {
 	std::cout << "\n=== Generating Disc Surface Map ===\n";
 	// ... validation code ...
-	m_drive.SetSpeed(scanSpeed);  // <-- USE PARAMETER
+	m_drive.SetSpeed(scanSpeed);
 
-	DWORD totalSectors = 0;
-	for (const auto& t : disc.tracks) {
-		if (t.isAudio) totalSectors += t.endLBA - ((t.trackNumber == 1) ? 0 : t.pregapLBA) + 1;
-	}
+	DWORD totalSectors = CalculateTotalAudioSectors(disc);
 
 	if (totalSectors == 0) {
 		std::cout << "No audio tracks to scan.\n";
@@ -780,12 +777,17 @@ void AudioCDCopier::GenerateSurfaceMap(DiscInfo& disc, const std::wstring& filen
 		mapFile << "LBA,C2_Errors,Status\n";
 	}
 
-	m_drive.SetSpeed(8);
 	ProgressIndicator progress(40);
 	progress.SetLabel("  Surface Scan");
 	progress.Start();
 
+	// Pre-allocate buffer once outside the loop
+	std::vector<BYTE> buf(SECTOR_WITH_C2_SIZE);
 	DWORD scannedSectors = 0;
+	int totalC2Errors = 0;
+	int failedReads = 0;
+	int errorSectors = 0;
+
 	for (const auto& t : disc.tracks) {
 		if (!t.isAudio) continue;
 		DWORD start = (t.trackNumber == 1) ? 0 : t.pregapLBA;
@@ -797,9 +799,11 @@ void AudioCDCopier::GenerateSurfaceMap(DiscInfo& disc, const std::wstring& filen
 				return;
 			}
 
-			std::vector<BYTE> buf(SECTOR_WITH_C2_SIZE);
 			int c2Errors = 0;
 			bool readOk = m_drive.ReadSectorWithC2(lba, buf.data(), nullptr, c2Errors);
+
+			if (!readOk) failedReads++;
+			if (c2Errors > 0) { errorSectors++; totalC2Errors += c2Errors; }
 
 			if (mapFile.is_open()) {
 				mapFile << lba << "," << c2Errors << ","
@@ -814,9 +818,14 @@ void AudioCDCopier::GenerateSurfaceMap(DiscInfo& disc, const std::wstring& filen
 	progress.Finish(true);
 	m_drive.SetSpeed(0);
 
-	std::cout << "Surface map generation complete.\n";
+	std::cout << "\n--- Surface Map Summary ---\n";
+	std::cout << "  Sectors scanned:  " << scannedSectors << "\n";
+	std::cout << "  C2 error sectors: " << errorSectors << "\n";
+	std::cout << "  Total C2 errors:  " << totalC2Errors << "\n";
+	std::cout << "  Read failures:    " << failedReads << "\n";
+
 	if (!filename.empty()) {
-		std::wcout << L"Map saved: " << filename << L"\n";
+		std::wcout << L"  Map saved: " << filename << L"\n";
 	}
 }
 
@@ -1787,13 +1796,13 @@ void AudioCDCopier::PrintDriveCapabilities(const DriveCapabilities& caps) {
 	std::cout << "\n--- Performance ---\n";
 	if (caps.maxReadSpeedKB > 0)
 		std::cout << "  Max Read Speed:        " << caps.maxReadSpeedKB << " KB/s ("
-			<< caps.maxReadSpeedKB / 176 << "x)\n";
+		<< caps.maxReadSpeedKB / 176 << "x)\n";
 	if (caps.currentReadSpeedKB > 0)
 		std::cout << "  Current Read Speed:    " << caps.currentReadSpeedKB << " KB/s ("
-			<< caps.currentReadSpeedKB / 176 << "x)\n";
+		<< caps.currentReadSpeedKB / 176 << "x)\n";
 	if (caps.maxWriteSpeedKB > 0)
 		std::cout << "  Max Write Speed:       " << caps.maxWriteSpeedKB << " KB/s ("
-			<< caps.maxWriteSpeedKB / 176 << "x)\n";
+		<< caps.maxWriteSpeedKB / 176 << "x)\n";
 	else
 		std::cout << "  Max Write Speed:       (read-only drive)\n";
 	if (caps.bufferSizeKB > 0)

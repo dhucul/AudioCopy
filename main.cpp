@@ -159,8 +159,6 @@ int main() {
 			if (speed == -1) break;
 			std::wstring mapFile = dir + L"\\surface_map.txt";
 			copier.GenerateSurfaceMap(disc, mapFile, speed);
-			Console::Success("Surface map saved to: ");
-			std::wcout << mapFile << L"\n";
 			break;
 		}
 
