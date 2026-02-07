@@ -1792,6 +1792,25 @@ void AudioCDCopier::PrintDriveCapabilities(const DriveCapabilities& caps) {
 	std::cout << "  Multi-Session:         " << yn(caps.supportsMultiSession) << "\n";
 	std::cout << "  Disc Changer:          " << yn(caps.isChanger) << "\n";
 
+	// --- Write Capabilities ---
+	bool canWrite = caps.writesCDR || caps.writesCDRW || caps.writesDVD
+		|| caps.writesDVDRAM || caps.writesBD;
+	std::cout << "\n--- Write Capabilities ---\n";
+	if (!canWrite) {
+		std::cout << "  (read-only drive)\n";
+	}
+	else {
+		std::cout << "  Writes CD-R:           " << yn(caps.writesCDR) << "\n";
+		std::cout << "  Writes CD-RW:          " << yn(caps.writesCDRW) << "\n";
+		std::cout << "  Writes DVD:            " << yn(caps.writesDVD) << "\n";
+		std::cout << "  Writes DVD-RAM:        " << yn(caps.writesDVDRAM) << "\n";
+		std::cout << "  Writes BD:             " << yn(caps.writesBD) << "\n";
+		std::cout << "  Test Write (Simulate): " << yn(caps.supportsTestWrite) << "\n";
+		std::cout << "  Buffer Underrun Prot:  " << yn(caps.supportsBufferUnderrunProtection) << "\n";
+		std::cout << "  Write TAO:             " << yn(caps.supportsWriteTAO) << "\n";
+		std::cout << "  Write SAO/DAO:         " << yn(caps.supportsWriteSAO) << "\n";
+	}
+
 	// --- Performance ---
 	std::cout << "\n--- Performance ---\n";
 	if (caps.maxReadSpeedKB > 0)
@@ -1803,8 +1822,13 @@ void AudioCDCopier::PrintDriveCapabilities(const DriveCapabilities& caps) {
 	if (caps.maxWriteSpeedKB > 0)
 		std::cout << "  Max Write Speed:       " << caps.maxWriteSpeedKB << " KB/s ("
 		<< caps.maxWriteSpeedKB / 176 << "x)\n";
+	else if (canWrite)
+		std::cout << "  Max Write Speed:       (not reported)\n";
 	else
 		std::cout << "  Max Write Speed:       (read-only drive)\n";
+	if (caps.currentWriteSpeedKB > 0)
+		std::cout << "  Current Write Speed:   " << caps.currentWriteSpeedKB << " KB/s ("
+		<< caps.currentWriteSpeedKB / 176 << "x)\n";
 	if (caps.bufferSizeKB > 0)
 		std::cout << "  Buffer Size:           " << caps.bufferSizeKB << " KB\n";
 
@@ -1817,55 +1841,121 @@ void AudioCDCopier::PrintDriveCapabilities(const DriveCapabilities& caps) {
 		std::cout << "\n";
 	}
 
-	// --- Media Status ---
-	std::cout << "\n--- Media Status ---\n";
-	std::cout << "  Media Present:         " << yn(caps.mediaPresent) << "\n";
-	if (!caps.currentMediaType.empty())
-		std::cout << "  Media Type:            " << caps.currentMediaType << "\n";
+	if (!caps.supportedWriteSpeeds.empty()) {
+		std::cout << "  Supported Write Speeds:";
+		for (size_t i = 0; i < caps.supportedWriteSpeeds.size(); i++) {
+			if (i > 0) std::cout << ", ";
+			std::cout << caps.supportedWriteSpeeds[i] / 176 << "x";
+		}
+		std::cout << "\n";
+	}
 
-	// --- Ripping Quality Score ---
-	int qualityScore = 0;
-	// Core ripping features (70 points max)
-	if (caps.supportsCDDA)               qualityScore += 15;
-	if (caps.supportsC2ErrorReporting)   qualityScore += 20;
-	if (caps.supportsAccurateStream)     qualityScore += 15;
-	if (caps.supportsRawRead)            qualityScore += 10;
-	if (caps.supportsCDText)             qualityScore += 5;
-	if (caps.supportsSubchannelRaw)      qualityScore += 5;
-	// Advanced features (30 points max)
-	if (caps.supportsOverreadLeadIn)     qualityScore += 10;
-	if (caps.supportsOverreadLeadOut)    qualityScore += 5;
-	if (caps.supportsSubchannelQ)        qualityScore += 5;
-	if (caps.supportsMultiSession)       qualityScore += 5;
-	if (caps.bufferSizeKB >= 512)        qualityScore += 5;
+	// --- Drive Accuracy Rating ---
+	std::cout << "\n--- Drive Accuracy Rating ---\n";
 
-	std::cout << "\n" << std::string(60, '-') << "\n";
-	std::cout << "  RIPPING QUALITY SCORE: " << qualityScore << "/100\n";
+	int ratingScore = 0;
+	constexpr int kMaxScore = 100;
 
-	if (qualityScore >= 90)
-		std::cout << "  Rating: EXCELLENT - Ideal for accurate, bit-perfect ripping\n";
-	else if (qualityScore >= 70)
-		std::cout << "  Rating: VERY GOOD - Handles most ripping tasks well\n";
-	else if (qualityScore >= 50)
-		std::cout << "  Rating: GOOD - Suitable for standard ripping\n";
-	else if (qualityScore >= 30)
-		std::cout << "  Rating: BASIC - Limited accuracy on damaged discs\n";
-	else
-		std::cout << "  Rating: POOR - Not recommended for accurate ripping\n";
+	// CD-DA extraction is mandatory for any audio ripping (30 pts)
+	if (caps.supportsCDDA) {
+		ratingScore += 30;
+		std::cout << "  [+30] CD-DA extraction supported\n";
+	}
+	else {
+		std::cout << "  [  0] CD-DA extraction NOT supported (critical)\n";
+	}
 
-	// Feature recommendations
-	std::cout << "\n--- Recommendations ---\n";
-	if (!caps.supportsC2ErrorReporting)
-		std::cout << "  * No C2 support: cannot detect uncorrectable read errors\n";
-	if (!caps.supportsAccurateStream)
-		std::cout << "  * No Accurate Stream: drive may insert/drop samples during jitter\n";
-	if (!caps.supportsOverreadLeadIn)
-		std::cout << "  * No lead-in overread: first track offset correction may be incomplete\n";
-	if (!caps.supportsRawRead)
-		std::cout << "  * No raw read: limited extraction modes available\n";
-	if (caps.supportsCDDA && caps.supportsC2ErrorReporting && caps.supportsAccurateStream)
-		std::cout << "  * Drive is well-suited for secure ripping with offset correction\n";
+	// Accurate Stream means jitter-free delivery — no re-reads needed (25 pts)
+	if (caps.supportsAccurateStream) {
+		ratingScore += 25;
+		std::cout << "  [+25] Accurate Stream reported\n";
+	}
+	else {
+		std::cout << "  [  0] Accurate Stream NOT reported (will need verification reads)\n";
+	}
 
+	// C2 error reporting enables reliable error detection (20 pts)
+	if (caps.supportsC2ErrorReporting) {
+		ratingScore += 20;
+		std::cout << "  [+20] C2 error reporting supported\n";
+	}
+	else {
+		std::cout << "  [  0] C2 error reporting NOT supported\n";
+	}
+
+	// Overread lead-in/lead-out allows offset correction at disc edges (5+5 pts)
+	if (caps.supportsOverreadLeadIn) {
+		ratingScore += 5;
+		std::cout << "  [+ 5] Overread into lead-in supported\n";
+	}
+	else {
+		std::cout << "  [  0] Overread into lead-in NOT supported\n";
+	}
+	if (caps.supportsOverreadLeadOut) {
+		ratingScore += 5;
+		std::cout << "  [+ 5] Overread into lead-out supported\n";
+	}
+	else {
+		std::cout << "  [  0] Overread into lead-out NOT supported\n";
+	}
+
+	// Raw read support for sector-level access (5 pts)
+	if (caps.supportsRawRead) {
+		ratingScore += 5;
+		std::cout << "  [+ 5] Raw read supported\n";
+	}
+	else {
+		std::cout << "  [  0] Raw read NOT supported\n";
+	}
+
+	// Subchannel support aids metadata verification (3+3 pts)
+	if (caps.supportsSubchannelRaw) {
+		ratingScore += 3;
+		std::cout << "  [+ 3] Raw subchannel read supported\n";
+	}
+	if (caps.supportsSubchannelQ) {
+		ratingScore += 3;
+		std::cout << "  [+ 3] Q-channel de-interleaved read supported\n";
+	}
+
+	// Buffer size bonus: larger cache reduces re-read overhead (up to 4 pts)
+	if (caps.bufferSizeKB >= 2048) {
+		ratingScore += 4;
+		std::cout << "  [+ 4] Large buffer (" << caps.bufferSizeKB << " KB)\n";
+	}
+	else if (caps.bufferSizeKB >= 512) {
+		ratingScore += 2;
+		std::cout << "  [+ 2] Moderate buffer (" << caps.bufferSizeKB << " KB)\n";
+	}
+
+	ratingScore = std::min(ratingScore, kMaxScore);
+
+	const char* grade;
+	const char* summary;
+	if (ratingScore >= 90) {
+		grade = "A+";
+		summary = "Excellent -- ideal for bit-perfect secure ripping.";
+	}
+	else if (ratingScore >= 80) {
+		grade = "A";
+		summary = "Very good -- capable of accurate extraction with C2 or verification reads.";
+	}
+	else if (ratingScore >= 65) {
+		grade = "B";
+		summary = "Good -- usable but may need multi-pass verification for full confidence.";
+	}
+	else if (ratingScore >= 50) {
+		grade = "C";
+		summary = "Fair -- limited accuracy features; use Paranoid rip mode.";
+	}
+	else {
+		grade = "D";
+		summary = "Poor -- not recommended for accurate audio extraction.";
+	}
+
+	std::cout << "\n  Score: " << ratingScore << "/" << kMaxScore
+		<< "  Grade: " << grade << "\n";
+	std::cout << "  " << summary << "\n";
 	std::cout << std::string(60, '=') << "\n";
 }
 
@@ -1900,323 +1990,198 @@ void AudioCDCopier::PrintBlerGraph(const BlerResult& result, int width, int heig
 
 	for (int row = height; row > 0; row--) {
 		int threshold = (maxC2 * row) / height;
-		std::cout << std::setw(6) << threshold << " |";
 		for (int col = 0; col < width; col++) {
 			std::cout << (buckets[col] >= threshold ? '#' : ' ');
 		}
 		std::cout << "\n";
 	}
-	std::cout << "       +";
-	for (int i = 0; i < width; i++) std::cout << '-';
-	std::cout << "\n";
+	std::cout << std::string(width, '-') << "\n";
 }
 
-void AudioCDCopier::ClassifyZone(DWORD lba, DWORD firstLBA, DWORD lastLBA,
-	int c2Errors, DiscZoneStats& zones) {
-	DWORD range = lastLBA - firstLBA;
-	DWORD pos = lba - firstLBA;
-	double pct = range > 0 ? static_cast<double>(pos) / range : 0;
+bool AudioCDCopier::TestReadConsistency(DWORD lba, int passes, int& mismatchCount) {
+	mismatchCount = 0;
+	if (passes < 2) return true;
 
-	if (pct < 0.33) {
-		zones.innerSectors++;
-		if (c2Errors > 0) zones.innerErrors++;
+	std::vector<BYTE> reference(AUDIO_SECTOR_SIZE);
+	if (!m_drive.ReadSectorAudioOnly(lba, reference.data()))
+		return false;
+
+	std::vector<BYTE> compare(AUDIO_SECTOR_SIZE);
+	for (int i = 1; i < passes; i++) {
+		if (!m_drive.ReadSectorAudioOnly(lba, compare.data()))
+			return false;
+		if (memcmp(reference.data(), compare.data(), AUDIO_SECTOR_SIZE) != 0)
+			mismatchCount++;
 	}
-	else if (pct < 0.66) {
+	return true;
+}
+
+void AudioCDCopier::ClassifyZone(DWORD lba, DWORD totalStart, DWORD totalEnd,
+	int hasError, DiscZoneStats& zones) {
+	DWORD range = totalEnd - totalStart;
+	if (range == 0) return;
+
+	DWORD relative = lba - totalStart;
+	double position = static_cast<double>(relative) / range;
+
+	if (position < 0.33) {
+		zones.innerSectors++;
+		zones.innerErrors += hasError;
+	}
+	else if (position < 0.66) {
 		zones.middleSectors++;
-		if (c2Errors > 0) zones.middleErrors++;
+		zones.middleErrors += hasError;
 	}
 	else {
 		zones.outerSectors++;
-		if (c2Errors > 0) zones.outerErrors++;
+		zones.outerErrors += hasError;
 	}
 }
 
 void AudioCDCopier::DetectErrorClusters(const std::vector<DWORD>& errorLBAs,
 	std::vector<ErrorCluster>& clusters) {
+	clusters.clear();
 	if (errorLBAs.empty()) return;
 
-	const int CLUSTER_GAP = 75;
-	ErrorCluster current = { errorLBAs[0], errorLBAs[0], 1 };
+	ErrorCluster current;
+	current.startLBA = errorLBAs[0];
+	current.endLBA = errorLBAs[0];
+	current.errorCount = 1;
 
 	for (size_t i = 1; i < errorLBAs.size(); i++) {
-		if (errorLBAs[i] - current.endLBA <= CLUSTER_GAP) {
+		if (errorLBAs[i] <= current.endLBA + 5) {  // Within 5 sectors = same cluster
 			current.endLBA = errorLBAs[i];
 			current.errorCount++;
 		}
 		else {
-			if (current.errorCount >= 3) {
-				clusters.push_back(current);
-			}
-			current = { errorLBAs[i], errorLBAs[i], 1 };
+			clusters.push_back(current);
+			current.startLBA = errorLBAs[i];
+			current.endLBA = errorLBAs[i];
+			current.errorCount = 1;
 		}
 	}
-	if (current.errorCount >= 3) {
-		clusters.push_back(current);
-	}
-}
-
-bool AudioCDCopier::TestReadConsistency(DWORD lba, int passes, int& inconsistentCount) {
-	std::vector<std::vector<BYTE>> reads(passes);
-	inconsistentCount = 0;
-
-	for (int i = 0; i < passes; i++) {
-		if (i > 0) {
-			DefeatDriveCache(lba, 0);
-		}
-
-		reads[i].resize(AUDIO_SECTOR_SIZE);
-		if (!m_drive.ReadSectorAudioOnly(lba, reads[i].data())) {
-			return false;
-		}
-	}
-
-	for (int i = 1; i < passes; i++) {
-		if (memcmp(reads[0].data(), reads[i].data(), AUDIO_SECTOR_SIZE) != 0) {
-			inconsistentCount++;
-		}
-	}
-
-	return true;
+	clusters.push_back(current);
 }
 
 void AudioCDCopier::AnalyzeErrorPatterns(const std::vector<DWORD>& errorLBAs,
-	DiscRotAnalysis& result) {
-	auto& z = result.zones;
+	DiscRotAnalysis& analysis) {
+	if (errorLBAs.empty()) return;
 
-	double innerRate = z.InnerErrorRate();
-	double middleRate = z.MiddleErrorRate();
-	double outerRate = z.OuterErrorRate();
+	DetectErrorClusters(errorLBAs, analysis.clusters);
 
-	if ((innerRate > middleRate * 2 && innerRate > 1.0) ||
-		(outerRate > middleRate * 2 && outerRate > 1.0)) {
-		result.edgeConcentration = true;
+	// Check for edge concentration (>60% errors in outer zone)
+	if (analysis.zones.outerSectors > 0) {
+		double outerRate = analysis.zones.OuterErrorRate();
+		double innerRate = analysis.zones.InnerErrorRate();
+		analysis.edgeConcentration = (outerRate > innerRate * 2.0) && (outerRate > 1.0);
 	}
 
-	if (outerRate > middleRate * 1.5 && middleRate > innerRate * 1.5) {
-		result.progressivePattern = true;
-	}
+	// Check for progressive pattern (error rate increases inner → outer)
+	analysis.progressivePattern =
+		analysis.zones.InnerErrorRate() < analysis.zones.MiddleErrorRate() &&
+		analysis.zones.MiddleErrorRate() < analysis.zones.OuterErrorRate() &&
+		analysis.zones.OuterErrorRate() > 0.5;
 
-	if (result.inconsistencyRate > 1.0) {
-		result.readInstability = true;
-	}
-
+	// Pinhole pattern: many small clusters
 	int smallClusters = 0;
-	for (const auto& c : result.clusters) {
-		if (c.size() < 75) smallClusters++;
+	for (const auto& c : analysis.clusters) {
+		if (c.size() <= 3) smallClusters++;
 	}
-	if (smallClusters > 5) {
-		result.pinholePattern = true;
-	}
+	analysis.pinholePattern = (smallClusters > 10) &&
+		(smallClusters > static_cast<int>(analysis.clusters.size()) / 2);
+
+	// Read instability
+	analysis.readInstability = analysis.inconsistencyRate > 5.0;
+
+	analysis.rotRiskLevel = AssessRotRisk(analysis);
 }
 
-std::string AudioCDCopier::AssessRotRisk(const DiscRotAnalysis& result) {
-	int riskScore = 0;
+std::string AudioCDCopier::AssessRotRisk(const DiscRotAnalysis& analysis) {
+	int score = 0;
 
-	const auto& z = result.zones;
-	double maxZoneRate = std::max({ z.InnerErrorRate(), z.MiddleErrorRate(), z.OuterErrorRate() });
+	if (analysis.edgeConcentration) score += 25;
+	if (analysis.progressivePattern) score += 25;
+	if (analysis.pinholePattern) score += 15;
+	if (analysis.readInstability) score += 20;
+	if (analysis.inconsistencyRate > 10.0) score += 15;
 
-	if (maxZoneRate > 5.0) riskScore += 3;
-	else if (maxZoneRate > 1.0) riskScore += 2;
-	else if (maxZoneRate > 0.1) riskScore += 1;
-
-	if (result.edgeConcentration) riskScore += 2;
-	if (result.progressivePattern) riskScore += 2;
-	if (result.pinholePattern) riskScore += 1;
-	if (result.readInstability) riskScore += 3;
-
-	if (result.clusters.size() > 10) riskScore += 2;
-	else if (result.clusters.size() > 3) riskScore += 1;
-
-	if (riskScore == 0) return "NONE";
-	else if (riskScore <= 2) return "LOW";
-	else if (riskScore <= 4) return "MODERATE";
-	else if (riskScore <= 6) return "HIGH";
-	else return "CRITICAL";
+	if (score >= 75) return "CRITICAL";
+	if (score >= 50) return "HIGH";
+	if (score >= 30) return "MODERATE";
+	if (score >= 10) return "LOW";
+	return "NONE";
 }
 
-void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& result) {
+void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& analysis) {
 	std::cout << "\n" << std::string(60, '=') << "\n";
-	std::cout << "            DISC ROT ANALYSIS REPORT\n";
+	std::cout << "              DISC ROT ANALYSIS REPORT\n";
 	std::cout << std::string(60, '=') << "\n";
 
-	std::cout << "\n--- Zone Error Distribution ---\n";
-	std::cout << std::fixed << std::setprecision(2);
-
-	double innerRate = result.zones.InnerErrorRate();
-	double middleRate = result.zones.MiddleErrorRate();
-	double outerRate = result.zones.OuterErrorRate();
-	double maxRate = std::max({ innerRate, middleRate, outerRate, 0.01 });
-
-	auto drawBar = [&](double rate) {
-		int len = static_cast<int>(rate / maxRate * 20);
-		for (int i = 0; i < len; i++) std::cout << '#';
-		for (int i = len; i < 20; i++) std::cout << ' ';
-		};
-
-	std::cout << "  Inner  (0-33%):   ";
-	drawBar(innerRate);
-	std::cout << " " << std::setw(6) << innerRate << "%  (" << result.zones.innerErrors << "/" << result.zones.innerSectors << ")\n";
-
-	std::cout << "  Middle (33-66%):  ";
-	drawBar(middleRate);
-	std::cout << " " << std::setw(6) << middleRate << "%  (" << result.zones.middleErrors << "/" << result.zones.middleSectors << ")\n";
-
-	std::cout << "  Outer  (66-100%): ";
-	drawBar(outerRate);
-	std::cout << " " << std::setw(6) << outerRate << "%  (" << result.zones.outerErrors << "/" << result.zones.outerSectors << ")\n";
-
-	if (outerRate > innerRate * 2 && outerRate > 0.5) {
-		std::cout << "  >> Outer edge has significantly more errors (typical of disc rot)\n";
-	}
-	else if (innerRate > outerRate * 2 && innerRate > 0.5) {
-		std::cout << "  >> Inner hub area has more errors (possible hub cracking)\n";
-	}
-
-	std::cout << "\n--- Read Consistency ---\n";
-	std::cout << "  Sectors tested:       " << result.totalRereadTests << "\n";
-	std::cout << "  Inconsistent reads:   " << result.inconsistentSectors;
-	if (result.totalRereadTests > 0) {
-		std::cout << " (" << std::setprecision(1) << result.inconsistencyRate << "%)";
-	}
-	std::cout << "\n";
-	if (result.inconsistencyRate > 5.0)
-		std::cout << "  >> HIGH instability: disc surface is deteriorating\n";
-	else if (result.inconsistencyRate > 1.0)
-		std::cout << "  >> Moderate instability: early signs of degradation\n";
-	else if (result.totalRereadTests > 0)
-		std::cout << "  >> Reads are consistent\n";
-
-	std::cout << "\n--- Degradation Pattern Analysis ---\n";
-	int patternsDetected = 0;
-
-	std::cout << "  Edge concentration:     ";
-	if (result.edgeConcentration) {
-		std::cout << "YES - Errors cluster at disc edges\n";
-		std::cout << "                            Typical cause: oxidation of reflective layer\n";
-		patternsDetected++;
-	}
-	else std::cout << "No\n";
-
-	std::cout << "  Progressive degradation:";
-	if (result.progressivePattern) {
-		std::cout << " YES - Error rate increases toward outer edge\n";
-		std::cout << "                            Typical cause: spreading chemical breakdown\n";
-		patternsDetected++;
-	}
-	else std::cout << " No\n";
-
-	std::cout << "  Pinhole pattern:        ";
-	if (result.pinholePattern) {
-		std::cout << "YES - Scattered small damage clusters\n";
-		std::cout << "                            Typical cause: micro-pitting of lacquer layer\n";
-		patternsDetected++;
-	}
-	else std::cout << "No\n";
-
-	std::cout << "  Read instability:       ";
-	if (result.readInstability) {
-		std::cout << "YES - Sectors return different data on re-read\n";
-		std::cout << "                            Typical cause: advanced surface degradation\n";
-		patternsDetected++;
-	}
-	else std::cout << "No\n";
-
-	if (patternsDetected == 0)
-		std::cout << "\n  No degradation patterns detected.\n";
+	std::cout << "\n--- Zone Error Rates ---\n";
+	std::cout << "  Inner  (0-33%):  " << analysis.zones.InnerErrorRate() << "% ("
+		<< analysis.zones.innerErrors << "/" << analysis.zones.innerSectors << ")\n";
+	std::cout << "  Middle (33-66%): " << analysis.zones.MiddleErrorRate() << "% ("
+		<< analysis.zones.middleErrors << "/" << analysis.zones.middleSectors << ")\n";
+	std::cout << "  Outer  (66-100%):" << analysis.zones.OuterErrorRate() << "% ("
+		<< analysis.zones.outerErrors << "/" << analysis.zones.outerSectors << ")\n";
 
 	std::cout << "\n--- Error Clusters ---\n";
-	if (result.clusters.empty()) {
-		std::cout << "  No significant error clusters found.\n";
-	}
-	else {
-		std::cout << "  Total clusters:   " << result.clusters.size() << "\n";
-
-		int largest = 0;
-		DWORD largestStart = 0;
-		for (const auto& c : result.clusters) {
-			if (c.size() > largest) {
-				largest = c.size();
-				largestStart = c.startLBA;
-			}
-		}
-		std::cout << "  Largest cluster:  " << largest << " sectors (starting at LBA " << largestStart << ")\n";
-
-		int shown = 0;
-		std::cout << "\n  Start LBA    End LBA    Size      Errors   Density\n";
-		std::cout << "  " << std::string(55, '-') << "\n";
-		for (const auto& c : result.clusters) {
-			if (shown++ >= 8) {
-				std::cout << "  ... and " << (result.clusters.size() - 8) << " more clusters\n";
-				break;
-			}
-			double density = c.size() > 0 ? static_cast<double>(c.errorCount) / c.size() * 100.0 : 0;
-			std::cout << "  " << std::setw(9) << c.startLBA
-				<< "  " << std::setw(9) << c.endLBA
-				<< "  " << std::setw(5) << c.size() << " sec"
-				<< "  " << std::setw(5) << c.errorCount
-				<< "    " << std::fixed << std::setprecision(0) << std::setw(3) << density << "%\n";
-		}
+	std::cout << "  Total clusters:  " << analysis.clusters.size() << "\n";
+	if (!analysis.clusters.empty()) {
+		int maxSize = 0;
+		for (const auto& c : analysis.clusters)
+			if (c.size() > maxSize) maxSize = c.size();
+		std::cout << "  Largest cluster: " << maxSize << " sectors\n";
 	}
 
-	std::cout << "\n" << std::string(60, '=') << "\n";
-	std::cout << "  DISC ROT RISK: ";
+	std::cout << "\n--- Disc Rot Indicators ---\n";
+	auto yn = [](bool v) -> const char* { return v ? "YES" : "NO"; };
+	std::cout << "  Edge concentration:    " << yn(analysis.edgeConcentration) << "\n";
+	std::cout << "  Progressive pattern:   " << yn(analysis.progressivePattern) << "\n";
+	std::cout << "  Pinhole pattern:       " << yn(analysis.pinholePattern) << "\n";
+	std::cout << "  Read instability:      " << yn(analysis.readInstability) << "\n";
+	std::cout << "  Inconsistency rate:    " << analysis.inconsistencyRate << "%\n";
 
-	if (result.rotRiskLevel == "NONE") {
-		std::cout << "NONE";
-		std::cout << "\n  No signs of physical deterioration detected.\n";
-	}
-	else if (result.rotRiskLevel == "LOW") {
-		std::cout << "LOW [!]";
-		std::cout << "\n  Minor anomalies found. Disc is still in good condition.\n";
-	}
-	else if (result.rotRiskLevel == "MODERATE") {
-		std::cout << "MODERATE [!!]";
-		std::cout << "\n  Early degradation signs present. Damage may progress over time.\n";
-	}
-	else if (result.rotRiskLevel == "HIGH") {
-		std::cout << "HIGH [!!!]";
-		std::cout << "\n  Significant degradation detected. Back up NOW - data loss likely.\n";
-	}
-	else {
-		std::cout << "CRITICAL [!!!!]";
-		std::cout << "\n  Severe disc damage. Immediate action required.\n";
-	}
+	std::cout << "\n--- Risk Assessment ---\n";
+	std::cout << "  Disc Rot Risk: " << analysis.rotRiskLevel << "\n";
 
-	std::cout << "\n  >> " << result.recommendation << "\n";
+	if (!analysis.recommendation.empty())
+		std::cout << "  Recommendation: " << analysis.recommendation << "\n";
+
 	std::cout << std::string(60, '=') << "\n";
 }
 
-bool AudioCDCopier::SaveDiscRotLog(const DiscRotAnalysis& result, const std::wstring& filename) {
-	std::ofstream log(filename);
-	if (!log) return false;
+bool AudioCDCopier::SaveDiscRotLog(const DiscRotAnalysis& analysis, const std::wstring& path) {
+	FILE* f = nullptr;
+	if (_wfopen_s(&f, path.c_str(), L"w") != 0 || !f)
+		return false;
 
-	log << "DISC ROT ANALYSIS REPORT\n";
-	log << "========================\n\n";
-	log << "Risk Level: " << result.rotRiskLevel << "\n";
-	log << "Recommendation: " << result.recommendation << "\n\n";
+	fprintf(f, "Disc Rot Analysis Report\n");
+	fprintf(f, "========================\n\n");
 
-	log << "Zone Analysis:\n";
-	log << std::fixed << std::setprecision(2);
-	log << "  Inner (0-33%):   " << result.zones.InnerErrorRate() << "% errors\n";
-	log << "  Middle (33-66%): " << result.zones.MiddleErrorRate() << "% errors\n";
-	log << "  Outer (66-100%): " << result.zones.OuterErrorRate() << "% errors\n\n";
+	fprintf(f, "Zone Error Rates:\n");
+	fprintf(f, "  Inner:  %.2f%% (%d/%d)\n", analysis.zones.InnerErrorRate(),
+		analysis.zones.innerErrors, analysis.zones.innerSectors);
+	fprintf(f, "  Middle: %.2f%% (%d/%d)\n", analysis.zones.MiddleErrorRate(),
+		analysis.zones.middleErrors, analysis.zones.middleSectors);
+	fprintf(f, "  Outer:  %.2f%% (%d/%d)\n", analysis.zones.OuterErrorRate(),
+		analysis.zones.outerErrors, analysis.zones.outerSectors);
 
-	log << "Read Consistency:\n";
-	log << "  Tests: " << result.totalRereadTests << "\n";
-	log << "  Inconsistent: " << result.inconsistentSectors << " (" << result.inconsistencyRate << "%)\n\n";
-
-	log << "Patterns Detected:\n";
-	log << "  Edge concentration: " << (result.edgeConcentration ? "Yes" : "No") << "\n";
-	log << "  Progressive pattern: " << (result.progressivePattern ? "Yes" : "No") << "\n";
-	log << "  Pinhole pattern: " << (result.pinholePattern ? "Yes" : "No") << "\n";
-	log << "  Read instability: " << (result.readInstability ? "Yes" : "No") << "\n\n";
-
-	log << "Error Clusters (" << result.clusters.size() << " total):\n";
-	for (const auto& c : result.clusters) {
-		log << "  LBA " << c.startLBA << "-" << c.endLBA
-			<< " (" << c.size() << " sectors)\n";
+	fprintf(f, "\nClusters: %zu\n", analysis.clusters.size());
+	for (size_t i = 0; i < analysis.clusters.size(); i++) {
+		fprintf(f, "  [%zu] LBA %lu-%lu (%d sectors, %d errors)\n", i,
+			analysis.clusters[i].startLBA, analysis.clusters[i].endLBA,
+			analysis.clusters[i].size(), analysis.clusters[i].errorCount);
 	}
 
-	log.close();
+	fprintf(f, "\nIndicators:\n");
+	fprintf(f, "  Edge concentration: %s\n", analysis.edgeConcentration ? "YES" : "NO");
+	fprintf(f, "  Progressive: %s\n", analysis.progressivePattern ? "YES" : "NO");
+	fprintf(f, "  Pinhole: %s\n", analysis.pinholePattern ? "YES" : "NO");
+	fprintf(f, "  Instability: %s (%.2f%%)\n",
+		analysis.readInstability ? "YES" : "NO", analysis.inconsistencyRate);
+	fprintf(f, "\nRisk Level: %s\n", analysis.rotRiskLevel.c_str());
+
+	fclose(f);
 	return true;
 }

@@ -336,8 +336,10 @@ struct DriveCapabilities {
 	int maxReadSpeedKB = 0;                 // KB/sec
 	int maxWriteSpeedKB = 0;                // KB/sec (0 if read-only)
 	int currentReadSpeedKB = 0;             // Current speed setting
+	int currentWriteSpeedKB = 0;            // Current write speed setting
 	int bufferSizeKB = 0;                   // Drive buffer/cache size
 	std::vector<int> supportedReadSpeeds;   // All supported read speeds in KB/s
+	std::vector<int> supportedWriteSpeeds;  // All supported write speeds in KB/s
 
 	// Media types - Read
 	bool readsCDR = false;
@@ -349,6 +351,15 @@ struct DriveCapabilities {
 	bool writesCDR = false;
 	bool writesCDRW = false;
 	bool writesDVD = false;
+	bool writesDVDRAM = false;              // DVD-RAM write support
+	bool writesBD = false;                  // Blu-ray write support
+
+	// Write features
+	bool supportsTestWrite = false;         // Simulation/test mode
+	bool supportsBufferUnderrunProtection = false;  // BUP / Burn-Free
+	bool supportsWriteTAO = false;          // Track-At-Once
+	bool supportsWriteSAO = false;          // Session-At-Once / Disc-At-Once
+	bool supportsWriteRAW = false;          // Raw write mode
 
 	// Current media info
 	bool mediaPresent = false;
