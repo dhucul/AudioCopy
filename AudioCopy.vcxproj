@@ -140,7 +140,10 @@
     <ClCompile Include="AudioCDCopier_TOCReading.cpp" />
     <ClCompile Include="MenuUI.cpp" />
     <ClCompile Include="OffsetCalibration.cpp" />
-    <ClCompile Include="ScsiDrive.cpp" />
+    <ClCompile Include="ScsiDrive.Capabilities.cpp" />
+    <ClCompile Include="ScsiDrive.Core.cpp" />
+    <ClCompile Include="ScsiDrive.Offset.cpp" />
+    <ClCompile Include="ScsiDrive.Read.cpp" />
     <ClCompile Include="• AudioCDCopier_FileOutput.cpp" />
     <ClCompile Include="• AudioCDCopier_Fingerprinting.cpp" />
     <ClCompile Include="• AudioCDCopier_Verification.cpp" />

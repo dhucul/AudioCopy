@@ -17,9 +17,6 @@
     <Filter Include="Source Files\TOC" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ScsiDrive.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="AccurateRip.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -63,6 +60,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="CopyWorkflow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ScsiDrive.Capabilities.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ScsiDrive.Core.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ScsiDrive.Offset.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ScsiDrive.Read.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
