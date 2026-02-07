@@ -39,8 +39,8 @@ ScsiDrive::C2ReadOptions AudioCDCopier::BuildC2ReadOptions(int sensitivity, bool
 		useConditionalMultiPass = true;
 		break;
 	case 3:  // PlexTools-style (multi-pass, NO cache defeat - faster)
-		c2Opts.multiPass = true;
-		c2Opts.passCount = 2;
+		c2Opts.multiPass = false;
+		c2Opts.passCount = 1;
 		c2Opts.countBytes = true;
 		c2Opts.defeatCache = false;
 		useConditionalMultiPass = false;
@@ -393,7 +393,7 @@ void AudioCDCopier::PrintC2ScanReport(const DiscInfo& disc, int sensitivity, int
 		std::cout << "  Standard rip mode should produce a perfect copy.\n";
 	}
 	else if (finalC2Total < 200 && finalReadFailures == 0) {
-		std::cout << "FAIR - Moderate C2 errors detected\n";
+	std::cout << "FAIR - Moderate C2 errors detected\n";
 		std::cout << "  Recommend secure rip mode for best results.\n";
 	}
 	else {
@@ -440,6 +440,10 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 		RunConditionalC2ReRead(c2Opts, sensitivity, errorSectors, pass1ErrorLBAs, totalC2Errors);
 	}
 
+	if (sensitivity == 3) {
+		RunC2ScanPass2Full(disc, c2Opts, totalSectors, errorSectors, totalC2Errors);
+	}
+
 	RunDualSpeedValidation(disc, errorSectors, totalC2Errors, scanSpeed);
 
 	m_drive.SetSpeed(0);
@@ -450,4 +454,65 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 
 bool AudioCDCopier::ValidateC2Accuracy(DWORD testLBA) {
 	return m_drive.ValidateC2Accuracy(testLBA);
+}
+
+void AudioCDCopier::RunC2ScanPass2Full(const DiscInfo& disc, const ScsiDrive::C2ReadOptions& c2Opts,
+	DWORD totalSectors, std::vector<std::pair<DWORD, int>>& errorSectors,
+	int& totalC2Errors) {
+
+	std::cout << "\nPass 2: Full re-scan of " << totalSectors << " sectors...\n";
+
+	ProgressIndicator progress(40);
+	progress.SetLabel("  C2 Scan (Pass 2)");
+	progress.Start();
+
+	DWORD scannedSectors = 0;
+
+	for (const auto& t : disc.tracks) {
+		if (!t.isAudio) continue;
+		DWORD start = (t.trackNumber == 1) ? 0 : t.pregapLBA;
+
+		for (DWORD lba = start; lba <= t.endLBA; lba++) {
+			if (g_interrupt.IsInterrupted() || g_interrupt.CheckEscapeKey()) {
+				g_interrupt.SetInterrupted(true);
+				std::cout << "\n\n*** Scan cancelled by user ***\n";
+				return;
+			}
+
+			std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
+			int c2Errors = 0;
+
+			if (m_drive.ReadSectorWithC2Ex(lba, buf.data(), nullptr, c2Errors, nullptr, c2Opts)) {
+				if (c2Errors > 0) {
+					auto it = std::find_if(errorSectors.begin(), errorSectors.end(),
+						[lba](const std::pair<DWORD, int>& p) { return p.first == lba; });
+
+					if (it != errorSectors.end()) {
+						int oldValue = it->second;
+						if (c2Errors > oldValue) {
+							totalC2Errors += (c2Errors - std::max(0, oldValue));
+							it->second = c2Errors;
+						}
+					}
+					else {
+						errorSectors.push_back({ lba, c2Errors });
+						totalC2Errors += c2Errors;
+					}
+				}
+			}
+			else {
+				auto it = std::find_if(errorSectors.begin(), errorSectors.end(),
+					[lba](const std::pair<DWORD, int>& p) { return p.first == lba; });
+				if (it == errorSectors.end()) {
+					errorSectors.push_back({ lba, -1 });
+				}
+			}
+
+			scannedSectors++;
+			progress.Update(static_cast<int>(scannedSectors), static_cast<int>(totalSectors));
+		}
+	}
+
+	progress.Finish(true);
+	std::cout << "Pass 2 complete.\n";
 }

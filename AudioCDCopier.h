@@ -145,6 +145,9 @@ private:
 	void RunConditionalC2ReRead(const ScsiDrive::C2ReadOptions& c2Opts, int sensitivity,
 		std::vector<std::pair<DWORD, int>>& errorSectors, std::vector<DWORD>& pass1ErrorLBAs,
 		int& totalC2Errors);
+	void RunC2ScanPass2Full(const DiscInfo& disc, const ScsiDrive::C2ReadOptions& c2Opts,
+		DWORD totalSectors, std::vector<std::pair<DWORD, int>>& errorSectors,
+		int& totalC2Errors);
 	void RunDualSpeedValidation(const DiscInfo& disc, const std::vector<std::pair<DWORD, int>>& errorSectors,
 		int totalC2Errors, int scanSpeed);
 	void PrintC2ScanReport(const DiscInfo& disc, int sensitivity, int scanSpeed,
