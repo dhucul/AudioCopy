@@ -26,11 +26,37 @@ int main() {
 
 	Console::Info("Scanning drives...\n");
 	wchar_t audioDrive = 0;
-	std::vector<wchar_t> cdDrives = ScanDrives(audioDrive);
+	std::vector<wchar_t> audioDrives;
+	std::vector<wchar_t> cdDrives = ScanDrives(audioDrives);
 
 	if (cdDrives.empty()) {
 		Console::Error("No CD/DVD drives found!\n");
 		return 1;
+	}
+
+	if (audioDrives.size() == 1) {
+		audioDrive = audioDrives[0];
+	}
+	else if (audioDrives.size() > 1) {
+		Console::Warning("\nMultiple audio CDs detected. Select drive:\n");
+		for (size_t i = 0; i < audioDrives.size(); i++) {
+			HANDLE h = OpenDriveHandle(audioDrives[i]);
+			std::string name = (h != INVALID_HANDLE_VALUE) ? GetDriveName(h) : "CD/DVD drive";
+			int tracks = (h != INVALID_HANDLE_VALUE) ? GetAudioTrackCount(h) : 0;
+			if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
+			std::cout << "  " << (i + 1) << ". [";
+			Console::SetColor(Console::Color::Yellow);
+			std::cout << static_cast<char>(audioDrives[i]) << ":";
+			Console::Reset();
+			std::cout << "] " << name;
+			if (tracks > 0) std::cout << " (" << tracks << " tracks)";
+			std::cout << "\n";
+		}
+		std::cout << "Choice: ";
+		int pick = GetMenuChoice(1, static_cast<int>(audioDrives.size()), 1);
+		std::cin.clear();
+		if (std::cin.peek() == '\n') std::cin.ignore();
+		audioDrive = audioDrives[pick - 1];
 	}
 
 	if (!audioDrive) {
@@ -311,11 +337,37 @@ int main() {
 		case 17: {
 			Console::Info("\nScanning drives...\n");
 			wchar_t newAudioDrive = 0;
-			std::vector<wchar_t> newCdDrives = ScanDrives(newAudioDrive);
+			std::vector<wchar_t> newAudioDrives;
+			std::vector<wchar_t> newCdDrives = ScanDrives(newAudioDrives);
 
 			if (newCdDrives.empty()) {
 				Console::Error("No CD/DVD drives found!\n");
 				break;
+			}
+
+			if (newAudioDrives.size() == 1) {
+				newAudioDrive = newAudioDrives[0];
+			}
+			else if (newAudioDrives.size() > 1) {
+				Console::Warning("\nMultiple audio CDs detected. Select drive:\n");
+				for (size_t i = 0; i < newAudioDrives.size(); i++) {
+					HANDLE h = OpenDriveHandle(newAudioDrives[i]);
+					std::string name = (h != INVALID_HANDLE_VALUE) ? GetDriveName(h) : "CD/DVD drive";
+					int tracks = (h != INVALID_HANDLE_VALUE) ? GetAudioTrackCount(h) : 0;
+					if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
+					std::cout << "  " << (i + 1) << ". [";
+					Console::SetColor(Console::Color::Yellow);
+					std::cout << static_cast<char>(newAudioDrives[i]) << ":";
+					Console::Reset();
+					std::cout << "] " << name;
+					if (tracks > 0) std::cout << " (" << tracks << " tracks)";
+					std::cout << "\n";
+				}
+				std::cout << "Choice: ";
+				int pick = GetMenuChoice(1, static_cast<int>(newAudioDrives.size()), 1);
+				std::cin.clear();
+				if (std::cin.peek() == '\n') std::cin.ignore();
+				newAudioDrive = newAudioDrives[pick - 1];
 			}
 
 			if (!newAudioDrive) {

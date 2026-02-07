@@ -39,7 +39,7 @@ std::string GetDriveName(HANDLE h) {
 				name += part;
 			}
 		}
-	};
+		};
 
 	appendTrimmed(desc->VendorIdOffset);
 	appendTrimmed(desc->ProductIdOffset);
@@ -89,9 +89,9 @@ bool CheckForAudioTracks(HANDLE h) {
 	return count > 0;
 }
 
-std::vector<wchar_t> ScanDrives(wchar_t& audioDrive) {
+std::vector<wchar_t> ScanDrives(std::vector<wchar_t>& audioDrives) {
 	std::vector<wchar_t> cdDrives;
-	audioDrive = 0;
+	audioDrives.clear();
 	DWORD driveMask = GetLogicalDrives();
 
 	for (wchar_t letter = L'A'; letter <= L'Z'; letter++) {
@@ -133,7 +133,7 @@ std::vector<wchar_t> ScanDrives(wchar_t& audioDrive) {
 			Console::SetColor(Console::Color::Green);
 			std::cout << "AUDIO CD (" << audioTracks << " tracks)";
 			Console::Reset();
-			if (!audioDrive) audioDrive = letter;
+			audioDrives.push_back(letter);
 		}
 		else {
 			std::cout << " - Data disc";
