@@ -309,7 +309,43 @@ int main() {
 		}
 
 		case 17: {
-			Console::Info("\nRescanning disc...\n");
+			Console::Info("\nScanning drives...\n");
+			wchar_t newAudioDrive = 0;
+			std::vector<wchar_t> newCdDrives = ScanDrives(newAudioDrive);
+
+			if (newCdDrives.empty()) {
+				Console::Error("No CD/DVD drives found!\n");
+				break;
+			}
+
+			if (!newAudioDrive) {
+				newAudioDrive = WaitForDisc(newCdDrives, 0);
+				if (!newAudioDrive) {
+					Console::Error("No disc selected.\n");
+					break;
+				}
+			}
+
+			if (newAudioDrive != audioDrive) {
+				copier.Close();
+				if (!copier.Open(newAudioDrive)) {
+					Console::Error("Failed to open drive\n");
+					// Try to reopen the original drive
+					if (!copier.Open(audioDrive)) {
+						Console::Error("Failed to reopen original drive\n");
+						return 1;
+					}
+					break;
+				}
+				audioDrive = newAudioDrive;
+				std::cout << "\nSwitched to drive ";
+				Console::SetColor(Console::Color::Yellow);
+				std::cout << static_cast<char>(audioDrive) << ":";
+				Console::Reset();
+				std::cout << "\n";
+			}
+
+			Console::Info("Rescanning disc...\n");
 			disc = DiscInfo{};
 			if (!copier.ReadTOC(disc)) {
 				Console::Error("Failed to read TOC. Is a disc inserted?\n");
