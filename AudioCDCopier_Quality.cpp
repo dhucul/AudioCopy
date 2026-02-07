@@ -23,11 +23,6 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 		return false;
 	}
 
-	// Validate C2 accuracy before scanning
-	if (!m_drive.ValidateC2Accuracy(disc.tracks[0].startLBA)) {
-		std::cout << "WARNING: C2 reporting may be unreliable on this drive.\n";
-	}
-
 	DWORD totalSectors = 0;
 	for (const auto& t : disc.tracks) {
 		if (t.isAudio) {
@@ -39,6 +34,11 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 	if (totalSectors == 0) {
 		std::cout << "No audio tracks to scan.\n";
 		return false;
+	}
+
+	// FIX 1: Validate C2 accuracy AFTER confirming tracks exist
+	if (!m_drive.ValidateC2Accuracy(disc.tracks[0].startLBA)) {
+		std::cout << "WARNING: C2 reporting may be unreliable on this drive.\n";
 	}
 
 	std::cout << "Total audio sectors to scan: " << totalSectors << "\n";
@@ -56,23 +56,24 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 		useConditionalMultiPass = false;
 		break;
 	case 2:  // PlexTools-style (with cache defeat)
-		c2Opts.multiPass = false;  // Will do conditional multi-pass
+		c2Opts.multiPass = false;
 		c2Opts.countBytes = true;
 		c2Opts.defeatCache = true;
-		useConditionalMultiPass = true;  // IMPROVEMENT 2: Conditional re-read
+		useConditionalMultiPass = true;
 		break;
-	case 3:  // PlexTools-style (no cache defeat - faster)
+		// FIX 6: Option 3 — use defeatCache=true so multi-pass actually works
+	case 3:  // PlexTools-style (multi-pass with cache defeat)
 		c2Opts.multiPass = true;
 		c2Opts.passCount = 2;
 		c2Opts.countBytes = true;
-		c2Opts.defeatCache = false;
+		c2Opts.defeatCache = true;
 		useConditionalMultiPass = false;
 		break;
 	case 4:  // Paranoid
-		c2Opts.multiPass = false;  // Will do aggressive conditional multi-pass
+		c2Opts.multiPass = false;
 		c2Opts.countBytes = true;
 		c2Opts.defeatCache = true;
-		useConditionalMultiPass = true;  // More aggressive: 3 passes on errors
+		useConditionalMultiPass = true;
 		break;
 	default:
 		c2Opts.countBytes = true;
@@ -82,7 +83,7 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 
 	std::vector<std::pair<DWORD, int>> errorSectors;
 	std::vector<DWORD> pass1ErrorLBAs;
-	int totalC2Bits = 0;
+	int totalC2Errors = 0;
 	DWORD scannedSectors = 0;
 
 	ProgressIndicator progress(40);
@@ -108,7 +109,7 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 			if (m_drive.ReadSectorWithC2Ex(lba, buf.data(), nullptr, c2Errors, nullptr, c2Opts)) {
 				if (c2Errors > 0) {
 					errorSectors.push_back({ lba, c2Errors });
-					totalC2Bits += c2Errors;
+					totalC2Errors += c2Errors;
 					pass1ErrorLBAs.push_back(lba);
 				}
 			}
@@ -124,7 +125,7 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 
 	progress.Finish(true);
 
-	// IMPROVEMENT 2: Conditional Multi-Pass for Error Sectors Only
+	// Conditional Multi-Pass for Error Sectors Only (options 2 and 4)
 	if (useConditionalMultiPass && !pass1ErrorLBAs.empty()) {
 		std::cout << "\nPass 2: Re-reading " << pass1ErrorLBAs.size() << " error sectors for verification...\n";
 
@@ -137,22 +138,35 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 				break;
 			}
 
+			// Defeat cache before re-reading so the drive does a fresh read
+			DefeatDriveCache(errorLBA, 0);
+
 			std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
 			int c2Errors = 0;
 
 			// Re-read with stricter options
 			ScsiDrive::C2ReadOptions rereadOpts = c2Opts;
-			rereadOpts.multiPass = (sensitivity == 4);  // 3 passes for paranoid mode
-			rereadOpts.passCount = (sensitivity == 4) ? 3 : 2;
+			rereadOpts.multiPass = (sensitivity == 4);
+			rereadOpts.passCount = (sensitivity == 4) ? 3 : 1;
 			rereadOpts.defeatCache = true;
 
 			if (m_drive.ReadSectorWithC2Ex(errorLBA, buf.data(), nullptr, c2Errors, nullptr, rereadOpts)) {
-				// Find and update error entry
 				auto it = std::find_if(errorSectors.begin(), errorSectors.end(),
 					[errorLBA](const std::pair<DWORD, int>& p) { return p.first == errorLBA; });
 				if (it != errorSectors.end()) {
-					// Average the two pass results for more accurate reporting
-					it->second = (it->second + c2Errors) / 2;
+					int pass1Value = it->second;
+
+					// FIX 2: Handle read failures from pass 1 (-1) properly
+					if (pass1Value < 0) {
+						// Pass 1 failed, pass 2 succeeded — use pass 2 result
+						totalC2Errors += c2Errors;
+						it->second = c2Errors;
+					}
+					else {
+						// Both passes succeeded — take the higher value (conservative)
+						totalC2Errors += (c2Errors - pass1Value);  // adjust running total
+						it->second = std::max(pass1Value, c2Errors);
+					}
 				}
 			}
 
@@ -164,10 +178,11 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 		std::cout << "Pass 2 complete - error sectors reverified.\n";
 	}
 
-	// IMPROVEMENT 3: Dual-Speed Validation for High-Error Sectors
+	// Dual-Speed Validation for High-Error Sectors
 	std::vector<DWORD> highErrorLBAs;
-	int errorThreshold = (totalC2Bits > 0 && !errorSectors.empty())
-		? (totalC2Bits / static_cast<int>(errorSectors.size()) * 3)  // 3x average
+	// FIX 3: Multiply before divide to avoid integer truncation
+	int errorThreshold = (totalC2Errors > 0 && !errorSectors.empty())
+		? (totalC2Errors * 3 / static_cast<int>(errorSectors.size()))
 		: 100;
 
 	for (const auto& p : errorSectors) {
@@ -176,12 +191,16 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 		}
 	}
 
-	if (!highErrorLBAs.empty() && highErrorLBAs.size() <= 20) {  // Only if reasonable number
+	if (!highErrorLBAs.empty() && highErrorLBAs.size() <= 20) {
 		std::cout << "\nPhase 3: Dual-speed validation for " << highErrorLBAs.size()
 			<< " high-error sectors...\n";
 
 		progress.SetLabel("  Dual-speed");
 		progress.Start();
+
+		// FIX 4: Use countBytes=true to match Pass 1 counting method
+		ScsiDrive::C2ReadOptions dualSpeedOpts;
+		dualSpeedOpts.countBytes = true;
 
 		int speedTestCount = 0;
 		for (DWORD testLBA : highErrorLBAs) {
@@ -193,18 +212,16 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 			m_drive.SetSpeed(2);
 			std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
 			int slowC2 = 0;
-			bool slowSuccess = m_drive.ReadSectorWithC2(testLBA, buf.data(), nullptr, slowC2);
+			bool slowSuccess = m_drive.ReadSectorWithC2Ex(testLBA, buf.data(), nullptr, slowC2, nullptr, dualSpeedOpts);
 
-			Sleep(50);
+			DefeatDriveCache(testLBA, 0);
 
 			// Read at fast speed (16x)
 			m_drive.SetSpeed(16);
 			int fastC2 = 0;
-			bool fastSuccess = m_drive.ReadSectorWithC2(testLBA, buf.data(), nullptr, fastC2);
+			bool fastSuccess = m_drive.ReadSectorWithC2Ex(testLBA, buf.data(), nullptr, fastC2, nullptr, dualSpeedOpts);
 
-			// If results differ significantly, mark for attention
 			if (slowSuccess && fastSuccess && slowC2 > 0 && fastC2 == 0) {
-				// Disk rot pattern: errors at high speed = likely surface degradation
 				std::cout << "  LBA " << testLBA << ": Potential surface degradation "
 					<< "(slow: " << slowC2 << ", fast: " << fastC2 << " errors)\n";
 			}
@@ -214,11 +231,12 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 		}
 
 		progress.Finish(true);
-		m_drive.SetSpeed(scanSpeed);  // Restore original speed
+		m_drive.SetSpeed(scanSpeed);
 	}
 
 	m_drive.SetSpeed(0);
 
+	// FIX 5: Report the refined total (updated by Pass 2 if it ran)
 	std::cout << "\n=== C2 Scan Results ===\n";
 	std::cout << "Sectors scanned: " << scannedSectors << "\n";
 
@@ -226,9 +244,22 @@ bool AudioCDCopier::ScanDiscForC2Errors(const DiscInfo& disc, int scanSpeed, int
 		std::cout << "\n*** DISC IS CLEAN - No C2 errors detected! ***\n";
 	}
 	else {
+		// Recount to get accurate final total
+		int finalErrorSectors = 0;
+		int finalC2Total = 0;
+		for (const auto& p : errorSectors) {
+			if (p.second > 0) {
+				finalErrorSectors++;
+				finalC2Total += p.second;
+			}
+			else if (p.second == -1) {
+				finalErrorSectors++;  // Read failure still counts
+			}
+		}
+
 		std::cout << "\n*** ERRORS DETECTED ***\n";
-		std::cout << "Sectors with errors: " << errorSectors.size() << "\n";
-		std::cout << "Total C2 error bits: " << totalC2Bits << "\n";
+		std::cout << "Sectors with errors: " << finalErrorSectors << "\n";
+		std::cout << "Total C2 errors: " << finalC2Total << "\n";
 		if (useConditionalMultiPass) {
 			std::cout << "Multi-pass verification: ENABLED\n";
 		}
@@ -272,6 +303,10 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 	progress.SetLabel("  C2 Scan");
 	progress.Start();
 
+	// FIX 7: Use countBytes=true for consistency with BLER/C2 scans
+	ScsiDrive::C2ReadOptions c2Opts;
+	c2Opts.countBytes = true;
+
 	DWORD scannedSectors = 0;
 	for (const auto& t : disc.tracks) {
 		if (!t.isAudio) continue;
@@ -283,9 +318,9 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 				return false;
 			}
 
-			std::vector<BYTE> buf(SECTOR_WITH_C2_SIZE);
+			std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
 			int c2Errors = 0;
-			if (m_drive.ReadSectorWithC2(lba, buf.data(), nullptr, c2Errors)) {
+			if (m_drive.ReadSectorWithC2Ex(lba, buf.data(), nullptr, c2Errors, nullptr, c2Opts)) {
 				ClassifyZone(lba, firstLBA, lastLBA, c2Errors, result.zones);
 				if (c2Errors > 0) {
 					errorLBAs.push_back(lba);
@@ -300,6 +335,10 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 		}
 	}
 	progress.Finish(true);
+
+	// FIX 9: Build clusters BEFORE AnalyzeErrorPatterns so pinhole detection works
+	std::sort(errorLBAs.begin(), errorLBAs.end());
+	DetectErrorClusters(errorLBAs, result.clusters);
 
 	// IMPROVEMENT 1: Adaptive Zone-Based Sampling
 	std::cout << "\nPhase 2: Adaptive read consistency check...\n";
@@ -371,9 +410,6 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 	m_drive.SetSpeed(0);
 
 	AnalyzeErrorPatterns(errorLBAs, result);
-
-	std::sort(errorLBAs.begin(), errorLBAs.end());
-	DetectErrorClusters(errorLBAs, result.clusters);
 
 	result.rotRiskLevel = AssessRotRisk(result);
 
@@ -1037,6 +1073,7 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 
 	result = BlerResult{};
 	result.totalSectors = totalSectors;
+	// FIX 5: Correct seconds calculation
 	result.totalSeconds = (totalSectors + 74) / 75;
 	result.perSecondC2.resize(result.totalSeconds + 1, { 0, 0 });
 
@@ -1051,10 +1088,11 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 	progress.SetLabel("  BLER Scan");
 	progress.Start();
 
+	// FIX 2: Single-pass for BLER — multi-pass with cache defeat on every sector
+	// is far too slow for a full-disc scan. BLER is meant to be a single-pass
+	// error rate measurement like a real BLER analyzer.
 	ScsiDrive::C2ReadOptions c2Opts;
-	c2Opts.multiPass = true;
-	c2Opts.passCount = 2;
-	c2Opts.defeatCache = true;
+	c2Opts.multiPass = false;
 	c2Opts.countBytes = true;
 
 	for (const auto& t : disc.tracks) {
@@ -1068,9 +1106,14 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 				return false;
 			}
 
-			std::vector<BYTE> buf(SECTOR_WITH_C2_SIZE);
+			std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
 			int c2Errors = 0;
-			size_t secIdx = static_cast<size_t>((lba - firstLBA) / 75);
+
+			// FIX 3: Guard against unsigned underflow when lba < firstLBA
+			size_t secIdx = 0;
+			if (lba >= firstLBA) {
+				secIdx = static_cast<size_t>((lba - firstLBA) / 75);
+			}
 			if (secIdx >= result.perSecondC2.size())
 				secIdx = result.perSecondC2.size() - 1;
 
@@ -1097,7 +1140,8 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 			}
 			else {
 				result.totalReadFailures++;
-				result.perSecondC2[secIdx].second += 2352;
+				// FIX 4: Use max C2 bytes per sector (296), not audio byte count (2352)
+				result.perSecondC2[secIdx].second += C2_ERROR_SIZE;
 				currentErrorRun++;
 				if (currentErrorRun > result.consecutiveErrorSectors) {
 					result.consecutiveErrorSectors = currentErrorRun;
@@ -1292,11 +1336,15 @@ bool AudioCDCopier::TestReadConsistency(DWORD lba, int passes, int& inconsistent
 	inconsistentCount = 0;
 
 	for (int i = 0; i < passes; i++) {
+		// Defeat drive cache between reads so each pass is a fresh disc read
+		if (i > 0) {
+			DefeatDriveCache(lba, 0);
+		}
+
 		reads[i].resize(AUDIO_SECTOR_SIZE);
 		if (!m_drive.ReadSectorAudioOnly(lba, reads[i].data())) {
 			return false;
 		}
-		Sleep(10);
 	}
 
 	for (int i = 1; i < passes; i++) {

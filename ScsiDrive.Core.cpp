@@ -26,7 +26,7 @@ bool ScsiDrive::SendSCSI(void* cdb, BYTE cdbLength, void* buffer, DWORD bufferSi
 	constexpr DWORD SENSE_SIZE = 32;
 	std::vector<BYTE> sptdBuffer(sizeof(SCSI_PASS_THROUGH_DIRECT) + SENSE_SIZE);
 	auto* sptd = reinterpret_cast<SCSI_PASS_THROUGH_DIRECT*>(sptdBuffer.data());
-	ZeroMemory(sptd, sizeof(SCSI_PASS_THROUGH_DIRECT));
+	ZeroMemory(sptd, sptdBuffer.size());
 
 	sptd->Length = sizeof(SCSI_PASS_THROUGH_DIRECT);
 	sptd->CdbLength = cdbLength;
@@ -39,10 +39,16 @@ bool ScsiDrive::SendSCSI(void* cdb, BYTE cdbLength, void* buffer, DWORD bufferSi
 	memcpy(sptd->Cdb, cdb, cdbLength);
 
 	DWORD bytesReturned;
-	return DeviceIoControl(m_handle, IOCTL_SCSI_PASS_THROUGH_DIRECT,
+	BOOL result = DeviceIoControl(m_handle, IOCTL_SCSI_PASS_THROUGH_DIRECT,
 		sptd, static_cast<DWORD>(sptdBuffer.size()),
 		sptd, static_cast<DWORD>(sptdBuffer.size()),
-		&bytesReturned, nullptr) != 0;
+		&bytesReturned, nullptr);
+
+	// FIX: Check both the IOCTL result AND the SCSI status byte.
+	// ScsiStatus 0x00 = GOOD, 0x02 = CHECK CONDITION (command rejected by drive).
+	// Without this check, failed SCSI commands appear successful — the buffer
+	// stays zeroed, no drive activity occurs, and C2 scans report 0 errors.
+	return result != 0 && sptd->ScsiStatus == 0;
 }
 
 bool ScsiDrive::SendSCSIWithSense(void* cdb, BYTE cdbLength, void* buffer, DWORD bufferSize,
@@ -78,7 +84,7 @@ bool ScsiDrive::SendSCSIWithSense(void* cdb, BYTE cdbLength, void* buffer, DWORD
 	if (asc) *asc = sense[12];
 	if (ascq) *ascq = sense[13];
 
-	return result != 0 && (sense[2] & 0x0F) == 0;
+	return result != 0 && sptd->ScsiStatus == 0;
 }
 
 void ScsiDrive::SetSpeed(int multiplier) {

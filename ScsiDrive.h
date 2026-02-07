@@ -85,7 +85,7 @@ public:
 	// Added these method declarations
 	bool ReadSectorWithC2ExMultiPass(DWORD lba, BYTE* audio, BYTE* subchannel,
 		int& c2Errors, BYTE* c2Raw, const C2ReadOptions& options);
-	bool PlextorReadC2(DWORD lba, BYTE* audio, int& c2Errors);
+	bool PlextorReadC2(DWORD lba, BYTE* audio, int& c2Errors, BYTE* c2Raw, bool countBytes);
 
 	// Drive capabilities
 	bool CheckC2Support();

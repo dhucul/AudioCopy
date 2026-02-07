@@ -1,4 +1,4 @@
-// ============================================================================
+﻿// ============================================================================
 // ScsiDrive.Capabilities.cpp - Capability and feature detection
 // ============================================================================
 #include "ScsiDrive.h"
@@ -17,13 +17,15 @@ bool ScsiDrive::CheckC2Support() {
 		}
 	}
 
-	BYTE cdb1[12] = { SCSI_READ_CD, 0x00, 0, 0, 0, 0, 0, 0, 1, 0xF8, 0xD8, 0 };
+	// C2 + block error bits (byte 9 bits 2:1 = 10b → 0xFC)
+	BYTE cdb1[12] = { SCSI_READ_CD, 0x04, 0, 0, 0, 0, 0, 0, 1, 0xFC, 0x00, 0 };
 	std::vector<BYTE> buffer(SECTOR_WITH_C2_SIZE);
 	if (SendSCSI(cdb1, 12, buffer.data(), SECTOR_WITH_C2_SIZE)) {
 		m_c2Mode = C2Mode::ErrorPointers;
 		return true;
 	}
 
+	// C2 error block (byte 9 bits 2:1 = 01b → 0xFA)
 	BYTE cdb2[12] = { SCSI_READ_CD, 0x04, 0, 0, 0, 0, 0, 0, 1, 0xFA, 0x00, 0 };
 	if (SendSCSI(cdb2, 12, buffer.data(), SECTOR_WITH_C2_SIZE)) {
 		m_c2Mode = C2Mode::ErrorBlock;
