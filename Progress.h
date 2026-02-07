@@ -12,6 +12,14 @@
 #include <sstream>
 #include <string>
 
+// After Windows headers
+#ifdef max
+#undef max
+#endif
+#ifdef min
+#undef min
+#endif
+
 class ProgressIndicator {
 public:
     explicit ProgressIndicator(int barWidth = 35)

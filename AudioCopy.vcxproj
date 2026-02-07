@@ -128,6 +128,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="CopyWorkflow.cpp" />
+    <ClCompile Include="Drive.cpp" />
+    <ClCompile Include="FileUtils.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="AccurateRip.cpp" />
     <ClCompile Include="AudioCDCopier.cpp" />
@@ -135,6 +138,7 @@
     <ClCompile Include="AudioCDCopier_MenuSelection.cpp" />
     <ClCompile Include="AudioCDCopier_Quality.cpp" />
     <ClCompile Include="AudioCDCopier_TOCReading.cpp" />
+    <ClCompile Include="MenuUI.cpp" />
     <ClCompile Include="OffsetCalibration.cpp" />
     <ClCompile Include="ScsiDrive.cpp" />
     <ClCompile Include="• AudioCDCopier_FileOutput.cpp" />
@@ -145,10 +149,14 @@
     <ClInclude Include="AccurateRip.h" />
     <ClInclude Include="AudioCDCopier.h" />
     <ClInclude Include="ConsoleColors.h" />
+    <ClInclude Include="CopyWorkflow.h" />
     <ClInclude Include="DiscTypes.h" />
+    <ClInclude Include="Drive.h" />
     <ClInclude Include="DriveOffsets.h" />
+    <ClInclude Include="FileUtils.h" />
     <ClInclude Include="InterruptHandler.h" />
     <ClInclude Include="MenuHelpers.h" />
+    <ClInclude Include="MenuUI.h" />
     <ClInclude Include="OffsetCalibration.h" />
     <ClInclude Include="Progress.h" />
     <ClInclude Include="ScsiDrive.h" />
