@@ -83,10 +83,11 @@ int main() {
 		PrintMenuItem(14, "Drive offset detection");
 		PrintMenuItem(15, "Help (test descriptions)");
 		PrintMenuItem(16, "C2 validation test");
-		PrintMenuItem(17, "Exit", true);
+		PrintMenuItem(17, "Rescan disc");
+		PrintMenuItem(18, "Exit", true);
 		std::cout << "Choice: ";
 
-		int choice = GetMenuChoice(1, 17, 1);
+		int choice = GetMenuChoice(1, 18, 1);
 		std::cin.clear();
 		if (std::cin.peek() == '\n') {
 			std::cin.ignore();
@@ -307,12 +308,27 @@ int main() {
 			break;
 		}
 
-		case 17:
+		case 17: {
+			Console::Info("\nRescanning disc...\n");
+			disc = DiscInfo{};
+			if (!copier.ReadTOC(disc)) {
+				Console::Error("Failed to read TOC. Is a disc inserted?\n");
+				break;
+			}
+			copier.ReadCDText(disc);
+			copier.ReadISRC(disc);
+			AccurateRip::Lookup(disc);
+			PrintDiscInfo(disc);
+			Console::Success("Disc rescan complete.\n");
+			break;
+		}
+
+		case 18:
 			Console::Success("\nGoodbye!\n");
 			return 0;
 		}
 
-		if (choice != 17) {
+		if (choice != 18) {
 			WaitForKey();
 		}
 	}

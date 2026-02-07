@@ -15,6 +15,7 @@
     </Filter>
     <Filter Include="Source Files\Menu" />
     <Filter Include="Source Files\TOC" />
+    <Filter Include="Source Files\AudioCDCopier\Quality" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AccurateRip.cpp">
@@ -33,9 +34,6 @@
       <Filter>Source Files\Menu</Filter>
     </ClCompile>
     <ClCompile Include="AudioCDCopier_DiscReading.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_Quality.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="AudioCDCopier_TOCReading.cpp">
@@ -73,6 +71,33 @@
     </ClCompile>
     <ClCompile Include="ScsiDrive.Read.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_C2Scan.cpp">
+      <Filter>Source Files\AudioCDCopier\Quality</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_DiscRot.cpp">
+      <Filter>Source Files\AudioCDCopier\Quality</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_Performance.cpp">
+      <Filter>Source Files\AudioCDCopier\Quality</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_BLER.cpp">
+      <Filter>Source Files\AudioCDCopier\Quality</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_Surface.cpp">
+      <Filter>Source Files\AudioCDCopier\Quality</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_Verification.cpp">
+      <Filter>Source Files\AudioCDCopier\Quality</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_AudioAnalysis.cpp">
+      <Filter>Source Files\AudioCDCopier\Quality</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_DriveCapabilities.cpp">
+      <Filter>Source Files\AudioCDCopier\Quality</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_Comprehensive.cpp">
+      <Filter>Source Files\AudioCDCopier\Quality</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

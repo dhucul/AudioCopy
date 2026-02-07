@@ -167,3 +167,15 @@ private:
 	std::string Base64Encode(const BYTE* data, size_t length);
 	void SHA1Hash(const BYTE* data, size_t length, BYTE* output);
 };
+
+
+// Quality scanning functions (split across multiple files for maintainability):
+//   - AudioCDCopier_C2Scan.cpp: C2 error scanning
+//   - AudioCDCopier_DiscRot.cpp: Disc rot detection
+//   - AudioCDCopier_Performance.cpp: Speed & seek tests
+//   - AudioCDCopier_BLER.cpp: BLER scanning
+//   - AudioCDCopier_Surface.cpp: Surface mapping
+//   - AudioCDCopier_Verification.cpp: Multi-pass verification
+//   - AudioCDCopier_AudioAnalysis.cpp: Audio content analysis
+//   - AudioCDCopier_DriveCapabilities.cpp: Drive capabilities
+//   - AudioCDCopier_Comprehensive.cpp: Comprehensive scanning
