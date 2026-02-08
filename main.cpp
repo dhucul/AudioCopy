@@ -14,15 +14,28 @@
 #include <iostream>
 
 int main() {
+	// Enable Virtual Terminal Processing for ANSI escape codes
+	HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+	DWORD mode = 0;
+	GetConsoleMode(hOut, &mode);
+	SetConsoleMode(hOut, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+	SetConsoleOutputCP(CP_UTF8);
+
+	// Apply custom look
+	Console::SetFont(L"Cascadia Mono", 20);
+	Console::SetWindowSize(110, 38);
+	Console::ApplyDarkTheme();
+
 	g_interrupt.Install();
 	CenterConsoleWindow();
 	std::wstring dir = GetWorkingDirectory();
 	SetCurrentDirectoryW(dir.c_str());
 
-	Console::Heading("=== Audio CD Copy Tool ===\n");
-	std::cout << "Working directory: ";
+	Console::BoxHeading("Audio CD Copy Tool");
+	std::cout << Console::Sym::Vertical << " Working directory: ";
 	std::wcout << dir << L"\n";
 	InterruptHandler::PrintExitHelp();
+	Console::BoxFooter();
 
 	Console::Info("Scanning drives...\n");
 	wchar_t audioDrive = 0;
@@ -92,7 +105,7 @@ int main() {
 
 	// Main menu loop
 	while (true) {
-		Console::Heading("\n=== Operation ===\n");
+		Console::BoxHeading("Operation");
 		PrintMenuItem(1, "Copy disc");
 		PrintMenuItem(2, "C2 error scan (quick)");
 		PrintMenuItem(3, "BLER scan (detailed)");
@@ -111,7 +124,8 @@ int main() {
 		PrintMenuItem(16, "C2 validation test");
 		PrintMenuItem(17, "Rescan disc");
 		PrintMenuItem(18, "Exit", true);
-		std::cout << "Choice: ";
+		Console::BoxFooter();
+		std::cout << Console::Sym::Arrow << " Choice: ";
 
 		int choice = GetMenuChoice(1, 18, 1);
 		std::cin.clear();

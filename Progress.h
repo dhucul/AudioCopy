@@ -1,4 +1,4 @@
-// ============================================================================
+﻿// ============================================================================
 // Progress.h - Console progress indicator with slow-read awareness
 // ============================================================================
 #pragma once
@@ -166,11 +166,11 @@ private:
     std::string FormatProgressLine(int pct, int eta, bool isStalled) const {
         std::ostringstream ss;
 
-        // Progress bar
+        // Progress bar with Unicode blocks
         ss << "\r" << m_label << " [";
         int filled = pct * m_barWidth / 100;
         for (int i = 0; i < m_barWidth; i++) {
-            ss << (i < filled ? "#" : "-");
+            ss << (i < filled ? "\xe2\x96\x88" : "\xe2\x96\x91"); // █ or ░
         }
         ss << "] " << std::setw(3) << pct << "%";
 
