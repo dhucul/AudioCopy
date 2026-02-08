@@ -1,147 +1,144 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <ItemGroup>
-    <Filter Include="Source Files">
-      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
-      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
-    </Filter>
-    <Filter Include="Header Files">
-      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
-      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
-    </Filter>
-    <Filter Include="Resource Files">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
-    </Filter>
-    <Filter Include="Source Files\Menu" />
-    <Filter Include="Source Files\TOC" />
-    <Filter Include="Source Files\AudioCDCopier\Quality" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="AccurateRip.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="main.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="OffsetCalibration.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_MenuSelection.cpp">
-      <Filter>Source Files\Menu</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_DiscReading.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_TOCReading.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="• AudioCDCopier_FileOutput.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="• AudioCDCopier_Fingerprinting.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="• AudioCDCopier_Verification.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Drive.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="FileUtils.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="MenuUI.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="CopyWorkflow.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="ScsiDrive.Capabilities.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="ScsiDrive.Core.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="ScsiDrive.Offset.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="ScsiDrive.Read.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_C2Scan.cpp">
-      <Filter>Source Files\AudioCDCopier\Quality</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_DiscRot.cpp">
-      <Filter>Source Files\AudioCDCopier\Quality</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_Performance.cpp">
-      <Filter>Source Files\AudioCDCopier\Quality</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_BLER.cpp">
-      <Filter>Source Files\AudioCDCopier\Quality</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_Surface.cpp">
-      <Filter>Source Files\AudioCDCopier\Quality</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_Verification.cpp">
-      <Filter>Source Files\AudioCDCopier\Quality</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_AudioAnalysis.cpp">
-      <Filter>Source Files\AudioCDCopier\Quality</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_DriveCapabilities.cpp">
-      <Filter>Source Files\AudioCDCopier\Quality</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_Comprehensive.cpp">
-      <Filter>Source Files\AudioCDCopier\Quality</Filter>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="DiscTypes.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="InterruptHandler.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Progress.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ScsiDrive.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="AccurateRip.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="AudioCDCopier.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="MenuHelpers.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ConsoleColors.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="DriveOffsets.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="OffsetCalibration.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Drive.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="FileUtils.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="MenuUI.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="CopyWorkflow.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-  </ItemGroup>
+	<ItemGroup>
+		<Filter Include="Source Files">
+			<UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+			<Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+		</Filter>
+		<Filter Include="Header Files">
+			<UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+			<Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+		</Filter>
+		<Filter Include="Resource Files">
+			<UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+			<Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+		</Filter>
+		<Filter Include="Source Files\Menu" />
+		<Filter Include="Source Files\TOC" />
+		<Filter Include="Source Files\AudioCDCopier\Quality" />
+	</ItemGroup>
+	<ItemGroup>
+		<ClCompile Include="AccurateRip.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="main.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="OffsetCalibration.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_MenuSelection.cpp">
+			<Filter>Source Files\Menu</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_DiscReading.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_TOCReading.cpp">
+			<Filter>Source Files\TOC</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_FileOutput.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_Fingerprinting.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="Drive.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="FileUtils.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="MenuUI.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="CopyWorkflow.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="ScsiDrive.Capabilities.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="ScsiDrive.Core.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="ScsiDrive.Offset.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="ScsiDrive.Read.cpp">
+			<Filter>Source Files</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_C2Scan.cpp">
+			<Filter>Source Files\AudioCDCopier\Quality</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_DiscRot.cpp">
+			<Filter>Source Files\AudioCDCopier\Quality</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_Performance.cpp">
+			<Filter>Source Files\AudioCDCopier\Quality</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_BLER.cpp">
+			<Filter>Source Files\AudioCDCopier\Quality</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_Surface.cpp">
+			<Filter>Source Files\AudioCDCopier\Quality</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_Verification.cpp">
+			<Filter>Source Files\AudioCDCopier\Quality</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_AudioAnalysis.cpp">
+			<Filter>Source Files\AudioCDCopier\Quality</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_DriveCapabilities.cpp">
+			<Filter>Source Files\AudioCDCopier\Quality</Filter>
+		</ClCompile>
+		<ClCompile Include="AudioCDCopier_Comprehensive.cpp">
+			<Filter>Source Files\AudioCDCopier\Quality</Filter>
+		</ClCompile>
+	</ItemGroup>
+	<ItemGroup>
+		<ClInclude Include="DiscTypes.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+		<ClInclude Include="InterruptHandler.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+		<ClInclude Include="Progress.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+		<ClInclude Include="ScsiDrive.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+		<ClInclude Include="AccurateRip.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+		<ClInclude Include="AudioCDCopier.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+		<ClInclude Include="MenuHelpers.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+		<ClInclude Include="ConsoleColors.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+		<ClInclude Include="DriveOffsets.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+		<ClInclude Include="OffsetCalibration.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+		<ClInclude Include="Drive.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+		<ClInclude Include="FileUtils.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+		<ClInclude Include="MenuUI.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+		<ClInclude Include="CopyWorkflow.h">
+			<Filter>Header Files</Filter>
+		</ClInclude>
+	</ItemGroup>
 </Project>

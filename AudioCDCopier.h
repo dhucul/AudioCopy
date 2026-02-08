@@ -57,6 +57,7 @@ public:
 	bool SaveBlerLog(const BlerResult& result, const std::wstring& filename);
 	void PrintBlerGraph(const BlerResult& result, int width = 60, int height = 10);
 	bool SaveReadLog(const DiscInfo& disc, const std::wstring& filename);
+	bool SaveSecureRipLog(const SecureRipResult& result, const std::wstring& filename);
 	bool GenerateCueSheet(const DiscInfo& disc, const std::wstring& audioFilePath,
 		const std::wstring& cueOutputPath);
 

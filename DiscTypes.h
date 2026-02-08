@@ -59,6 +59,48 @@ struct SecureRipConfig {
 	bool rereadOnC2 = true;
 };
 
+// Secure rip log entry for a single sector
+struct SecureRipLogEntry {
+	DWORD lba = 0;
+	int track = 0;
+	int phase = 0;             // 1 = first pass, 2 = sweep, 3 = rescue
+	int passesUsed = 0;
+	int matchCount = 0;
+	int c2Errors = 0;
+	double readTimeMs = 0.0;
+	bool verified = false;
+	uint32_t hash = 0;
+};
+
+// Per-phase performance summary
+struct SecureRipPhaseStats {
+	int phase = 0;
+	int sectorsProcessed = 0;
+	int sectorsVerified = 0;
+	int sectorsFailed = 0;
+	double durationSeconds = 0.0;
+	double avgReadTimeMs = 0.0;
+};
+
+// Complete secure rip log
+struct SecureRipLog {
+	std::string modeName;
+	int minPasses = 0;
+	int maxPasses = 0;
+	int requiredMatches = 0;
+	bool useC2 = false;
+	bool cacheDefeat = false;
+
+	std::vector<SecureRipLogEntry> entries;
+	std::vector<SecureRipPhaseStats> phaseStats;
+
+	int totalSectors = 0;
+	int totalVerified = 0;
+	int totalUnsecure = 0;
+	int totalC2Errors = 0;
+	double totalDurationSeconds = 0.0;
+};
+
 // Secure rip result for a single sector
 struct SecureSectorResult {
 	DWORD lba = 0;
@@ -83,6 +125,7 @@ struct SecureRipResult {
 	std::vector<SecureSectorResult> problemSectors;
 	double securityConfidence = 0.0;
 	std::string qualityAssessment;
+	SecureRipLog log;  // Detailed log data
 };
 
 // TrackInfo: Describes one track on the CD
@@ -411,12 +454,12 @@ struct DiscFingerprint {
 	MusicBrainzFingerprint musicBrainz;
 	AccurateRipFingerprint accurateRip;
 	AudioFingerprint audio;
-	
+
 	// Metadata
 	std::string tocString;          // Human-readable TOC representation
 	bool isValid = false;
 	std::string generationTime;     // ISO 8601 timestamp
-	
+
 	// Convenience methods
 	std::string GetCDDBUrl() const;
 	std::string GetMusicBrainzUrl() const;

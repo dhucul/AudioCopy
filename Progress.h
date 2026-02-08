@@ -150,8 +150,16 @@ private:
 
     std::string FormatTime(int seconds) const {
         std::ostringstream ss;
-        ss << seconds / 60 << ":"
-           << std::setfill('0') << std::setw(2) << seconds % 60;
+        if (seconds >= 3600) {
+            ss << seconds / 3600 << "h "
+               << std::setfill('0') << std::setw(2) << (seconds % 3600) / 60 << "m "
+               << std::setfill('0') << std::setw(2) << seconds % 60 << "s";
+        } else if (seconds >= 60) {
+            ss << seconds / 60 << "m "
+               << std::setfill('0') << std::setw(2) << seconds % 60 << "s";
+        } else {
+            ss << seconds << "s";
+        }
         return ss.str();
     }
 

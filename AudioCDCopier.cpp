@@ -1,5 +1,5 @@
 ﻿// ============================================================================
-// AudioCDCopier.cpp - Main audio CD copying implementationSelectSpeed()
+// AudioCDCopier.cpp - Main audio CD copying implementation
 // ============================================================================
 #define NOMINMAX
 

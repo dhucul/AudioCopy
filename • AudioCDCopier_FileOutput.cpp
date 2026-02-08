@@ -162,31 +162,85 @@ bool AudioCDCopier::SaveBlerLog(const BlerResult& result, const std::wstring& fi
 	std::ofstream log(filename);
 	if (!log) return false;
 
+	// --- Summary section (commented for CSV parsers, readable for humans) ---
+	log << "# ==============================\n";
 	log << "# BLER Quality Scan Log\n";
-	log << "# Summary:\n";
-	log << "#   Total Sectors: " << result.totalSectors << "\n";
-	log << "#   Total C2 Errors: " << result.totalC2Errors << " bits\n";
-	log << "#   Quality Rating: " << result.qualityRating << "\n";
+	log << "# ==============================\n";
 	log << "#\n";
-	log << "Second,LBA,C2_Errors\n";
+	log << "# Quality Rating:        " << result.qualityRating << "\n";
+	log << "# Total Sectors:         " << result.totalSectors << "\n";
+	log << "# Disc Length:           "
+		<< (result.totalSeconds / 60) << ":"
+		<< std::setfill('0') << std::setw(2) << (result.totalSeconds % 60)
+		<< std::setfill(' ') << " (mm:ss)\n";
+	log << "#\n";
+	log << "# --- Error Statistics ---\n";
+	log << "# Total C2 Errors:       " << result.totalC2Errors << " bits\n";
+	log << "# Sectors with C2:       " << result.totalC2Sectors;
+	if (result.totalSectors > 0)
+		log << " (" << std::fixed << std::setprecision(3)
+			<< (result.totalC2Sectors * 100.0 / result.totalSectors) << "%)";
+	log << "\n";
+	log << "# Read Failures:         " << result.totalReadFailures << "\n";
+	log << "# Avg C2/sec:            " << std::fixed << std::setprecision(2)
+		<< result.avgC2PerSecond << "\n";
+	log << "# Max C2/sec:            " << result.maxC2PerSecond << "\n";
+	log << "# Max C2 in One Sector:  " << result.maxC2InSingleSector;
+	if (result.maxC2InSingleSector > 0) log << " (LBA " << result.worstSectorLBA << ")";
+	log << "\n";
+	log << "# Longest Error Run:     " << result.consecutiveErrorSectors << " sectors\n";
+	log << "#\n";
+	log << "# --- Red Book Compliance ---\n";
+	log << "# Avg C2/sec Pass:       " << (result.avgC2PerSecond < 220.0 ? "PASS" : "FAIL")
+		<< " (limit: 220/sec)\n";
+	log << "#\n";
 
-	DWORD firstLBA = 0;
-	for (const auto& t : result.perSecondC2) {
-		if (t.first != 0 || t.second != 0) {
-			firstLBA = static_cast<DWORD>(t.first);
-			break;
+	// --- Zone stats ---
+	log << "# --- Zone Error Rates ---\n";
+	log << "# Inner  (0-33%%):       " << std::fixed << std::setprecision(2)
+		<< result.zoneStats.InnerErrorRate() << "% ("
+		<< result.zoneStats.innerErrors << "/" << result.zoneStats.innerSectors << ")\n";
+	log << "# Middle (33-66%%):      " << std::fixed << std::setprecision(2)
+		<< result.zoneStats.MiddleErrorRate() << "% ("
+		<< result.zoneStats.middleErrors << "/" << result.zoneStats.middleSectors << ")\n";
+	log << "# Outer  (66-100%%):     " << std::fixed << std::setprecision(2)
+		<< result.zoneStats.OuterErrorRate() << "% ("
+		<< result.zoneStats.outerErrors << "/" << result.zoneStats.outerSectors << ")\n";
+	log << "#\n";
+
+	// --- Error clusters ---
+	if (!result.errorClusters.empty()) {
+		log << "# --- Error Clusters (" << result.errorClusters.size() << " total) ---\n";
+		log << "# Largest Cluster: " << result.largestClusterSize << " sectors\n";
+		log << "# Edge Concentration: " << (result.hasEdgeConcentration ? "YES" : "NO") << "\n";
+		log << "# Progressive Pattern: " << (result.hasProgressivePattern ? "YES" : "NO") << "\n";
+		log << "#\n";
+		log << "# ClusterIndex,StartLBA,EndLBA,SectorCount,ErrorCount\n";
+		for (size_t i = 0; i < result.errorClusters.size(); i++) {
+			const auto& c = result.errorClusters[i];
+			log << "# " << i << "," << c.startLBA << "," << c.endLBA
+				<< "," << c.size() << "," << c.errorCount << "\n";
 		}
+		log << "#\n";
 	}
 
-	for (size_t i = 0; i < result.perSecondC2.size(); i++) {
-		DWORD lba = firstLBA + static_cast<DWORD>(i * 75);
-		int c2 = result.perSecondC2[i].second;
+	// --- Per-second CSV data ---
+	log << "# ==============================\n";
+	log << "# Per-Second C2 Error Data\n";
+	log << "# ==============================\n";
+	log << "Time,Second,LBA,C2_Errors\n";
 
+	for (size_t i = 0; i < result.perSecondC2.size(); i++) {
 		int minutes = static_cast<int>(i) / 60;
 		int seconds = static_cast<int>(i) % 60;
+		DWORD lba = static_cast<DWORD>(result.perSecondC2[i].first);
+		int c2 = result.perSecondC2[i].second;
 
 		log << minutes << ":" << std::setfill('0') << std::setw(2) << seconds
-			<< "," << lba << "," << c2 << "\n";
+			<< std::setfill(' ')
+			<< "," << i
+			<< "," << lba
+			<< "," << c2 << "\n";
 	}
 
 	log.close();
@@ -279,5 +333,71 @@ bool AudioCDCopier::GenerateCueSheet(const DiscInfo& disc, const std::wstring& a
 		}
 	}
 
+	return true;
+}
+
+bool AudioCDCopier::SaveSecureRipLog(const SecureRipResult& result, const std::wstring& filename) {
+	const auto& log = result.log;
+	if (log.entries.empty() && log.phaseStats.empty()) {
+		return false;
+	}
+
+	std::ofstream out(filename);
+	if (!out) return false;
+
+	// Header with configuration
+	out << "# Secure Rip Log\n";
+	out << "# Mode: " << log.modeName << "\n";
+	out << "# Passes: " << log.minPasses << "-" << log.maxPasses
+		<< ", Required matches: " << log.requiredMatches << "\n";
+	out << "# C2 detection: " << (log.useC2 ? "YES" : "NO")
+		<< ", Cache defeat: " << (log.cacheDefeat ? "YES" : "NO") << "\n";
+	out << "#\n";
+
+	// Overall summary
+	out << "# === Summary ===\n";
+	out << "# Total sectors:    " << log.totalSectors << "\n";
+	out << "# Verified:         " << log.totalVerified
+		<< " (" << std::fixed << std::setprecision(1)
+		<< (log.totalSectors > 0 ? 100.0 * log.totalVerified / log.totalSectors : 0)
+		<< "%)\n";
+	out << "# Unsecure:         " << log.totalUnsecure << "\n";
+	out << "# Total C2 errors:  " << log.totalC2Errors << "\n";
+	out << "# Total duration:   " << std::fixed << std::setprecision(1)
+		<< log.totalDurationSeconds << "s\n";
+	out << "# Quality:          " << result.qualityAssessment << "\n";
+	out << "# Confidence:       " << std::fixed << std::setprecision(1)
+		<< result.securityConfidence << "%\n";
+	out << "#\n";
+
+	// Per-phase breakdown
+	out << "# === Phase Breakdown ===\n";
+	for (const auto& ps : log.phaseStats) {
+		out << "# Phase " << ps.phase << ": "
+			<< ps.sectorsProcessed << " processed, "
+			<< ps.sectorsVerified << " verified, "
+			<< ps.sectorsFailed << " failed, "
+			<< std::fixed << std::setprecision(1) << ps.durationSeconds << "s"
+			<< " (avg " << std::setprecision(2) << ps.avgReadTimeMs << "ms/sector)\n";
+	}
+	out << "#\n";
+
+	// Sector-level CSV
+	out << "LBA,Track,Phase,Passes,Matches,C2Errors,ReadTimeMs,Verified,Hash\n";
+
+	for (const auto& e : log.entries) {
+		out << e.lba << ","
+			<< e.track << ","
+			<< e.phase << ","
+			<< e.passesUsed << ","
+			<< e.matchCount << ","
+			<< e.c2Errors << ","
+			<< std::fixed << std::setprecision(2) << e.readTimeMs << ","
+			<< (e.verified ? "YES" : "NO") << ","
+			<< std::hex << std::setfill('0') << std::setw(8) << e.hash
+			<< std::dec << "\n";
+	}
+
+	out.close();
 	return true;
 }

@@ -376,31 +376,64 @@ bool AudioCDCopier::SaveDiscRotLog(const DiscRotAnalysis& analysis, const std::w
 	if (_wfopen_s(&f, path.c_str(), L"w") != 0 || !f)
 		return false;
 
-	fprintf(f, "Disc Rot Analysis Report\n");
-	fprintf(f, "========================\n\n");
+	// --- Summary header ---
+	fprintf(f, "# ==============================\n");
+	fprintf(f, "# Disc Rot Analysis Report\n");
+	fprintf(f, "# ==============================\n");
+	fprintf(f, "#\n");
+	fprintf(f, "# Risk Level:            %s\n", analysis.rotRiskLevel.c_str());
+	if (!analysis.recommendation.empty())
+		fprintf(f, "# Recommendation:        %s\n", analysis.recommendation.c_str());
+	fprintf(f, "#\n");
 
-	fprintf(f, "Zone Error Rates:\n");
-	fprintf(f, "  Inner:  %.2f%% (%d/%d)\n", analysis.zones.InnerErrorRate(),
-		analysis.zones.innerErrors, analysis.zones.innerSectors);
-	fprintf(f, "  Middle: %.2f%% (%d/%d)\n", analysis.zones.MiddleErrorRate(),
-		analysis.zones.middleErrors, analysis.zones.middleSectors);
-	fprintf(f, "  Outer:  %.2f%% (%d/%d)\n", analysis.zones.OuterErrorRate(),
-		analysis.zones.outerErrors, analysis.zones.outerSectors);
+	// --- Zone error rates ---
+	fprintf(f, "# --- Zone Error Rates ---\n");
+	fprintf(f, "# Inner  (0-33%%%%):       %.2f%% (%d/%d)\n",
+		analysis.zones.InnerErrorRate(), analysis.zones.innerErrors, analysis.zones.innerSectors);
+	fprintf(f, "# Middle (33-66%%%%):      %.2f%% (%d/%d)\n",
+		analysis.zones.MiddleErrorRate(), analysis.zones.middleErrors, analysis.zones.middleSectors);
+	fprintf(f, "# Outer  (66-100%%%%):     %.2f%% (%d/%d)\n",
+		analysis.zones.OuterErrorRate(), analysis.zones.outerErrors, analysis.zones.outerSectors);
+	fprintf(f, "#\n");
 
-	fprintf(f, "\nClusters: %zu\n", analysis.clusters.size());
+	// --- Read consistency ---
+	fprintf(f, "# --- Read Consistency ---\n");
+	fprintf(f, "# Inconsistent Sectors:  %d / %d tested\n",
+		analysis.inconsistentSectors, analysis.totalRereadTests);
+	fprintf(f, "# Inconsistency Rate:    %.2f%%\n", analysis.inconsistencyRate);
+	fprintf(f, "#\n");
+
+	// --- Rot indicators ---
+	fprintf(f, "# --- Disc Rot Indicators ---\n");
+	fprintf(f, "# Edge Concentration:    %s\n", analysis.edgeConcentration ? "YES" : "NO");
+	fprintf(f, "# Progressive Pattern:   %s\n", analysis.progressivePattern ? "YES" : "NO");
+	fprintf(f, "# Pinhole Pattern:       %s\n", analysis.pinholePattern ? "YES" : "NO");
+	fprintf(f, "# Read Instability:      %s\n", analysis.readInstability ? "YES" : "NO");
+	fprintf(f, "#\n");
+
+	// --- Zone summary CSV ---
+	fprintf(f, "# ==============================\n");
+	fprintf(f, "# Zone Summary\n");
+	fprintf(f, "# ==============================\n");
+	fprintf(f, "Zone,ErrorRate,Errors,TotalSectors\n");
+	fprintf(f, "Inner (0-33%%),%.2f,%d,%d\n",
+		analysis.zones.InnerErrorRate(), analysis.zones.innerErrors, analysis.zones.innerSectors);
+	fprintf(f, "Middle (33-66%%),%.2f,%d,%d\n",
+		analysis.zones.MiddleErrorRate(), analysis.zones.middleErrors, analysis.zones.middleSectors);
+	fprintf(f, "Outer (66-100%%),%.2f,%d,%d\n",
+		analysis.zones.OuterErrorRate(), analysis.zones.outerErrors, analysis.zones.outerSectors);
+	fprintf(f, "\n");
+
+	// --- Error clusters CSV ---
+	fprintf(f, "# ==============================\n");
+	fprintf(f, "# Error Clusters (%zu total)\n", analysis.clusters.size());
+	fprintf(f, "# ==============================\n");
+	fprintf(f, "ClusterIndex,StartLBA,EndLBA,SectorCount,ErrorCount\n");
 	for (size_t i = 0; i < analysis.clusters.size(); i++) {
-		fprintf(f, "  [%zu] LBA %lu-%lu (%d sectors, %d errors)\n", i,
-			analysis.clusters[i].startLBA, analysis.clusters[i].endLBA,
-			analysis.clusters[i].size(), analysis.clusters[i].errorCount);
+		const auto& c = analysis.clusters[i];
+		fprintf(f, "%zu,%lu,%lu,%d,%d\n",
+			i, c.startLBA, c.endLBA, c.size(), c.errorCount);
 	}
-
-	fprintf(f, "\nIndicators:\n");
-	fprintf(f, "  Edge concentration: %s\n", analysis.edgeConcentration ? "YES" : "NO");
-	fprintf(f, "  Progressive: %s\n", analysis.progressivePattern ? "YES" : "NO");
-	fprintf(f, "  Pinhole: %s\n", analysis.pinholePattern ? "YES" : "NO");
-	fprintf(f, "  Instability: %s (%.2f%%)\n",
-		analysis.readInstability ? "YES" : "NO", analysis.inconsistencyRate);
-	fprintf(f, "\nRisk Level: %s\n", analysis.rotRiskLevel.c_str());
 
 	fclose(f);
 	return true;

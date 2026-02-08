@@ -8,7 +8,7 @@
 #include <iostream>
 #include <conio.h>
 
-bool RunCopyWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& workDir) {
+bool RunCopyWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& /*workDir*/) {
 	Console::Info("\n(Enter 0 at any prompt to go back to menu)\n");
 
 	if (disc.sessionCount > 1) {
@@ -34,8 +34,11 @@ bool RunCopyWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& 
 	int secureMode = copier.SelectSecureRipMode();
 	if (secureMode == -1) return false;
 
-	SecureRipConfig secureConfig = copier.GetSecureRipConfig(static_cast<SecureRipMode>(secureMode));
 	bool isBurstMode = (secureMode == -2);
+	SecureRipConfig secureConfig{};
+	if (!isBurstMode) {
+		secureConfig = copier.GetSecureRipConfig(static_cast<SecureRipMode>(secureMode));
+	}
 
 	disc.loggingOutput = LogOutput::File;
 
@@ -70,7 +73,15 @@ bool RunCopyWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& 
 
 		std::string narrowPath;
 		std::getline(std::cin, narrowPath);
-		path = std::wstring(narrowPath.begin(), narrowPath.end());
+
+		int wlen = MultiByteToWideChar(CP_ACP, 0, narrowPath.c_str(), -1, nullptr, 0);
+		if (wlen > 1) {
+			path.resize(wlen - 1);
+			MultiByteToWideChar(CP_ACP, 0, narrowPath.c_str(), -1, &path[0], wlen);
+		}
+		else {
+			path.clear();
+		}
 
 		if (path == L"0") return false;
 
@@ -295,6 +306,14 @@ bool RunCopyWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& 
 	if (copier.SaveReadLog(disc, logPath)) {
 		Console::Success("Log saved to: ");
 		std::wcout << logPath << L"\n";
+	}
+
+	if (secureConfig.mode != SecureRipMode::Disabled && secureConfig.mode != SecureRipMode::Burst) {
+		std::wstring secureLogPath = path + L"_secure.log";
+		if (copier.SaveSecureRipLog(secureResult, secureLogPath)) {
+			Console::Success("Secure rip log saved to: ");
+			std::wcout << secureLogPath << L"\n";
+		}
 	}
 
 	copier.Eject();
