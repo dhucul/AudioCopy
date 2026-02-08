@@ -165,21 +165,6 @@ A weighted scoring system produces the final risk level:
 
 ---
 
-## Comprehensive Scan
-
-For a single combined assessment, the **Comprehensive Scan** (menu option in-app) runs all five tests sequentially — BLER, disc rot, speed comparison, multi-pass verification, and audio content analysis — and produces a weighted **0–100 score** with a letter grade:
-
-| Grade | Score |
-|---|---|
-| **A** | 90–100 |
-| **B** | 80–89 |
-| **C** | 70–79 |
-| **D** | 60–69 |
-| **F** | 0–59 |
-
-Estimated runtime: 15–30 minutes depending on disc condition and drive speed.
-
----
 
 ## Building
 
