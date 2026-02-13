@@ -190,11 +190,6 @@
     <ClInclude Include="ScsiTypes.h" />
     <ClInclude Include="SecureRipTypes.h" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="CueSheetFormatter.cs" />
-    <None Include="CueSheetFormatterTests.cs" />
-    <None Include="CueSheetProcessor.cs" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
