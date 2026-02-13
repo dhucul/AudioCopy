@@ -51,6 +51,7 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 	c2Opts.countBytes = true;
 
 	DWORD scannedSectors = 0;
+	int maxC2InSector = 0;
 	for (const auto& t : disc.tracks) {
 		if (!t.isAudio) continue;
 		DWORD start = (t.trackNumber == 1) ? 0 : t.pregapLBA;
@@ -67,6 +68,8 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 				ClassifyZone(lba, firstLBA, lastLBA, c2Errors > 0 ? 1 : 0, result.zones);
 				if (c2Errors > 0) {
 					errorLBAs.push_back(lba);
+					if (c2Errors > maxC2InSector)
+						maxC2InSector = c2Errors;
 				}
 			}
 			else {
@@ -82,6 +85,7 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 
 	std::sort(errorLBAs.begin(), errorLBAs.end());
 	DetectErrorClusters(errorLBAs, result.clusters, scanSpeed);
+	result.maxC2InSingleSector = maxC2InSector;
 
 	// Adaptive Zone-Based Sampling
 	std::cout << "\nPhase 2: Adaptive read consistency check...\n";
@@ -314,6 +318,10 @@ std::string AudioCDCopier::AssessRotRisk(const DiscRotAnalysis& analysis) {
 	if (analysis.pinholePattern) score += 15;
 	if (analysis.readInstability) score += 20;
 	if (analysis.inconsistencyRate > 10.0) score += 15;
+
+	// Severe C2 errors in a single sector indicate physical damage
+	if (analysis.maxC2InSingleSector >= 100) score += 20;
+	else if (analysis.maxC2InSingleSector >= 50) score += 10;
 
 	if (score >= 75) return "CRITICAL";
 	if (score >= 50) return "HIGH";

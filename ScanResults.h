@@ -45,6 +45,7 @@ struct DiscRotAnalysis {
 	int inconsistentSectors = 0;                // Sectors that read differently on re-read
 	int totalRereadTests = 0;                   // Number of re-read comparison tests run
 	double inconsistencyRate = 0.0;             // inconsistentSectors / totalRereadTests
+	int maxC2InSingleSector = 0;                // Worst C2 count in a single sector
 
 	// Heuristic disc-rot pattern flags
 	bool edgeConcentration = false;             // Errors concentrated at inner/outer edges

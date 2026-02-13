@@ -324,7 +324,10 @@ bool AudioCDCopier::RunC2Scan(const DiscInfo& disc, BlerResult& result, int scan
 		result.qualityRating = "BAD";
 	else if (result.totalC2Sectors == 0)
 		result.qualityRating = "EXCELLENT";
-	else if (result.avgC2PerSecond < 1.0 && result.consecutiveErrorSectors < 3)
+	else if (result.maxC2InSingleSector >= 100)
+		result.qualityRating = "POOR";
+	else if (result.avgC2PerSecond < 1.0 && result.consecutiveErrorSectors < 3
+		&& result.maxC2InSingleSector < 50)
 		result.qualityRating = "GOOD";
 	else if (result.avgC2PerSecond < 10.0 && result.consecutiveErrorSectors < 10)
 		result.qualityRating = "ACCEPTABLE";
