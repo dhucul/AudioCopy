@@ -1,0 +1,361 @@
+# AudioCopy
+“You take the blue pill—the story ends, you wake up in your bed and believe whatever you want to believe.
+You take the red pill—you stay in Wonderland, and I show you how deep the codebase goes.”
+
+A Windows command-line tool for high-quality audio CD ripping with advanced disc diagnostics, written in C++.
+
+AudioCopy reads audio CDs at the raw sector level using SCSI/MMC commands and provides multiple quality scanning modes to assess disc health before, during, or after extraction.
+
+---
+
+## Features
+
+### Ripping
+- **Burst, standard, and secure ripping** with configurable multi-pass verification and cache defeat
+- **Drive read offset correction** with auto-detection (AccurateRip database, pregap analysis, or manual)
+- **AccurateRip V1** checksum calculation and online verification
+- **Pre-gap extraction** (include in image, skip, or extract separately)
+- **Subchannel reading** with integrity verification
+- **CD-Text and ISRC extraction**
+- **CUE sheet generation**
+- **Disc fingerprinting** — CDDB, MusicBrainz, and AccurateRip disc IDs
+
+### Disc Diagnostics
+- **C2 error scan** — quick pass/fail quality check
+- **BLER scan** — detailed per-second error rate with Red Book compliance check
+- **Disc rot detection** — two-phase spatial degradation pattern analysis
+- **Comprehensive scan** — all tests combined into a single scored report (A–F)
+- **Surface map** — per-sector C2 error CSV for external visualization
+- **Speed comparison test** — reads sectors at two speeds to detect surface instability
+- **Multi-pass verification** — reads sectors N times to detect read inconsistency
+- **Lead-in/lead-out area check** — scans the first/last 150 sectors for edge damage
+- **Audio content analysis** — detects silent, clipped, low-level, and DC-offset sectors
+- **Seek time analysis** — measures seek latency to detect mechanical issues
+- **C2 validation test** — verifies that the drive's C2 error reporting is reliable
+
+---
+
+## Quality Scan Modes
+
+AudioCopy offers three primary quality scans. Each answers a different question about a disc.
+
+### C2 Error Scan (Quick)
+
+**Question answered:** *"Does this disc have uncorrectable errors?"*
+
+A CD drive performs two internal error-correction stages. **C1** corrects minor errors transparently. **C2** is the second and final stage — a C2 error means the drive's hardware could not fully correct the data and the returned audio samples may be wrong.
+
+This scan reads every audio sector once and asks the drive to report C2 error pointers. It supports four sensitivity modes:
+
+| Mode | Behavior |
+|---|---|
+| **Standard** | Single pass, byte-level C2 counting |
+| **PlexTools-style** | Single pass with cache defeat, then conditional re-read of error sectors |
+| **Multi-pass** | Two-pass scan without cache defeat (faster) |
+| **Paranoid** | Cache defeat + conditional three-pass re-read of error sectors |
+
+Optionally performs **dual-speed validation** — re-reads error sectors at a different speed to distinguish real media errors from speed-dependent read artifacts.
+
+**Output:** Total C2 count, per-sector error counts, error LBA list, and a summary report.
+
+**When to use:** Quick check before ripping to decide whether standard or secure mode is needed.
+
+---
+
+### BLER Scan (Detailed)
+
+**Question answered:** *"What is the error rate over time, and does it meet Red Book standards?"*
+
+**BLER** (Block Error Rate) is an IEC 60908 (Red Book) concept. The standard defines maximum acceptable error rates measured per second of audio playback. AudioCopy reads every audio sector, counts C2 errors, and aggregates them into one-second time buckets (75 sectors = 1 second at 1× CD speed). The result is a complete time-series error profile of the disc.
+
+| Metric | Description |
+|---|---|
+| **Avg C2/sec** | Mean C2 errors per second across the entire disc |
+| **Max C2/sec** | Peak one-second error count (with timestamp) |
+| **Red Book threshold** | Avg C2/sec < 220 = PASS (IEC 60908 compliance) |
+| **Quality threshold** | Avg C2/sec < 1.0 = GOOD for archival ripping |
+| **Per-track breakdown** | Error count, affected sectors, avg/sec, and status per track |
+| **ASCII error graph** | Visual distribution of errors across the disc timeline |
+
+**Rating scale:**
+
+| Rating | Criteria |
+|---|---|
+| **EXCELLENT** | Zero C2 errors |
+| **GOOD** | Avg < 1.0/sec, longest error run < 3 sectors |
+| **ACCEPTABLE** | Avg < 10.0/sec, longest error run < 10 sectors |
+| **POOR** | Above acceptable thresholds |
+| **BAD** | Read failures occurred (sectors could not be read at all) |
+
+**Output:** Full report printed to console, plus a CSV log (`bler_scan.csv`) with per-second LBA and error count for graphing in external tools.
+
+**When to use:** Detailed quality assessment — see exactly where errors are, whether the disc meets Red Book limits, and whether it is safe to archive.
+
+---
+
+### Disc Rot Detection
+
+**Question answered:** *"Is this disc physically degrading, and how urgently should I back it up?"*
+
+Disc rot is the chemical or physical deterioration of a CD's reflective aluminum layer. It produces **characteristic spatial error patterns** that are distinct from scratches, fingerprints, or manufacturing defects. A disc can have zero C2 errors on a single read pass and still be in early-stage rot, detectable only through read instability across multiple passes.
+
+AudioCopy performs a two-phase scan:
+
+**Phase 1 — C2 error distribution**
+Reads the entire disc and classifies every sector into three radial zones:
+
+| Zone | Disc position |
+|---|---|
+| **Inner** | 0–33% (near the center hub) |
+| **Middle** | 33–66% |
+| **Outer** | 66–100% (near the outer edge) |
+
+Error rates are computed per zone to reveal spatial concentration patterns.
+
+**Phase 2 — Adaptive read consistency**
+Re-reads sampled sectors multiple times (3 passes per sample) to detect **read instability** — the same sector returning different audio data on different reads. The sampling density adapts per zone: zones with higher error rates from Phase 1 receive denser sampling (down to every 20th sector) while clean zones are sampled sparsely (every 200th sector).
+
+The scan then evaluates four degradation indicators:
+
+| Indicator | Detection rule | What it means |
+|---|---|---|
+| **Edge concentration** | Outer error rate > 2× inner rate and > 1% | Rot typically starts at the disc edge where the protective lacquer is thinnest |
+| **Progressive pattern** | Error rate increases monotonically inner → middle → outer, outer > 0.5% | Classic inward-spreading rot progression |
+| **Pinhole pattern** | > 10 small clusters (≤ 3 sectors) comprising > 50% of all clusters | Microscopic holes in the reflective layer caused by oxidation |
+| **Read instability** | > 5% of re-read samples return different data | The reflective layer is intermittently unreadable — data is being lost |
+
+A weighted scoring system produces the final risk level:
+
+| Indicator | Weight |
+|---|---|
+| Edge concentration | +25 |
+| Progressive pattern | +25 |
+| Read instability | +20 |
+| Pinhole pattern | +15 |
+| Inconsistency rate > 10% | +15 |
+
+| Score | Risk level |
+|---|---|
+| 0–9 | **NONE** — Disc appears healthy |
+| 10–29 | **LOW** — Minor issues, consider backing up soon |
+| 30–49 | **MODERATE** — Early degradation, back up immediately |
+| 50–74 | **HIGH** — Significant degradation, back up NOW |
+| 75–100 | **CRITICAL** — Severe damage, extract whatever data is possible |
+
+**Output:** Zone error rates, cluster analysis, indicator flags, risk assessment, and a recommendation. Saved as a text report (`discrot_report.txt`).
+
+**When to use:** When you suspect physical deterioration (visible bronzing, edge discoloration, age > 15 years) and need to know whether data loss is imminent.
+
+---
+
+## C2/BLER vs. Disc Rot — Summary of Differences
+
+| | C2 Scan | BLER Scan | Disc Rot Detection |
+|---|---|---|---|
+| **Question** | Are there uncorrectable errors? | What is the error rate over time? | Is the disc physically degrading? |
+| **Read passes** | 1–3 (configurable) | 1 | Full disc + adaptive multi-pass sampling |
+| **Spatial analysis** | No | No (time-series only) | Yes — three-zone radial classification |
+| **Read consistency** | Not tested | Not tested | Multi-pass re-read detects instability |
+| **Pattern analysis** | None | Per-second bucketing, per-track totals | Edge concentration, progressive gradient, pinhole clusters |
+| **Typical cause detected** | Scratches, fingerprints, poor burns | Same as C2 but with temporal context | Chemical oxidation, delamination, bronzing |
+| **Output format** | Console report | Console report + CSV + ASCII graph | Console report + text log |
+| **Actionable result** | "Use secure rip" or "clean the disc" | "Meets/fails Red Book" or "use Paranoid mode" | "Back up NOW — data loss imminent" |
+| **Speed** | Fast (minutes) | Moderate (full disc read) | Slow (full disc read + re-read sampling) |
+
+**Key insight:** A disc can pass a C2 scan with zero errors yet still be in early-stage rot — Phase 2's read consistency check catches degradation that a single read pass cannot. Conversely, a disc with high BLER from a surface scratch will show **no rot indicators** because the damage is mechanical, not chemical.
+
+---
+
+
+## Building
+
+Requires **Visual Studio** with the **C++ Desktop Development** workload. Open `AudioCopy.vcxproj` and build. No external dependencies beyond the Windows SDK (`winhttp.lib` is used for AccurateRip lookups and is included in the SDK).
+
+---
+
+## Usage
+
+Insert an audio CD. AudioCopy auto-detects drives, reads the TOC, queries AccurateRip, and presents an interactive menu:
+
+Press **ESC** or **Ctrl+C** at any time to cancel a running operation.
+
+---
+
+## Acknowledgments
+
+cdda2wav (cdrtools) — a long‑standing reference implementation for secure CD audio extraction. Its work on drive handling, offset behavior, and reliable digital audio extraction helped shape the field AudioCopy builds upon.
+
+cdparanoia / paranoia libraries — influential for robust read‑verification strategies and jitter correction. AudioCopy’s paranoid and multi‑pass verification concepts draw from the reliability goals established by the paranoia toolset.
+
+- **[AccurateRip](http://www.accuraterip.com/)** — AudioCopy calculates AccurateRip V1 checksums and queries the AccurateRip online database to verify rip accuracy against submissions from other users worldwide. The AccurateRip database and protocol were created by Illustrate, the developers of dBpoweramp.
+
+- **[Exact Audio Copy (EAC)](https://www.exactaudiocopy.de/)** by André Wiethoff — the pioneering CD ripper that defined secure ripping methodology. EAC established the practices of multi-pass sector reading, C2 error pointer detection, drive cache defeat, read offset correction, overreading into lead-in/lead-out, and paranoid-mode extraction with bit-level verification. AudioCopy's secure rip implementation, error handling strategy, and overall approach to verifiable extraction are directly informed by the standards EAC set.
+
+- **[dBpoweramp](https://www.dbpoweramp.com/)** by Illustrate — created the AccurateRip system and popularized the concept of verifying CD rips against a shared online database of checksums. dBpoweramp's approach to automatic drive offset detection, C2 error reporting, and its emphasis on making verified ripping accessible to a broad audience established industry-wide expectations for audio CD extraction software.
+
+EAC and dBpoweramp together defined the modern standard for verifiable, bit-perfect audio CD extraction. AudioCopy builds on the methodology and concepts they established.
+
+AccurateRip — AudioCopy calculates AccurateRip V1 checksums and queries the AccurateRip online database to verify rip accuracy against submissions from other users worldwide. The AccurateRip database and protocol were created by Illustrate, the developers of dBpoweramp.
+
+Exact Audio Copy (EAC) by André Wiethoff — the pioneering CD ripper that defined secure ripping methodology. EAC established the practices of multi-pass sector reading, C2 error pointer detection, drive cache defeat, read offset correction, overreading into lead-in/lead-out, and paranoid-mode extraction with bit-level verification. AudioCopy's secure rip implementation, error handling strategy, and overall approach to verifiable extraction are directly informed by the standards EAC set.
+
+dBpoweramp by Illustrate — created the AccurateRip system and popularized the concept of verifying CD rips against a shared online database of checksums. dBpoweramp's approach to automatic drive offset detection, C2 error reporting, and its emphasis on making verified ripping accessible to a broad audience established industry-wide expectations for audio CD extraction software.
+
+EAC and dBpoweramp together defined the modern standard for verifiable, bit-perfect audio CD extraction. AudioCopy builds on the methodology and concepts they established.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+## Windows APIs Used
+
+AudioCopy leverages several Microsoft Windows APIs to provide low-level access to optical drives and filesystem operations:
+
+### File & Directory Management
+- **`CreateDirectoryW()`** - Creates directories recursively with support for long paths
+- **`CreateFileW()`** - Opens file handles for drives and file I/O operations
+- **`GetModuleFileNameW()`** - Retrieves the executable's full path for working directory detection
+- **`GetCurrentDirectoryW()`** - Queries the current working directory
+- **`GetFileAttributesW()`** - Checks file/directory existence and attributes
+
+### Device I/O Control
+- **`DeviceIoControl()`** - Sends control codes to device drivers for hardware communication
+- **`IOCTL_STORAGE_QUERY_PROPERTY`** - Queries storage device properties and capabilities
+
+### Storage & SCSI Commands
+- **`IOCTL_CDROM_*` commands** - CD/DVD drive-specific operations (via `ntddcdrm.h`)
+- **`IOCTL_SCSI_PASS_THROUGH`** - Low-level SCSI pass-through for raw disk access and precise audio reading (via `ntddscsi.h`)
+
+### Storage Device Structures
+- **`STORAGE_PROPERTY_QUERY`** - Property query structure for device information
+- **`STORAGE_DEVICE_DESCRIPTOR`** - Retrieves vendor, product, and device identification
+- **`StorageDeviceProperty`** - Property ID enumeration for device queries
+
+### Handle Management
+- **`HANDLE`** - Generic Windows handle for device and file operations
+- **`INVALID_HANDLE_VALUE`** - Sentinel value for invalid or closed handles
+
+### Error Handling & System Utilities
+- **`GetLastError()`** - Retrieves system error codes for detailed error reporting
+- **`MAX_PATH`** - Constant for maximum filesystem path length (with support for long paths via `\\?\` prefix)
+
+### Purpose
+These APIs enable AudioCopy to:
+- Access optical drives at the lowest system level via SCSI commands
+- Query drive capabilities (speed, C2 error reporting, overread support)
+- Read audio sectors with advanced error detection and correction
+- Manage file I/O for output storage
+- Provide detailed error diagnostics during drive communication
+
+-----------------------------------------------------------------------------------------------------------------------
+
+### Subchannel Integrity Verification
+
+**Question answered:** *"Is the Q subchannel data on this disc readable, and could it affect track boundary detection?"*
+
+The Q subchannel is a narrow metadata channel embedded alongside the audio data on every CD sector. It carries the current track number, index point, and timestamps — the information a CD player uses for its real-time display ("Track 3, 2:47"). AudioCopy reads and validates this data for every audio sector on the disc.
+
+#### Why subchannel errors are expected
+
+Unlike audio data, subchannel data has **no error correction**:
+
+| Property | Audio Data | Q Subchannel |
+|---|---|---|
+| **Error correction** | CIRC — two layers of Reed-Solomon (C1 + C2) with interleaving | None — only a 16-bit CRC for detection |
+| **Interleaving** | Yes — data is spread across ~100 frames to survive scratches | No — each 96-bit frame stands alone |
+| **Redundancy** | ~25% of raw channel data is parity bytes | Zero — 10 bytes payload + 2 bytes CRC |
+| **On read failure** | Hardware reconstructs the original samples perfectly | Data is simply lost — no recovery possible |
+
+A single bit flip anywhere in a 96-bit subchannel frame causes the CRC to fail. The same bit flip in the audio channel would be silently corrected by the C1/C2 error correction hardware before the data ever reaches software.
+
+**A subchannel error rate of 1–3% is normal and expected on most CDs, even brand-new pressed discs.** This is not a defect — it reflects the physical limitations of a channel that was designed as best-effort navigational metadata, not as a reliable data transport.
+
+#### What the scan checks
+
+For every audio sector, AudioCopy:
+
+1. Reads the raw 96-byte interleaved subchannel data via `READ CD` (subchannel mode 01h)
+2. De-interleaves the Q channel bits and validates the CRC-16-CCITT checksum
+3. If the raw CRC fails, retries once (transient errors are common)
+4. If raw reading fails twice, falls back to the drive's formatted Q subchannel (mode 02h)
+5. If a valid Q frame is recovered, validates that the reported track number matches the expected track from the TOC
+
+Errors are classified into three categories:
+
+| Error type | Meaning |
+|---|---|
+| **CRC/Read errors** | The Q subchannel CRC failed on both raw attempts and the formatted fallback also failed — the data for this sector is unrecoverable |
+| **Track mismatches** | The Q data was read and CRC-verified successfully, but the reported track number does not match the expected track from the TOC. Common at track boundaries and pregaps |
+| **Index errors** | The decoded index value is outside the valid BCD range (0–99) |
+
+The scan also tracks **burst errors** — consecutive sectors with failures — to identify localized damage versus uniformly distributed noise.
+
+#### Interpreting results
+
+| Error rate | Assessment |
+|---|---|
+| **0%** | Exceptionally clean — uncommon even on new discs |
+| **< 1%** | Excellent — no impact on ripping |
+| **1–3%** | Normal — typical baseline for most CDs and drives |
+| **3–5%** | Elevated — may indicate disc wear, but audio extraction is unaffected |
+| **5–10%** | High — disc surface may be degraded; cross-reference with C2 scan |
+| **> 10%** | Severe — likely physical damage; prioritize backup with secure rip mode |
+
+#### Why this does not affect audio quality
+
+The subchannel and the audio data are physically separate channels on the disc. A subchannel CRC failure means the 96-bit navigational frame for that sector was unreadable — it says nothing about the 2,352-byte audio payload, which has its own independent and far more robust error correction.
+
+AudioCopy (and all modern rippers) determines track boundaries from the **Table of Contents** in the disc lead-in, not from per-sector subchannel data. The subchannel is useful for:
+
+- Detecting index points within tracks (e.g., hidden tracks in pregaps)
+- Extracting ISRC codes and MCN (Media Catalog Number)
+- Verifying that the TOC and the on-disc metadata are consistent
+
+A high subchannel error rate is a signal to inspect the disc further (run a C2 or disc rot scan), but it does not indicate that the extracted audio will contain errors.
+
+**Output:** Sector count, per-category error totals, burst analysis, and measured read speed.
+
+**When to use:** Before ripping discs where index point accuracy matters (live albums, gapless recordings), or as a general disc health indicator to decide whether further diagnostics are warranted.
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---
+
+## Pre-gap Scanning
+
+AudioCopy detects pre-gaps (INDEX 00 regions) on audio CDs using a two-phase algorithm with backward refinement. Pre-gaps are the audio segments (often silent) that exist between INDEX 00 and INDEX 01 of each track.
+
+### Why Pre-gap Detection Matters
+
+CD subchannel data can be unreliable, with drives frequently reporting stale or incorrect index values near track boundaries. A naive sector-by-sector scan would be both slow and prone to false positives. AudioCopy's approach prioritizes accuracy over speed by scanning every sector with majority-voted subchannel reads, then refining the result backward to compensate for drive latency.
+
+### The Algorithm
+
+#### Phase 1: Fine Scan (Precise Boundary Detection)
+- **Step Size**: 1 sector (sector-by-sector)
+- **Range**: Up to 450 sectors before the track's INDEX 01 boundary (Track 1 scans from LBA 0)
+- **Reliability**: Uses `ReadSectorQ()` with 3-round majority voting to filter out spurious subchannel reads
+- **Validation**: Requires **≥3 consecutive INDEX 0 hits** to accept a boundary
+  - Isolated spurious subchannel values are rejected
+  - Prevents false positives from stale Q subchannel data
+- **Early Exit**: Stops scanning once INDEX 1 is detected after a confirmed boundary
+
+#### Phase 2: Backward Refinement (Compensating for Read Displacement)
+- **Range**: Checks up to **8 sectors backward** from the detected boundary
+- **Purpose**: Compensate for subchannel read displacement (drives often report index changes several sectors late)
+- **Method**: Probes backward sector-by-sector using majority-voted reads until a non-INDEX 0 sector is found
+- **Result**: Captures the true start of the pre-gap region
+
+### Scan Parameters
+
+- **Drive Speed**: Reduced to 4× during pre-gap scanning for improved subchannel reliability
+- **Track 1 Special Case**: Scans from LBA 0 (disc start) since Track 1 pre-gaps may begin at the very start of the disc
+- **Other Tracks**: Scans up to **450 sectors backward** (~6 seconds) to accommodate:
+  - Standard pre-gaps (typically 150 frames / 2 seconds)
+  - Non-standard pre-gaps on live albums or gapless discs
+
+This algorithm ensures accurate pre-gap detection across a wide variety of CD pressings and drive models, even when subchannel data quality is poor.
+
+### Output
+
+The detected pre-gap boundary is stored in `disc.tracks[i].pregapLBA` and reported to the user:
+---
+
+## License
+
+This project is provided as-is for personal and educational use.

@@ -1,0 +1,101 @@
+﻿// ============================================================================
+// ScsiDrive.h - Low-level SCSI drive communication
+// ============================================================================
+#pragma once
+
+#include "ScsiTypes.h"
+#include "DriveTypes.h"
+#include "Constants.h"
+#include <windows.h>
+#include <ntddcdrm.h>
+#include <ntddscsi.h>
+#include <vector>
+#include <string>
+
+class ScsiDrive {
+private:
+	HANDLE m_handle = INVALID_HANDLE_VALUE;
+	WORD m_currentSpeed = CD_SPEED_MAX;
+	C2Mode m_c2Mode = C2Mode::NotSupported;
+	int m_maxRetries = 5;
+	int m_retryDelayMs = 100;
+
+public:
+	// ── Type aliases for backward compatibility ──────────────
+	using C2ReadOptions = ::C2ReadOptions;  // Re-export from ScsiTypes.h
+
+	ScsiDrive() = default;
+	~ScsiDrive() { Close(); }
+
+	// Non-copyable
+	ScsiDrive(const ScsiDrive&) = delete;
+	ScsiDrive& operator=(const ScsiDrive&) = delete;
+
+	// ── Core operations ──────────────────────────────────────
+	bool Open(wchar_t driveLetter);
+	void Close();
+	bool IsOpen() const { return m_handle != INVALID_HANDLE_VALUE; }
+
+	// ── Speed control ────────────────────────────────────────
+	void SetSpeed(int multiplier);
+	WORD GetCurrentSpeed() const { return m_currentSpeed; }
+	bool GetActualSpeed(WORD& readSpeed, WORD& writeSpeed);
+
+	// ── Sector reading ───────────────────────────────────────
+	bool ReadSector(DWORD lba, BYTE* audio, BYTE* subchannel);
+	bool ReadSectorWithC2(DWORD lba, BYTE* audio, BYTE* subchannel, int& c2Errors);
+	bool ReadSectorAudioOnly(DWORD lba, BYTE* audio);
+	bool ReadSectorsAudioOnly(DWORD startLBA, DWORD count, BYTE* audio);
+	bool ReadDataSector(DWORD lba, BYTE* data);
+	bool ReadSectorQ(DWORD lba, int& qTrack, int& qIndex);
+	bool ReadSectorQSingle(DWORD lba, int& qTrack, int& qIndex);
+	bool ReadSectorQAdaptive(DWORD lba, int& qTrack, int& qIndex,
+		DWORD pregapLBA, DWORD startLBA);
+
+	// ── Enhanced C2 reading ──────────────────────────────────
+	bool ReadSectorWithC2Ex(DWORD lba, BYTE* audio, BYTE* subchannel, int& c2Errors,
+		BYTE* c2Raw, const C2ReadOptions& options,
+		BYTE* outSenseKey = nullptr, BYTE* outASC = nullptr, BYTE* outASCQ = nullptr);
+	bool ReadSectorWithC2ExMultiPass(DWORD lba, BYTE* audio, BYTE* subchannel,
+		int& c2Errors, BYTE* c2Raw, const C2ReadOptions& options,
+		BYTE* outSenseKey = nullptr, BYTE* outASC = nullptr, BYTE* outASCQ = nullptr);
+	bool PlextorReadC2(DWORD lba, BYTE* audio, int& c2Errors, BYTE* c2Raw, bool countBytes,
+		BYTE* outSenseKey = nullptr, BYTE* outASC = nullptr, BYTE* outASCQ = nullptr);
+	bool ValidateC2Accuracy(DWORD testLBA);
+
+	// ── Drive capabilities ───────────────────────────────────
+	bool CheckC2Support();
+	bool GetDriveInfo(std::string& vendor, std::string& model);
+	bool DetectCapabilities(DriveCapabilities& caps);
+	bool GetModePage2A(std::vector<BYTE>& pageData);
+	bool TestOverread(bool leadIn);
+
+	// ── Drive offset detection ───────────────────────────────
+	bool DetectDriveOffset(OffsetDetectionResult& result);
+	bool LookupAccurateRipOffset(DriveOffsetInfo& info);
+	bool DetectOffsetFromPregap(int trackStartLBA, int& estimatedOffset);
+
+	// ── Media control ────────────────────────────────────────
+	bool Eject();
+	bool GetMediaProfile(WORD& profileCode, std::string& profileName);
+
+	// ── Raw SCSI access ──────────────────────────────────────
+	bool SendSCSI(void* cdb, BYTE cdbLength, void* buffer, DWORD bufferSize, bool dataIn = true);
+	bool SendSCSIWithSense(void* cdb, BYTE cdbLength, void* buffer, DWORD bufferSize,
+		BYTE* senseKey, BYTE* asc, BYTE* ascq, bool dataIn = true);
+	bool SeekToLBA(DWORD lba);
+
+	// ── Enhanced error handling ──────────────────────────────
+	bool GetMediaStatus(DriveHealthCheck& status);
+	bool TestUnitReady();
+	bool WaitForDriveReady(int timeoutSeconds = 30);
+	std::string GetSenseDescription(BYTE senseKey, BYTE asc, BYTE ascq);
+
+	// ── Retry configuration ──────────────────────────────────
+	void SetMaxRetries(int retries) { m_maxRetries = retries; }
+	void SetRetryDelay(int delayMs) { m_retryDelayMs = delayMs; }
+
+private:
+	bool ReadSectorQRaw(DWORD lba, int& qTrack, int& qIndex);
+	bool ParseRawSubchannel(const BYTE* sub, int& qTrack, int& qIndex);
+};
