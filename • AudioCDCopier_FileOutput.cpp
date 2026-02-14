@@ -228,23 +228,42 @@ bool AudioCDCopier::SaveBlerLog(const BlerResult& result, const std::wstring& fi
 		log << "#\n";
 	}
 
-	// --- Per-second CSV data ---
+	// --- Per-second CSV data (only problem seconds) ---
 	log << "# ==============================\n";
 	log << "# Per-Second C2 Error Data\n";
+	log << "# (only seconds with non-zero errors)\n";
 	log << "# ==============================\n";
-	log << "Time,Second,LBA,C2_Errors\n";
 
+	// Count how many seconds have errors
+	bool hasErrors = false;
 	for (size_t i = 0; i < result.perSecondC2.size(); i++) {
-		int minutes = static_cast<int>(i) / 60;
-		int seconds = static_cast<int>(i) % 60;
-		DWORD lba = static_cast<DWORD>(result.perSecondC2[i].first);
-		int c2 = result.perSecondC2[i].second;
+		if (result.perSecondC2[i].second > 0) {
+			hasErrors = true;
+			break;
+		}
+	}
 
-		log << minutes << ":" << std::setfill('0') << std::setw(2) << seconds
-			<< std::setfill(' ')
-			<< "," << i
-			<< "," << lba
-			<< "," << c2 << "\n";
+	if (hasErrors) {
+		log << "Time,Second,LBA,C2_Errors\n";
+
+		for (size_t i = 0; i < result.perSecondC2.size(); i++) {
+			int c2 = result.perSecondC2[i].second;
+			if (c2 == 0) continue;  // skip clean seconds
+
+			int minutes = static_cast<int>(i) / 60;
+			int seconds = static_cast<int>(i) % 60;
+			DWORD lba = static_cast<DWORD>(result.perSecondC2[i].first);
+
+			log << minutes << ":" << std::setfill('0') << std::setw(2) << seconds
+				<< std::setfill(' ')
+				<< "," << i
+				<< "," << lba
+				<< "," << c2 << "\n";
+		}
+	}
+	else {
+		log << "# No errors detected. All " << result.perSecondC2.size()
+			<< " seconds read cleanly with zero C2 errors.\n";
 	}
 
 	log.close();
@@ -266,8 +285,8 @@ bool AudioCDCopier::SaveReadLog(const DiscInfo& disc, const std::wstring& filena
 	log << "LBA,Track,ReadTimeMs\n";
 
 	for (const auto& entry : disc.readLog) {
-		log << std::get<0>(entry) << ","
-			<< std::get<1>(entry) << ","
+		log << std::get<0>(entry) << ","	
+			<< std::get<1>(entry) << ","	
 			<< std::fixed << std::setprecision(2) << std::get<2>(entry) << "\n";
 	}
 
@@ -322,20 +341,20 @@ bool AudioCDCopier::GenerateCueSheet(const DiscInfo& disc, const std::wstring& a
 
 		if (disc.pregapMode == PregapMode::Include) {
 			if (gap > 0) {
-				cue << "    INDEX 00 " << std::setfill('0') << std::setw(2) << off / 75 / 60 << ":"
+				cue << "    INDEX 00 " << std::setfill('0') << std::setw(2) << off / 75 / 60 << ":"	
 					<< std::setw(2) << (off / 75) % 60 << ":" << std::setw(2) << off % 75 << "\n";
 				off += gap;
 			}
-			cue << "    INDEX 01 " << std::setfill('0') << std::setw(2) << off / 75 / 60 << ":"
+			cue << "    INDEX 01 " << std::setfill('0') << std::setw(2) << off / 75 / 60 << ":"	
 				<< std::setw(2) << (off / 75) % 60 << ":" << std::setw(2) << off % 75 << "\n";
 			off += t.endLBA - t.startLBA + 1;
 		}
 		else {
 			if (gap > 0 && i > 0) {
-				cue << "    PREGAP " << std::setfill('0') << std::setw(2) << gap / 75 / 60 << ":"
+				cue << "    PREGAP " << std::setfill('0') << std::setw(2) << gap / 75 / 60 << ":"	
 					<< std::setw(2) << (gap / 75) % 60 << ":" << std::setw(2) << gap % 75 << "\n";
 			}
-			cue << "    INDEX 01 " << std::setfill('0') << std::setw(2) << off / 75 / 60 << ":"
+			cue << "    INDEX 01 " << std::setfill('0') << std::setw(2) << off / 75 / 60 << ":"	
 				<< std::setw(2) << (off / 75) % 60 << ":" << std::setw(2) << off % 75 << "\n";
 			off += t.endLBA - t.startLBA + 1;
 		}
