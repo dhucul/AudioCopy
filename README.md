@@ -1,6 +1,6 @@
 # AudioCopy
-“You take the blue pill—the story ends, you wake up in your bed and believe whatever you want to believe.
-You take the red pill—you stay in Wonderland, and I show you how deep the codebase goes.”
+"You take the blue pill—the story ends, you wake up in your bed and believe whatever you want to believe.
+You take the red pill—you stay in Wonderland, and I show you how deep the codebase goes."
 
 A Windows command-line tool for high-quality audio CD ripping with advanced disc diagnostics, written in C++.
 
@@ -194,23 +194,51 @@ A weighted scoring system produces the final risk level:
 ---
 
 
-## Building
+## Subchannel Data Extraction
 
-Requires **Visual Studio** with the **C++ Desktop Development** workload. Open `AudioCopy.vcxproj` and build. No external dependencies beyond the Windows SDK (`winhttp.lib` is used for AccurateRip lookups and is included in the SDK).
+### What is subchannel data?
+
+Every CD sector contains two separate data streams read simultaneously by the laser:
+
+| Channel | Size per sector | Content | Error correction |
+|---|---|---|---|
+| **Main channel** | 2,352 bytes | Audio samples (or data) | CIRC — two layers of Reed-Solomon (C1 + C2) with interleaving |
+| **Subchannel** | 96 bytes | Navigational metadata split across 8 sub-channels (P, Q, R, S, T, U, V, W) | None — only a 16-bit CRC on the Q channel |
+
+The **P channel** carries a simple pause/play flag. The **Q channel** carries track number, index, and MSF timestamps — the data a CD player uses for its display. The **R–W channels** are optional and carry CD-G graphics (karaoke), CD-TEXT, or are simply empty.
+
+### When to enable subchannel extraction
+
+When ripping, AudioCopy asks whether to include subchannel data. Enabling it creates an additional `.sub` file alongside the `.bin` image. Use the following guidelines:
+
+| Scenario | Include subchannel? | Reason |
+|---|---|---|
+| **Archival / preservation rip** | **Yes** | Preserves the complete disc image including all metadata channels. A `.bin`+`.sub`+`.cue` set is a bit-perfect representation of the original disc. |
+| **CD-G / karaoke disc** | **Yes** | The R–W channels contain the graphics data. Without subchannel extraction, the karaoke visuals are lost. |
+| **CD-TEXT disc** | **Yes** | Artist and title metadata encoded in the R–W subchannel is preserved. |
+| **Disc with hidden tracks or non-standard indexing** | **Yes** | Raw Q-channel data captures index points and timing that may not be fully represented in the TOC. |
+| **Pressed / factory disc (standard audio)** | **Optional** | Pressed CDs always have valid P+Q subchannel data, but the R–W channels are usually empty on standard audio CDs. Extraction preserves timing metadata but adds no audio content. |
+| **Burned CD-R (standard audio)** | **No** | Most CD-R burns do not write meaningful R–W subchannel data. The P+Q timing is generated automatically by the drive and is typically less reliable than the TOC. |
+| **Quick rip for personal listening** | **No** | Subchannel data is not needed for playback. Skipping it produces a smaller output and slightly faster rips. |
+
+### How to decide
+
+If you are unsure whether a disc has subchannel content worth preserving, run **option 11 — Verify Subchannel Burn Status** before ripping. This samples sectors across the disc and reports:
+
+- Whether Q-channel CRC data is valid (indicating reliable subchannel data was mastered/burned)
+- Whether R–W channels contain CD-G graphics or CD-TEXT metadata
+- A clear recommendation on whether to enable subchannel extraction
+
+**Rule of thumb:** If you are archiving and storage is not a concern, always include subchannel data — it costs ~4% extra file size and ensures nothing is lost. If you are ripping for playback only, skip it.
+
+### Output files
+
+| Subchannel setting | Files created |
+|---|---|
+| **Include** | `.bin` (audio) + `.sub` (96 bytes/sector raw subchannel) + `.cue` (sheet) |
+| **Audio only** | `.bin` (audio) + `.cue` (sheet) |
 
 ---
-
-## Usage
-
-Insert an audio CD. AudioCopy auto-detects drives, reads the TOC, queries AccurateRip, and presents an interactive menu:
-
-Press **ESC** or **Ctrl+C** at any time to cancel a running operation.
-
----
-
-
-
------------------------------------------------------------------------------------------------------------------------
 
 ### Subchannel Integrity Verification
 
@@ -280,7 +308,6 @@ A high subchannel error rate is a signal to inspect the disc further (run a C2 o
 
 **When to use:** Before ripping discs where index point accuracy matters (live albums, gapless recordings), or as a general disc health indicator to decide whether further diagnostics are warranted.
 
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ---
 
 ## Pre-gap Scanning
@@ -323,15 +350,29 @@ This algorithm ensures accurate pre-gap detection across a wide variety of CD pr
 The detected pre-gap boundary is stored in `disc.tracks[i].pregapLBA` and reported to the user:
 ---
 
+## Building
+
+Requires **Visual Studio** with the **C++ Desktop Development** workload. Open `AudioCopy.vcxproj` and build. No external dependencies beyond the Windows SDK (`winhttp.lib` is used for AccurateRip lookups and is included in the SDK).
+
+---
+
+## Usage
+
+Insert an audio CD. AudioCopy auto-detects drives, reads the TOC, queries AccurateRip, and presents an interactive menu:
+
+Press **ESC** or **Ctrl+C** at any time to cancel a running operation.
+
+---
+
 ## License
 
 This project is provided as-is for personal and educational use.
 
 ## Acknowledgments
 
-cdda2wav (cdrtools) — a long‑standing reference implementation for secure CD audio extraction. Its work on drive handling, offset behavior, and reliable digital audio extraction helped shape the field AudioCopy builds upon.
+- **cdda2wav (cdrtools)** — a long-standing reference implementation for secure CD audio extraction. Its work on drive handling, offset behavior, and reliable digital audio extraction helped shape the field AudioCopy builds upon.
 
-cdparanoia / paranoia libraries — influential for robust read‑verification strategies and jitter correction. AudioCopy’s paranoid and multi‑pass verification concepts draw from the reliability goals established by the paranoia toolset.
+- **cdparanoia / paranoia libraries** — influential for robust read-verification strategies and jitter correction. AudioCopy's paranoid and multi-pass verification concepts draw from the reliability goals established by the paranoia toolset.
 
 - **[AccurateRip](http://www.accuraterip.com/)** — AudioCopy calculates AccurateRip V1 checksums and queries the AccurateRip online database to verify rip accuracy against submissions from other users worldwide. The AccurateRip database and protocol were created by Illustrate, the developers of dBpoweramp.
 
@@ -340,13 +381,3 @@ cdparanoia / paranoia libraries — influential for robust read‑verification s
 - **[dBpoweramp](https://www.dbpoweramp.com/)** by Illustrate — created the AccurateRip system and popularized the concept of verifying CD rips against a shared online database of checksums. dBpoweramp's approach to automatic drive offset detection, C2 error reporting, and its emphasis on making verified ripping accessible to a broad audience established industry-wide expectations for audio CD extraction software.
 
 EAC and dBpoweramp together defined the modern standard for verifiable, bit-perfect audio CD extraction. AudioCopy builds on the methodology and concepts they established.
-
-AccurateRip — AudioCopy calculates AccurateRip V1 checksums and queries the AccurateRip online database to verify rip accuracy against submissions from other users worldwide. The AccurateRip database and protocol were created by Illustrate, the developers of dBpoweramp.
-
-Exact Audio Copy (EAC) by André Wiethoff — the pioneering CD ripper that defined secure ripping methodology. EAC established the practices of multi-pass sector reading, C2 error pointer detection, drive cache defeat, read offset correction, overreading into lead-in/lead-out, and paranoid-mode extraction with bit-level verification. AudioCopy's secure rip implementation, error handling strategy, and overall approach to verifiable extraction are directly informed by the standards EAC set.
-
-dBpoweramp by Illustrate — created the AccurateRip system and popularized the concept of verifying CD rips against a shared online database of checksums. dBpoweramp's approach to automatic drive offset detection, C2 error reporting, and its emphasis on making verified ripping accessible to a broad audience established industry-wide expectations for audio CD extraction software.
-
-
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
