@@ -208,28 +208,7 @@ Press **ESC** or **Ctrl+C** at any time to cancel a running operation.
 
 ---
 
-## Acknowledgments
 
-cdda2wav (cdrtools) — a long‑standing reference implementation for secure CD audio extraction. Its work on drive handling, offset behavior, and reliable digital audio extraction helped shape the field AudioCopy builds upon.
-
-cdparanoia / paranoia libraries — influential for robust read‑verification strategies and jitter correction. AudioCopy’s paranoid and multi‑pass verification concepts draw from the reliability goals established by the paranoia toolset.
-
-- **[AccurateRip](http://www.accuraterip.com/)** — AudioCopy calculates AccurateRip V1 checksums and queries the AccurateRip online database to verify rip accuracy against submissions from other users worldwide. The AccurateRip database and protocol were created by Illustrate, the developers of dBpoweramp.
-
-- **[Exact Audio Copy (EAC)](https://www.exactaudiocopy.de/)** by André Wiethoff — the pioneering CD ripper that defined secure ripping methodology. EAC established the practices of multi-pass sector reading, C2 error pointer detection, drive cache defeat, read offset correction, overreading into lead-in/lead-out, and paranoid-mode extraction with bit-level verification. AudioCopy's secure rip implementation, error handling strategy, and overall approach to verifiable extraction are directly informed by the standards EAC set.
-
-- **[dBpoweramp](https://www.dbpoweramp.com/)** by Illustrate — created the AccurateRip system and popularized the concept of verifying CD rips against a shared online database of checksums. dBpoweramp's approach to automatic drive offset detection, C2 error reporting, and its emphasis on making verified ripping accessible to a broad audience established industry-wide expectations for audio CD extraction software.
-
-EAC and dBpoweramp together defined the modern standard for verifiable, bit-perfect audio CD extraction. AudioCopy builds on the methodology and concepts they established.
-
-AccurateRip — AudioCopy calculates AccurateRip V1 checksums and queries the AccurateRip online database to verify rip accuracy against submissions from other users worldwide. The AccurateRip database and protocol were created by Illustrate, the developers of dBpoweramp.
-
-Exact Audio Copy (EAC) by André Wiethoff — the pioneering CD ripper that defined secure ripping methodology. EAC established the practices of multi-pass sector reading, C2 error pointer detection, drive cache defeat, read offset correction, overreading into lead-in/lead-out, and paranoid-mode extraction with bit-level verification. AudioCopy's secure rip implementation, error handling strategy, and overall approach to verifiable extraction are directly informed by the standards EAC set.
-
-dBpoweramp by Illustrate — created the AccurateRip system and popularized the concept of verifying CD rips against a shared online database of checksums. dBpoweramp's approach to automatic drive offset detection, C2 error reporting, and its emphasis on making verified ripping accessible to a broad audience established industry-wide expectations for audio CD extraction software.
-
-EAC and dBpoweramp together defined the modern standard for verifiable, bit-perfect audio CD extraction. AudioCopy builds on the methodology and concepts they established.
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -----------------------------------------------------------------------------------------------------------------------
 
