@@ -300,12 +300,12 @@ int main() {
 		}
 
 			  // ── 5. Generate surface map ─────────────────────────────────
-			  // Text-based visual map of disc surface quality.
+			  // CSV-based detailed map of disc surface quality.
 		case 5: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
-			std::wstring mapFile = dir + L"\\surface_map.txt";
+			std::wstring mapFile = dir + L"\\surface_map.csv";
 			copier.GenerateSurfaceMap(disc, mapFile, speed);
 			break;
 		}

@@ -140,7 +140,6 @@ void AudioCDCopier::GenerateSurfaceMap(DiscInfo& disc, const std::wstring& filen
 			m_drive.SetSpeed(0);
 			return;
 		}
-		mapFile << "LBA,Track,Region,C2_Errors,Status\n";
 	}
 
 	ProgressIndicator progress(40);
@@ -161,6 +160,7 @@ void AudioCDCopier::GenerateSurfaceMap(DiscInfo& disc, const std::wstring& filen
 	int totalC2Errors = 0;
 	int failedReads = 0;
 	int errorSectors = 0;
+	bool headerWritten = false;
 
 	for (const auto& t : disc.tracks) {
 		if (!t.isAudio) continue;
@@ -191,15 +191,50 @@ void AudioCDCopier::GenerateSurfaceMap(DiscInfo& disc, const std::wstring& filen
 				totalC2Errors += c2Errors;
 			}
 
-			if (mapFile.is_open()) {
+			// Only write rows for problem sectors
+			if (mapFile.is_open() && (!readOk || c2Errors > 0)) {
+				// Write header on first problem row
+				if (!headerWritten) {
+					mapFile << "LBA,Track,Region,Time_MMSSFF,C2_Errors,Read_Status,Severity\n";
+					headerWritten = true;
+				}
+
 				const char* region = (lba < t.startLBA) ? "PREGAP" : "AUDIO";
-				mapFile << lba << "," << t.trackNumber << "," << region << ","
-					<< c2Errors << "," << (readOk ? "OK" : "FAIL") << "\n";
+
+				// Convert LBA to MM:SS:FF (75 frames per second)
+				DWORD absLba = lba + 150; // adjust for 2-second offset
+				int mm = absLba / (75 * 60);
+				int ss = (absLba / 75) % 60;
+				int ff = absLba % 75;
+
+				// Classify severity
+				const char* severity = "CRITICAL";
+				if (readOk) {
+					if (c2Errors > 50)      severity = "HIGH";
+					else if (c2Errors > 10) severity = "MEDIUM";
+					else                    severity = "LOW";
+				}
+
+				mapFile << lba << ","
+					<< t.trackNumber << ","
+					<< region << ","
+					<< std::setfill('0') << std::setw(2) << mm << ":"
+					<< std::setw(2) << ss << ":"
+					<< std::setw(2) << ff << ","
+					<< c2Errors << ","
+					<< (readOk ? "OK" : "FAIL") << ","
+					<< severity << "\n";
 			}
 
 			scannedSectors++;
 			progress.Update(static_cast<int>(scannedSectors), static_cast<int>(totalSectors));
 		}
+	}
+
+	// If no problems were found, write a clean summary instead
+	if (mapFile.is_open() && !headerWritten) {
+		mapFile << "No errors detected. All " << scannedSectors
+			<< " sectors read successfully with zero C2 errors.\n";
 	}
 
 	progress.Finish(true);
@@ -231,7 +266,10 @@ void AudioCDCopier::GenerateSurfaceMap(DiscInfo& disc, const std::wstring& filen
 
 	if (!filename.empty()) {
 		std::wcout << L"  Map saved to:     " << filename << L"\n";
-		std::cout << "  (CSV includes Track and Region columns for detailed analysis)\n";
+		if (headerWritten)
+			std::cout << "  (CSV contains only problem sectors)\n";
+		else
+			std::cout << "  (No errors - clean disc)\n";
 	}
 	std::cout << std::string(60, '=') << "\n";
 }
