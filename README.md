@@ -260,7 +260,6 @@ On typical burned audio CDs:
 
 - Players rarely use R–W during playback.
 - Players rely on the **Table of Contents (TOC)** for track start/end times.
-- If **CD-Text** is supported, it is usually read from the **Lead-In area**, not from R–W subchannels.
 
 ---
 
