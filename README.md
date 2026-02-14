@@ -260,7 +260,7 @@ On typical burned audio CDs:
 
 - Players rarely use R–W during playback.
 - Players rely on the **Table of Contents (TOC)** for track start/end times.
-- Where on disc? For an audio CD that has CD-TEXT, the CD-TEXT data is commonly stored in the lead-in area (before track 1). So the location is often lead-in, but the mechanism is still subchannel R-W.
+- For an audio CD that has CD-TEXT, the CD-TEXT data is commonly stored in the lead-in area (before track 1). So the location is often lead-in, but the mechanism is still subchannel R-W.
 
 ---
 
