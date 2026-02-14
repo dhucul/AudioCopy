@@ -68,16 +68,42 @@ Optionally performs **dual-speed validation** — re-reads error sectors at a di
 
 **BLER** (Block Error Rate) is an IEC 60908 (Red Book) concept. The standard defines maximum acceptable error rates measured per second of audio playback. AudioCopy reads every audio sector, counts C2 errors, and aggregates them into one-second time buckets (75 sectors = 1 second at 1× CD speed). The result is a complete time-series error profile of the disc.
 
+#### C1 Block Error Reporting
+
+A CD drive performs two internal error-correction stages. **C1** corrects minor errors transparently — every disc has some C1 activity, even in perfect condition. **C2** is the second and final stage — a C2 error means the drive's hardware could not fully correct the data.
+
+Some drives expose per-sector C1 block error counts in bytes 294–295 of the C2 error pointer response. AudioCopy auto-detects this at startup by probing sample sectors across the disc. When available, the BLER report includes full C1 statistics alongside C2, giving a much more complete picture of disc health — a disc can have zero C2 errors but elevated C1 rates indicating early wear.
+
+| Drive type | C1 reporting | Detection method |
+|---|---|---|
+| **Plextor (D8-capable)** | Always available | Vendor command `0xD8` returns C1/C2 block error stats |
+| **LiteOn, ASUS, Pioneer** | Often available | Standard MMC ErrorPointers mode, bytes 294–295 probed |
+| **Other MMC drives** | Auto-detected | Probes 150 sectors across 3 zones; reports C1 if any byte 294 is non-zero |
+| **ErrorBlock-only drives** | Not available | Different data layout; C1 bytes are not present |
+
+#### Metrics
+
 | Metric | Description |
 |---|---|
+| **Avg C1/sec** | Mean C1 corrections per second (when available) |
+| **Max C1/sec** | Peak one-second C1 count |
 | **Avg C2/sec** | Mean C2 errors per second across the entire disc |
 | **Max C2/sec** | Peak one-second error count (with timestamp) |
-| **Red Book threshold** | Avg C2/sec < 220 = PASS (IEC 60908 compliance) |
+| **Red Book threshold** | Avg BLER < 220/sec = PASS (IEC 60908 compliance) |
 | **Quality threshold** | Avg C2/sec < 1.0 = GOOD for archival ripping |
-| **Per-track breakdown** | Error count, affected sectors, avg/sec, and status per track |
-| **ASCII error graph** | Visual distribution of errors across the disc timeline |
+| **Per-track breakdown** | C1 count, C2 count, affected sectors, avg/sec, and status per track |
+| **ASCII error graph** | Visual distribution of C2 errors across the disc timeline |
 
-**Rating scale:**
+#### C1 Assessment Scale
+
+| C1 Avg/sec | Assessment |
+|---|---|
+| < 5 | **EXCELLENT** — minimal correction needed |
+| 5–50 | **GOOD** — normal wear |
+| 50–220 | **FAIR** — elevated but within Red Book limits |
+| > 220 | **POOR** — exceeds Red Book BLER limit |
+
+#### Overall Quality Rating
 
 | Rating | Criteria |
 |---|---|
@@ -89,7 +115,7 @@ Optionally performs **dual-speed validation** — re-reads error sectors at a di
 
 **Output:** Full report printed to console, plus a CSV log (`bler_scan.csv`) with per-second LBA and error count for graphing in external tools.
 
-**When to use:** Detailed quality assessment — see exactly where errors are, whether the disc meets Red Book limits, and whether it is safe to archive.
+**When to use:** Detailed quality assessment — see exactly where errors are, whether the disc meets Red Book limits, and whether it is safe to archive. The C1 data (when available) reveals early degradation that C2-only scans miss entirely.
 
 ---
 
@@ -153,16 +179,17 @@ A weighted scoring system produces the final risk level:
 | | C2 Scan | BLER Scan | Disc Rot Detection |
 |---|---|---|---|
 | **Question** | Are there uncorrectable errors? | What is the error rate over time? | Is the disc physically degrading? |
+| **C1 reporting** | No | Yes (auto-detected per drive) | No |
 | **Read passes** | 1–3 (configurable) | 1 | Full disc + adaptive multi-pass sampling |
-| **Spatial analysis** | No | No (time-series only) | Yes — three-zone radial classification |
+| **Spatial analysis** | No | Zone distribution (inner/middle/outer) | Yes — three-zone radial classification |
 | **Read consistency** | Not tested | Not tested | Multi-pass re-read detects instability |
-| **Pattern analysis** | None | Per-second bucketing, per-track totals | Edge concentration, progressive gradient, pinhole clusters |
-| **Typical cause detected** | Scratches, fingerprints, poor burns | Same as C2 but with temporal context | Chemical oxidation, delamination, bronzing |
+| **Pattern analysis** | None | Per-second bucketing, per-track totals, error clustering | Edge concentration, progressive gradient, pinhole clusters |
+| **Typical cause detected** | Scratches, fingerprints, poor burns | Same as C2 but with temporal context + early wear via C1 | Chemical oxidation, delamination, bronzing |
 | **Output format** | Console report | Console report + CSV + ASCII graph | Console report + text log |
 | **Actionable result** | "Use secure rip" or "clean the disc" | "Meets/fails Red Book" or "use Paranoid mode" | "Back up NOW — data loss imminent" |
 | **Speed** | Fast (minutes) | Moderate (full disc read) | Slow (full disc read + re-read sampling) |
 
-**Key insight:** A disc can pass a C2 scan with zero errors yet still be in early-stage rot — Phase 2's read consistency check catches degradation that a single read pass cannot. Conversely, a disc with high BLER from a surface scratch will show **no rot indicators** because the damage is mechanical, not chemical.
+**Key insight:** A disc can pass a C2 scan with zero errors yet still be in early-stage rot — Phase 2's read consistency check catches degradation that a single read pass cannot. The BLER scan's C1 data (when available) fills the gap between "zero C2" and "actual disc health" — elevated C1 rates reveal wear that hasn't yet progressed to uncorrectable errors. Conversely, a disc with high BLER from a surface scratch will show **no rot indicators** because the damage is mechanical, not chemical.
 
 ---
 
