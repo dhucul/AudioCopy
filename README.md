@@ -231,6 +231,100 @@ If you are unsure whether a disc has subchannel content worth preserving, run **
 
 **Rule of thumb:** If you are archiving and storage is not a concern, always include subchannel data — it costs ~4% extra file size and ensures nothing is lost. If you are ripping for playback only, skip it.
 
+# Subchannel Data on Burned Audio CDs: Why R–W Is Often Empty and P+Q Gets Auto-Generated
+
+This README explains why **R–W subchannel data is usually missing** on burned audio CDs, why **P+Q timing is commonly generated automatically**, and why the **TOC is typically more reliable** for navigation.
+
+---
+
+## 1) R–W Subchannel Data (Meaningful Content)
+
+### What it is
+The **R–W channels** (subchannels **3 through 8**) *can* carry meaningful data such as:
+
+- **CD+G graphics** (commonly used for karaoke)
+- **CD-Text** (in some implementations)
+
+### Why it’s often missing
+Most consumer CD burning software defaults to **not writing** R–W subchannel content unless explicitly configured. Examples include:
+
+- Nero
+- ImgBurn
+- iTunes
+- Finder / Windows Explorer
+
+These tools generally prioritize writing the **audio** and the **core control/timing subchannels** (especially P+Q). As a result, they often write **generic, blank, or repeating** patterns in R–W instead of real CD+G or mastered subchannel data.
+
+### Outcome
+On typical burned audio CDs:
+
+- Players rarely use R–W during playback.
+- Players rely on the **Table of Contents (TOC)** for track start/end times.
+- If **CD-Text** is supported, it is usually read from the **Lead-In area**, not from R–W subchannels.
+
+---
+
+## 2) P+Q Timing Generation (Automatic)
+
+### What it is
+The **Q channel** contains critical low-level timing and identification info, such as:
+
+- track numbers
+- timestamps (relative/absolute time)
+- track/index boundaries
+
+### The issue
+During common burn modes like:
+
+- **TAO (Track-At-Once)**
+- quick **DAO (Disc-At-Once)**
+
+…the drive often **generates Q-subchannel codes on the fly** based on the incoming stream, rather than using a pre-authored mastering file containing precise subchannel timing.
+
+### Result
+Because timing is created in real time:
+
+- it can be subject to small inconsistencies (“jitter”)
+- it’s usually fine for audio playback
+- but it can sometimes trip up:
+  - very picky older CD players
+  - certain data recovery or verification workflows that expect highly consistent subchannel timing
+
+---
+
+## 3) TOC vs. Q-Subchannel Reliability
+
+### TOC (Table of Contents)
+- Stored in the **Lead-In** at the beginning of the disc
+- Written at the **end of the burn process**
+- Fixed and generally read very reliably by drives/players
+- Used to determine where tracks start and end
+
+### P+Q timing
+- Updated continuously across the burn
+- A brief write/reading issue can create a **Q-channel glitch**
+- This can happen even when the audio data is still recoverable/corrected via ECC
+
+### Conclusion
+- **TOC** is generally the most reliable for **disc navigation**
+- **Q-subchannel** is heavily used for **playback tracking** and timing, but can be more vulnerable to momentary glitches
+
+---
+
+## Summary
+
+For standard audio CD burns, these behaviors explain why:
+
+- some players show a “CD+G” label or track name while others don’t
+- burned discs may take longer to load than pressed discs
+- special features like CD+G graphics often don’t work unless explicitly authored and written
+
+If you need maximum compatibility for special features (especially **CD+G**), use software/hardware that supports:
+
+- **RAW DAO (Disc-At-Once)**, and
+- explicit inclusion of **R–W subchannel data**
+
+
 ### Output files
 
 | Subchannel setting | Files created |
