@@ -230,45 +230,6 @@ dBpoweramp by Illustrate — created the AccurateRip system and popularized the 
 
 EAC and dBpoweramp together defined the modern standard for verifiable, bit-perfect audio CD extraction. AudioCopy builds on the methodology and concepts they established.
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-## Windows APIs Used
-
-AudioCopy leverages several Microsoft Windows APIs to provide low-level access to optical drives and filesystem operations:
-
-### File & Directory Management
-- **`CreateDirectoryW()`** - Creates directories recursively with support for long paths
-- **`CreateFileW()`** - Opens file handles for drives and file I/O operations
-- **`GetModuleFileNameW()`** - Retrieves the executable's full path for working directory detection
-- **`GetCurrentDirectoryW()`** - Queries the current working directory
-- **`GetFileAttributesW()`** - Checks file/directory existence and attributes
-
-### Device I/O Control
-- **`DeviceIoControl()`** - Sends control codes to device drivers for hardware communication
-- **`IOCTL_STORAGE_QUERY_PROPERTY`** - Queries storage device properties and capabilities
-
-### Storage & SCSI Commands
-- **`IOCTL_CDROM_*` commands** - CD/DVD drive-specific operations (via `ntddcdrm.h`)
-- **`IOCTL_SCSI_PASS_THROUGH`** - Low-level SCSI pass-through for raw disk access and precise audio reading (via `ntddscsi.h`)
-
-### Storage Device Structures
-- **`STORAGE_PROPERTY_QUERY`** - Property query structure for device information
-- **`STORAGE_DEVICE_DESCRIPTOR`** - Retrieves vendor, product, and device identification
-- **`StorageDeviceProperty`** - Property ID enumeration for device queries
-
-### Handle Management
-- **`HANDLE`** - Generic Windows handle for device and file operations
-- **`INVALID_HANDLE_VALUE`** - Sentinel value for invalid or closed handles
-
-### Error Handling & System Utilities
-- **`GetLastError()`** - Retrieves system error codes for detailed error reporting
-- **`MAX_PATH`** - Constant for maximum filesystem path length (with support for long paths via `\\?\` prefix)
-
-### Purpose
-These APIs enable AudioCopy to:
-- Access optical drives at the lowest system level via SCSI commands
-- Query drive capabilities (speed, C2 error reporting, overread support)
-- Read audio sectors with advanced error detection and correction
-- Manage file I/O for output storage
-- Provide detailed error diagnostics during drive communication
 
 -----------------------------------------------------------------------------------------------------------------------
 
