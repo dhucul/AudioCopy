@@ -9,7 +9,12 @@ bool ScsiDrive::CheckC2Support() {
 	std::string vendor, model;
 	GetDriveInfo(vendor, model);
 
-	if (vendor.find("PLEXTOR") != std::string::npos) {
+	// Try Plextor D8 vendor command — works on genuine Plextor drives and
+	// many Lite-On drives that share the same chipset/firmware (rebrands).
+	// QPXTools uses the same approach: probe D8 on both vendors.
+	if (vendor.find("PLEXTOR") != std::string::npos ||
+		vendor.find("LITE-ON") != std::string::npos ||
+		vendor.find("LITEON") != std::string::npos) {
 		BYTE cdb[12] = { 0xD8, 0, 0, 0, 0, 0, 0, 0, 1, 0x02, 0, 0 };
 		std::vector<BYTE> buffer(SECTOR_WITH_C2_SIZE);
 		BYTE sk = 0, a = 0, aq = 0;
@@ -23,14 +28,16 @@ bool ScsiDrive::CheckC2Support() {
 	}
 
 	// C2 + block error bits (byte 9 bits 2:1 = 10b -> 0xFC)
+	// MMC spec: ErrorPointers returns 296 bytes — 294 C2 pointers + C1/C2
+	// block error counts in bytes 294-295.  If the drive accepted 0xFC,
+	// it supports the full 296-byte layout including C1 block errors.
 	BYTE cdb1[12] = { SCSI_READ_CD, 0x04, 0, 0, 0, 0, 0, 0, 1, 0xFC, 0x00, 0 };
 	std::vector<BYTE> buffer(SECTOR_WITH_C2_SIZE);
 	BYTE sk = 0, a = 0, aq = 0;
 	bool ok = SendSCSIWithSense(cdb1, 12, buffer.data(), SECTOR_WITH_C2_SIZE, &sk, &a, &aq);
 	if (ok || sk == 0x01) {
 		m_c2Mode = C2Mode::ErrorPointers;
-		// Probe whether this drive actually populates C1 block error bytes
-		m_c1BlockErrorsAvailable = ProbeC1BlockErrors();
+		m_c1BlockErrorsAvailable = true;
 		return true;
 	}
 
@@ -530,7 +537,9 @@ bool ScsiDrive::DetectCapabilities(DriveCapabilities& caps) {
 bool ScsiDrive::IsPlextor() {
 	std::string vendor, model;
 	if (!GetDriveInfo(vendor, model)) return false;
-	return vendor.find("PLEXTOR") != std::string::npos;
+	return vendor.find("PLEXTOR") != std::string::npos ||
+		vendor.find("LITE-ON") != std::string::npos ||
+		vendor.find("LITEON") != std::string::npos;
 }
 
 bool ScsiDrive::SupportsC1BlockErrors() const {
