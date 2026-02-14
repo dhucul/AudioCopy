@@ -122,10 +122,10 @@ void PrintHelpMenu() {
 
 	PrintEntry({"2. C2 Error Scan",
 		"Performs a disc quality scan using the drive's C2 error reporting capability.\n"
-		"   Auto-detects best C2 mode: error pointers (accurate), error block (standard),\n"
-		"   or Plextor vendor commands for optimal drive-specific performance.\n"
+		"   Auto-detects best C2 mode: error pointers (standard MMC), error block,\n"
+		"   or Plextor vendor D8 commands when available.\n"
 		"\n"
-		"   Uses PlexTools-style multi-pass scanning with cache defeat for accuracy.\n"
+		"   Uses multi-pass scanning with cache defeat for accuracy.\n"
 		"   Error sectors are re-read to verify results.\n"
 		"\n"
 		"   C2 errors indicate uncorrectable read errors. Use this for disc health\n"
@@ -134,9 +134,16 @@ void PrintHelpMenu() {
 
 	PrintEntry({"3. BLER Scan (Detailed)",
 		"Measures Block Error Rate - the frequency of raw errors before correction.\n"
-		"   Provides detailed error distribution graphs across the disc surface.\n"
-		"   Red Book standard: BLER should be < 220 errors/second average.",
-		"Professional-grade disc quality analysis."});
+		"   Provides per-track statistics, error clustering analysis, zone distribution,\n"
+		"   and a text-based error graph across the disc surface.\n"
+		"\n"
+		"   C1 block error reporting is auto-detected at startup.  Drives that populate\n"
+		"   bytes 294-295 of the C2 response (Plextor D8, many LiteOn/ASUS/Pioneer\n"
+		"   drives in ErrorPointers mode) will show full C1+C2 statistics.\n"
+		"   Other drives report C2 errors only.\n"
+		"\n"
+		"   Red Book standard: average BLER should be < 220 errors/second.",
+		"Professional-grade disc quality analysis with C1/C2 breakdown."});
 
 	PrintEntry({"4. Disc Rot Detection",
 		"Analyzes error patterns to detect physical degradation (disc rot/bronzing).\n"

@@ -28,6 +28,16 @@ struct BlerResult {
 	std::vector<std::pair<int, int>> perSecondC2; // (start LBA, C2 count) per second
 	std::string qualityRating;                 // Overall quality grade
 
+	// ── Plextor C1 error data (available only with Plextor drives) ──
+	bool hasC1Data = false;                    // true if C1 block errors were collected
+	int totalC1Errors = 0;                     // Sum of all C1 block errors
+	int totalC1Sectors = 0;                    // Sectors with at least one C1 error
+	double avgC1PerSecond = 0.0;               // Mean C1 errors per second
+	int maxC1PerSecond = 0;                    // Peak C1 errors in any single second
+	int maxC1InSingleSector = 0;               // Highest C1 count in a single sector
+	DWORD worstC1SectorLBA = 0;                // LBA of that worst C1 sector
+	std::vector<std::pair<int, int>> perSecondC1; // (start LBA, C1 count) per second
+
 	// Optional zone / cluster analysis for BLER data
 	DiscZoneStats zoneStats;
 	std::vector<ErrorCluster> errorClusters;

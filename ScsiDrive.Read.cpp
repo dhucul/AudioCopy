@@ -71,7 +71,8 @@ bool ScsiDrive::ReadSectorWithC2(DWORD lba, BYTE* audio, BYTE* subchannel, int& 
 
 bool ScsiDrive::ReadSectorWithC2Ex(DWORD lba, BYTE* audio, BYTE* subchannel,
 	int& c2Errors, BYTE* c2Raw, const C2ReadOptions& options,
-	BYTE* outSenseKey, BYTE* outASC, BYTE* outASCQ) {
+	BYTE* outSenseKey, BYTE* outASC, BYTE* outASCQ,
+	int* outC1BlockErrors, int* outC2BlockErrors) {
 
 	if (options.multiPass && options.passCount > 1) {
 		return ReadSectorWithC2ExMultiPass(lba, audio, subchannel, c2Errors, c2Raw, options,
@@ -80,7 +81,8 @@ bool ScsiDrive::ReadSectorWithC2Ex(DWORD lba, BYTE* audio, BYTE* subchannel,
 
 	if (m_c2Mode == C2Mode::PlextorD8) {
 		return PlextorReadC2(lba, audio, c2Errors, c2Raw, options.countBytes,
-			outSenseKey, outASC, outASCQ);
+			outSenseKey, outASC, outASCQ,
+			outC1BlockErrors, outC2BlockErrors);
 	}
 
 	BYTE cdb[12] = {};
@@ -156,6 +158,17 @@ bool ScsiDrive::ReadSectorWithC2Ex(DWORD lba, BYTE* audio, BYTE* subchannel,
 	if (c2Raw) {
 		memset(c2Raw, 0, C2_ERROR_SIZE);
 		memcpy(c2Raw, c2Data, C2_POINTER_BYTES);
+	}
+
+	// Extract C1/C2 block error statistics from bytes 294-295.
+	// Only valid in ErrorPointers mode — ErrorBlock has a different layout.
+	if (!useErrorBlock) {
+		if (outC1BlockErrors) *outC1BlockErrors = static_cast<int>(c2Data[294]);
+		if (outC2BlockErrors) *outC2BlockErrors = static_cast<int>(c2Data[295]);
+	}
+	else {
+		if (outC1BlockErrors) *outC1BlockErrors = 0;
+		if (outC2BlockErrors) *outC2BlockErrors = 0;
 	}
 
 	if (subchannel) {
@@ -245,7 +258,8 @@ bool ScsiDrive::ReadSectorWithC2ExMultiPass(DWORD lba, BYTE* audio, BYTE* subcha
 }
 
 bool ScsiDrive::PlextorReadC2(DWORD lba, BYTE* audio, int& c2Errors, BYTE* c2Raw, bool countBytes,
-	BYTE* outSenseKey, BYTE* outASC, BYTE* outASCQ) {
+	BYTE* outSenseKey, BYTE* outASC, BYTE* outASCQ,
+	int* outC1BlockErrors, int* outC2BlockErrors) {
 	BYTE cdb[12] = {};
 	std::vector<BYTE> buffer(SECTOR_WITH_C2_SIZE);
 
@@ -265,8 +279,10 @@ bool ScsiDrive::PlextorReadC2(DWORD lba, BYTE* audio, int& c2Errors, BYTE* c2Raw
 	if (outASC) *outASC = asc;
 	if (outASCQ) *outASCQ = ascq;
 
-	// Accept recovered errors (0x01) — drive filled the buffer, data is valid
-	if (!ok && senseKey != 0x01) {
+	// Accept No Sense (0x00) and Recovered Error (0x01) — many Plextor
+	// drives return CHECK CONDITION with sense key 0x00 on vendor D8 reads.
+	// The data buffer is valid in both cases.
+	if (!ok && senseKey > 0x01) {
 		return false;
 	}
 
@@ -289,6 +305,12 @@ bool ScsiDrive::PlextorReadC2(DWORD lba, BYTE* audio, int& c2Errors, BYTE* c2Raw
 	if (c2Raw) {
 		memcpy(c2Raw, c2Data, C2_POINTER_BYTES);
 	}
+
+	// Plextor D8 returns C1/C2 block error statistics in bytes 294-295
+	// of the 296-byte C2 region.  These are hardware ECC decoder counts
+	// per sector — the true BLER values that PlexTools reports.
+	if (outC1BlockErrors) *outC1BlockErrors = static_cast<int>(c2Data[294]);
+	if (outC2BlockErrors) *outC2BlockErrors = static_cast<int>(c2Data[295]);
 
 	return true;
 }

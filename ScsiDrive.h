@@ -17,6 +17,7 @@ private:
 	HANDLE m_handle = INVALID_HANDLE_VALUE;
 	WORD m_currentSpeed = CD_SPEED_MAX;
 	C2Mode m_c2Mode = C2Mode::NotSupported;
+	bool m_c1BlockErrorsAvailable = false;     // True if bytes 294-295 contain valid C1 data
 	int m_maxRetries = 5;
 	int m_retryDelayMs = 100;
 
@@ -55,13 +56,17 @@ public:
 	// ── Enhanced C2 reading ──────────────────────────────────
 	bool ReadSectorWithC2Ex(DWORD lba, BYTE* audio, BYTE* subchannel, int& c2Errors,
 		BYTE* c2Raw, const C2ReadOptions& options,
-		BYTE* outSenseKey = nullptr, BYTE* outASC = nullptr, BYTE* outASCQ = nullptr);
+		BYTE* outSenseKey = nullptr, BYTE* outASC = nullptr, BYTE* outASCQ = nullptr,
+		int* outC1BlockErrors = nullptr, int* outC2BlockErrors = nullptr);
 	bool ReadSectorWithC2ExMultiPass(DWORD lba, BYTE* audio, BYTE* subchannel,
 		int& c2Errors, BYTE* c2Raw, const C2ReadOptions& options,
 		BYTE* outSenseKey = nullptr, BYTE* outASC = nullptr, BYTE* outASCQ = nullptr);
 	bool PlextorReadC2(DWORD lba, BYTE* audio, int& c2Errors, BYTE* c2Raw, bool countBytes,
-		BYTE* outSenseKey = nullptr, BYTE* outASC = nullptr, BYTE* outASCQ = nullptr);
+		BYTE* outSenseKey = nullptr, BYTE* outASC = nullptr, BYTE* outASCQ = nullptr,
+		int* outC1BlockErrors = nullptr, int* outC2BlockErrors = nullptr);
 	bool ValidateC2Accuracy(DWORD testLBA);
+	bool IsPlextor();
+	bool SupportsC1BlockErrors() const;
 
 	// ── Drive capabilities ───────────────────────────────────
 	bool CheckC2Support();
@@ -98,4 +103,5 @@ public:
 private:
 	bool ReadSectorQRaw(DWORD lba, int& qTrack, int& qIndex);
 	bool ParseRawSubchannel(const BYTE* sub, int& qTrack, int& qIndex);
+	bool ProbeC1BlockErrors();
 };
