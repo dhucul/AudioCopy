@@ -1,0 +1,750 @@
+<head class="selectNone"><style type="text/css" id="pluginCss">:root {
+  --plugin-contextmenu-icon-checkbox: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAACwSURBVDhPzZOxDYMwEEUfUTYAeu+BZyATUBiXESMBBUVowwxmGmAGaKIIWQY7osmvfPel99xcJIRYuZBICLF2XWfvg1IUBTd7+Wvu+6HUaj8epqnb7zvoB2mc0NQtWmm7CgPk+QOAYXjblR+QxgmZlIzGMC2zXfsBZ3ZcgOpZ0dQtaZx47bgAff+Cj9lnxwWYlpnRGDIpvXZcACzjmZ0jwLTMlFpRanVq5y9uIbp6zhueuESbUFx5DQAAAABJRU5ErkJggg==);
+  --plugin-default-grayscale-bias-opacity: 0.25;
+  --plugin-font-family: "Segoe UI";
+  --plugin-font-size: 9pt;
+  --plugin-font-weight: normal;
+  --plugin-color: #FFFFFFFF;
+  --plugin-contextmenu-active-color: #FFFFFF0F;
+  --plugin-contextmenu-background-color: #202020FF;
+  --plugin-contextmenu-border-color: #0000001A;
+  --plugin-contextmenu-color: #FFFFFFFF;
+  --plugin-contextmenu-hover-color: #FFFFFF0F;
+  --plugin-contextmenu-hover-text-color: #FFFFFFFF;
+  --plugin-contextmenu-hover-border-color: #FFFFFF12;
+  --plugin-contextmenu-inactive-text-color: #FFFFFF5D;
+  --plugin-contextmenu-separator-color: #FFFFFF15;
+  --plugin-background-color: #202020FF;
+  --plugin-error-border-color: #FF99A4FF;
+  --plugin-inactive-color: #FFFFFF5D;
+  --plugin-link-color: #99EBFFFF;
+  --plugin-link-hover-color: #60CDFFFF;
+  --plugin-link-active-color: #60CDFFFF;
+  --plugin-table-header-color: #FFFFFFFF;
+  --plugin-table-header-background-color: #1C1C1CFF;
+  --plugin-table-border-color: #FFFFFF15;
+  --plugin-highlight-color: #000000FF;
+  --plugin-highlight-background-color: #9184EEFF;
+  --plugin-scrollbar-arrow-background-color: #FFFFFF0F;
+  --plugin-scrollbar-arrow-background-active-color: #FFFFFF15;
+  --plugin-scrollbar-arrow-background-hover-color: #FFFFFF15;
+  --plugin-scrollbar-arrow-color: #FFFFFF8B;
+  --plugin-scrollbar-arrow-active-color: #FFFFFF8B;
+  --plugin-scrollbar-arrow-hover-color: #FFFFFF8B;
+  --plugin-scrollbar-background-color: #FFFFFF00;
+  --plugin-scrollbar-background-hover-color: #3A3A3A4D;
+  --plugin-scrollbar-face-color: #FFFFFF8B;
+  --plugin-scrollbar-face-active-color: #FFFFFF8B;
+  --plugin-scrollbar-face-hover-color: #FFFFFF8B;
+  --plugin-select-option-background-color: #202020FF;
+  --plugin-select-option-color: #FFFFFFFF;
+  --plugin-select-option-checked-background-color: #9184EEFF;
+  --plugin-select-option-checked-border-color: #9184EEFF;
+  --plugin-select-option-checked-foreground-color: #000000FF;
+  --plugin-select-option-hover-background-color: #FFFFFF0F;
+  --plugin-select-option-hover-border-color: #FFFFFF12;
+  --plugin-select-option-hover-foreground-color: #FFFFFFFF;
+  --plugin-select-border-color: #FFFFFF12;
+  --plugin-select-background-color: #FFFFFF0F;
+  --plugin-select-foreground-color: #FFFFFFFF;
+  --plugin-select-hover-border-color: #FFFFFF12;
+  --plugin-select-hover-background-color: #FFFFFF15;
+  --plugin-select-hover-foreground-color: #FFFFFFFF;
+  --plugin-textbox-border-color: #FFFFFF12;
+  --plugin-textbox-background-color: #FFFFFF0F;
+  --plugin-textbox-color: #FFFFFFFF;
+  --plugin-textbox-disabled-background-color: #FFFFFF0B;
+  --plugin-textbox-disabled-border-color: #FFFFFF12;
+  --plugin-textbox-disabled-color: #FFFFFF5D;
+  --plugin-tooltip-text-color: #FFFFFFFF;
+  --plugin-tooltip-background-color: #202020FF;
+  --plugin-tooltip-border-color: #0000001A;
+  --plugin-treeview-content-inactive-selected-background-color: #FFFFFF0F;
+  --plugin-treeview-content-inactive-selected-color: #FFFFFFC8;
+  --plugin-treeview-content-selected-background-color: #9184EEFF;
+  --plugin-treeview-content-selected-color: #000000FF;
+  --plugin-treeview-content-selected-border-color: #9184EEFF;
+  --plugin-treeview-content-background-color: #202020FF;
+  --plugin-treeview-content-color: #FFFFFFFF;
+  --plugin-treeview-content-mouseover-background-color: #FFFFFF0F;
+  --plugin-treeview-content-mouseover-color: #FFFFFFFF;
+  --plugin-scrollbar-up-arrow-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1.95693 5.9989C1.14924 5.9989 0.674785 5.09087 1.13603 4.42784L3.76866 0.64342C4.36545 -0.214452 5.6346 -0.214448 6.23138 0.643422L8.86402 4.42784C9.32526 5.09087 8.8508 5.9989 8.04311 5.9989H1.95693Z' fill='%23FFFFFF8B' /%3E%3C/svg%3E");
+  --plugin-scrollbar-up-arrow-active-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1.95693 5.9989C1.14924 5.9989 0.674785 5.09087 1.13603 4.42784L3.76866 0.64342C4.36545 -0.214452 5.6346 -0.214448 6.23138 0.643422L8.86402 4.42784C9.32526 5.09087 8.8508 5.9989 8.04311 5.9989H1.95693Z' fill='%23FFFFFFFF' /%3E%3C/svg%3E");
+  --plugin-scrollbar-up-arrow-hover-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1.95693 5.9989C1.14924 5.9989 0.674785 5.09087 1.13603 4.42784L3.76866 0.64342C4.36545 -0.214452 5.6346 -0.214448 6.23138 0.643422L8.86402 4.42784C9.32526 5.09087 8.8508 5.9989 8.04311 5.9989H1.95693Z' fill='%23FFFFFFFF' /%3E%3C/svg%3E");
+  --plugin-scrollbar-down-arrow-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1.95693 0C1.14924 0 0.674785 0.90803 1.13603 1.57107L3.76866 5.35548C4.36545 6.21335 5.6346 6.21335 6.23138 5.35548L8.86402 1.57106C9.32526 0.908027 8.8508 0 8.04311 0H1.95693Z' fill='%23FFFFFF8B' /%3E%3C/svg%3E");
+  --plugin-scrollbar-down-arrow-active-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1.95693 0C1.14924 0 0.674785 0.90803 1.13603 1.57107L3.76866 5.35548C4.36545 6.21335 5.6346 6.21335 6.23138 5.35548L8.86402 1.57106C9.32526 0.908027 8.8508 0 8.04311 0H1.95693Z' fill='%23FFFFFFFF' /%3E%3C/svg%3E");
+  --plugin-scrollbar-down-arrow-hover-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1.95693 0C1.14924 0 0.674785 0.90803 1.13603 1.57107L3.76866 5.35548C4.36545 6.21335 5.6346 6.21335 6.23138 5.35548L8.86402 1.57106C9.32526 0.908027 8.8508 0 8.04311 0H1.95693Z' fill='%23FFFFFFFF' /%3E%3C/svg%3E");
+  --plugin-scrollbar-left-arrow-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='10' viewBox='0 0 6 10'%3E%3Cpath d='M4.42784 8.8403C5.09087 9.29871 5.9989 8.82717 5.9989 8.02443V1.9756C5.9989 1.17287 5.09087 0.701325 4.42784 1.15974L0.643422 3.77622C-0.214448 4.36933 -0.214452 5.6307 0.64342 6.22382L4.42784 8.8403Z' fill='%23FFFFFF8B' /%3E%3C/svg%3E");
+  --plugin-scrollbar-left-arrow-active-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='10' viewBox='0 0 6 10'%3E%3Cpath d='M4.42784 8.8403C5.09087 9.29871 5.9989 8.82717 5.9989 8.02443V1.9756C5.9989 1.17287 5.09087 0.701325 4.42784 1.15974L0.643422 3.77622C-0.214448 4.36933 -0.214452 5.6307 0.64342 6.22382L4.42784 8.8403Z' fill='%23FFFFFFFF' /%3E%3C/svg%3E");
+  --plugin-scrollbar-left-arrow-hover-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='10' viewBox='0 0 6 10'%3E%3Cpath d='M4.42784 8.8403C5.09087 9.29871 5.9989 8.82717 5.9989 8.02443V1.9756C5.9989 1.17287 5.09087 0.701325 4.42784 1.15974L0.643422 3.77622C-0.214448 4.36933 -0.214452 5.6307 0.64342 6.22382L4.42784 8.8403Z' fill='%23FFFFFFFF' /%3E%3C/svg%3E");
+  --plugin-scrollbar-right-arrow-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='10' viewBox='0 0 6 10'%3E%3Cpath d='M1.57107 8.8403C0.90803 9.29871 0 8.82717 0 8.02443L0 1.9756C0 1.17287 0.908028 0.701325 1.57106 1.15974L5.35548 3.77622C6.21335 4.36933 6.21335 5.6307 5.35548 6.22382L1.57107 8.8403Z' fill='%23FFFFFF8B' /%3E%3C/svg%3E");
+  --plugin-scrollbar-right-arrow-active-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='10' viewBox='0 0 6 10'%3E%3Cpath d='M1.57107 8.8403C0.90803 9.29871 0 8.82717 0 8.02443L0 1.9756C0 1.17287 0.908028 0.701325 1.57106 1.15974L5.35548 3.77622C6.21335 4.36933 6.21335 5.6307 5.35548 6.22382L1.57107 8.8403Z' fill='%23FFFFFFFF' /%3E%3C/svg%3E");
+  --plugin-scrollbar-right-arrow-hover-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='10' viewBox='0 0 6 10'%3E%3Cpath d='M1.57107 8.8403C0.90803 9.29871 0 8.82717 0 8.02443L0 1.9756C0 1.17287 0.908028 0.701325 1.57106 1.15974L5.35548 3.77622C6.21335 4.36933 6.21335 5.6307 5.35548 6.22382L1.57107 8.8403Z' fill='%23FFFFFFFF' /%3E%3C/svg%3E");
+  --plugin-corner-radius-none: 0;
+  --plugin-corner-radius-s: 2;
+  --plugin-corner-radius-m: 4;
+  --plugin-corner-radius-l: 6;
+  --plugin-corner-radius-xl: 8;
+  --plugin-corner-radius-focus-rect: 6;
+  --plugin-spacing-none: 0;
+  --plugin-spacing-xxxs: 1;
+  --plugin-spacing-xxs: 2;
+  --plugin-spacing-xs-nudge: 3;
+  --plugin-spacing-xs: 4;
+  --plugin-spacing-s-nudge: 6;
+  --plugin-spacing-s: 8;
+  --plugin-spacing-m-nudge: 10;
+  --plugin-spacing-m: 12;
+  --plugin-spacing-l: 16;
+  --plugin-spacing-xl: 20;
+  --plugin-spacing-xxl: 24;
+  --plugin-spacing-xxxl: 32;
+  --plugin-size-content-min-height: 16;
+  --plugin-size-content-min-width: 16;
+  --plugin-size-control-min-height: 24;
+  --plugin-size-control-min-width: 24;
+  --plugin-size-toggle-switch-size: 20;
+  --plugin-size-icon-xxs: 8;
+  --plugin-size-icon-xs: 12;
+  --plugin-size-icon-s: 16;
+  --plugin-size-icon-m: 24;
+  --plugin-size-icon-l: 32;
+  --plugin-size-non-client-control-height: 30;
+  --plugin-size-non-client-control-width: 44;
+  --plugin-stroke-width-none: 0;
+  --plugin-stroke-width-thin: 1;
+  --plugin-stroke-width-thick: 2;
+  --plugin-stroke-width-thicker: 3;
+  --plugin-stroke-width-thickest: 4;
+  --plugin-typography-body-line-height: 20;
+  --plugin-typography-body-large-line-height: 24;
+  --plugin-typography-caption-line-height: 16;
+  --plugin-typography-code-line-height: 20;
+  --plugin-typography-display-line-height: 92;
+  --plugin-typography-subtitle-line-height: 28;
+  --plugin-typography-title-line-height: 36;
+  --plugin-typography-title-large-line-height: 52;
+}
+
+/* CSS file for the plugin's base styles and themes (light / dark / high contrast)
+   Light theme values are used as defaults but CSS variables are used to provide the correct value for the active theme.
+    Example:
+    border-right: 1px solid var(--plugin-background-color, #8591A2);
+
+   The following CSS variables are available to all hosts:
+    --plugin-background-color
+    --plugin-color
+    --plugin-contextmenu-active-color
+    --plugin-contextmenu-background-color
+    --plugin-contextmenu-border-color
+    --plugin-contextmenu-color
+    --plugin-contextmenu-hover-color
+    --plugin-contextmenu-hover-text-color
+    --plugin-contextmenu-icon-checkbox
+    --plugin-contextmenu-inactive-text-color
+    --plugin-contextmenu-separator-color
+    --plugin-error-border-color
+    --plugin-font-family
+    --plugin-font-size
+    --plugin-font-weight
+    --plugin-highlight-background-color
+    --plugin-highlight-color
+    --plugin-inactive-color
+    --plugin-link-color
+    --plugin-link-active-color
+    --plugin-link-hover-color
+    --plugin-scrollbar-arrow-background-color
+    --plugin-scrollbar-arrow-background-active-color
+    --plugin-scrollbar-arrow-background-hover-color
+    --plugin-scrollbar-arrow-color
+    --plugin-scrollbar-arrow-active-color
+    --plugin-scrollbar-arrow-hover-color
+    --plugin-scrollbar-background-color
+    --plugin-scrollbar-face-color
+    --plugin-scrollbar-face-active-color
+    --plugin-scrollbar-face-hover-color
+    --plugin-select-option-background-color
+    --plugin-select-option-color
+    --plugin-select-option-checked-background-color
+    --plugin-select-option-checked-border-color
+    --plugin-select-option-checked-foreground-color
+    --plugin-select-option-hover-background-color
+    --plugin-select-option-hover-border-color
+    --plugin-select-option-hover-foreground-color
+    --plugin-select-border-color
+    --plugin-select-background-color
+    --plugin-select-foreground-color
+    --plugin-select-hover-background-color
+    --plugin-select-hover-border-color
+    --plugin-select-hover-foreground-color
+    --plugin-table-border-color
+    --plugin-table-header-background-color
+    --plugin-table-header-color
+    --plugin-textbox-border-color
+    --plugin-textbox-background-color
+    --plugin-textbox-color
+    --plugin-textbox-disabled-background-color
+    --plugin-textbox-disabled-border-color
+    --plugin-textbox-disabled-color
+    --plugin-treeview-content-background-color
+    --plugin-treeview-content-color
+    --plugin-treeview-content-inactive-selected-color
+    --plugin-treeview-content-mouseover-background-color
+    --plugin-treeview-content-mouseover-color
+    --plugin-treeview-content-inactive-selected-color
+    --plugin-treeview-content-selected-background-color
+    --plugin-treeview-content-selected-border-color
+    --plugin-treeview-content-selected-color
+
+    The following are special values used just for theming scrollbar arrows (they contain a data URL defining an SVG):
+    --plugin-scrollbar-up-arrow-url
+    --plugin-scrollbar-up-arrow-hover-url
+    --plugin-scrollbar-up-arrow-active-url
+    --plugin-scrollbar-down-arrow-url
+    --plugin-scrollbar-down-arrow-hover-url
+    --plugin-scrollbar-down-arrow-active-url
+    --plugin-scrollbar-left-arrow-url
+    --plugin-scrollbar-left-arrow-hover-url
+    --plugin-scrollbar-left-arrow-active-url
+    --plugin-scrollbar-right-arrow-url
+    --plugin-scrollbar-right-arrow-hover-url
+    --plugin-scrollbar-right-arrow-active-url
+
+
+    VS host also has access to all VS themed color key tokens (EnvironmentColors) and category specific tokens.
+    http://msdn.microsoft.com/en-us/library/microsoft.visualstudio.platformui.environmentcolors_properties
+    Please see product documentation for instructions on how to add these tokens to the plugin manifest.
+ */
+
+/* HTML and body styles */
+html, body {
+    font-family: var(--plugin-font-family, "Segoe UI", Arial, sans-serif);
+    font-size: var(--plugin-font-size, 9pt);
+    font-weight: var(--plugin-font-weight, normal);
+    color: var(--plugin-color, #1E1E1E);
+    background-color: var(--plugin-background-color, #F6F6F6);
+}
+
+/* Scroll bars */
+
+::-webkit-scrollbar {
+    width: 18px;
+    height: 18px;
+    background-color: transparent;
+}
+
+/* Hover over the scrollbar */
+::-webkit-scrollbar:hover {
+    background-color: var(--plugin-scrollbar-background-hover-color, #C8C8C833) /* track hover color */
+}
+
+::-webkit-scrollbar-corner {
+    background-color: transparent;
+}
+
+::-webkit-scrollbar:hover::-webkit-scrollbar-corner {
+    background-color: var(--plugin-scrollbar-background-hover-color, #C8C8C833) /* match track hover */
+}
+
+/* Track */
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* Thumb */
+::-webkit-scrollbar-thumb {
+    background-color: var(--plugin-scrollbar-face-color, #6E6E6E);
+    border: 8px solid transparent; /* make the thumb appears smaller */
+    background-clip: padding-box;
+    border-radius: 9px; /* half of the thickness */
+}
+
+::-webkit-scrollbar-thumb:hover {
+    border: 5px solid transparent; /* make the thumb appears larger */
+}
+
+/* Arrows */
+
+::-webkit-scrollbar-button {
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+/* Up arrow */
+
+::-webkit-scrollbar-button:start:decrement:vertical {
+    background-image: var(--plugin-scrollbar-up-arrow-url);
+    background-size: 10px 6px;  /* match the SVG intrinsic size */
+}
+
+::-webkit-scrollbar-button:start:decrement:vertical:hover {
+    background-image: var(--plugin-scrollbar-up-arrow-hover-url);
+    background-size: 10px 6px;  /* match the SVG intrinsic size */
+}
+
+::-webkit-scrollbar-button:start:decrement:vertical:active {
+    background-image: var(--plugin-scrollbar-up-arrow-active-url);
+    background-size: 10px 6px;  /* match the SVG intrinsic size */
+}
+
+/* Down arrow */
+
+::-webkit-scrollbar-button:end:increment:vertical {
+    background-image: var(--plugin-scrollbar-down-arrow-url);
+    background-size: 10px 6px;  /* match the SVG intrinsic size */
+}
+
+::-webkit-scrollbar-button:end:increment:vertical:hover {
+    background-image: var(--plugin-scrollbar-down-arrow-hover-url);
+    background-size: 10px 6px;  /* match the SVG intrinsic size */
+}
+
+::-webkit-scrollbar-button:end:increment:vertical:active {
+    background-image: var(--plugin-scrollbar-down-arrow-active-url);
+    background-size: 10px 6px;  /* match the SVG intrinsic size */
+}
+
+/* Left arrow */
+
+::-webkit-scrollbar-button:start:decrement:horizontal {
+    background-image: var(--plugin-scrollbar-left-arrow-url);
+    background-size: 6px 10px;  /* match the SVG intrinsic size */
+}
+
+::-webkit-scrollbar-button:start:decrement:horizontal:hover {
+    background-image: var(--plugin-scrollbar-left-arrow-hover-url);
+    background-size: 6px 10px;  /* match the SVG intrinsic size */
+}
+
+::-webkit-scrollbar-button:start:decrement:horizontal:active {
+    background-image: var(--plugin-scrollbar-left-arrow-active-url);
+    background-size: 6px 10px;  /* match the SVG intrinsic size */
+}
+
+/* Right arrow */
+
+::-webkit-scrollbar-button:end:increment:horizontal {
+    background-image: var(--plugin-scrollbar-right-arrow-url);
+    background-size: 6px 10px;  /* match the SVG intrinsic size */
+}
+
+::-webkit-scrollbar-button:end:increment:horizontal:hover {
+    background-image: var(--plugin-scrollbar-right-arrow-hover-url);
+    background-size: 6px 10px;  /* match the SVG intrinsic size */
+}
+
+::-webkit-scrollbar-button:end:increment:horizontal:active {
+    background-image: var(--plugin-scrollbar-right-arrow-active-url);
+    background-size: 6px 10px;  /* match the SVG intrinsic size */
+}
+
+/* Select styles */
+select {
+    color: var(--plugin-select-foreground-color, #1E1E1E);
+    background-color: var(--plugin-select-background-color, #FFFFFF);
+    font: var(--plugin-font-weight, normal) var(--plugin-font-size, 9pt) var(--plugin-font-family, "'Segoe UI', Arial, sans-serif");
+    border: 1px solid var(--plugin-select-border-color, #CCCEDB);
+}
+
+select:hover {
+    color: var(--plugin-select-hover-foreground-color, #1E1E1E);
+    background-color: var(--plugin-select-hover-background-color, #FFFFFF);
+    border: 1px solid var(--plugin-select-hover-border-color, #007ACC);
+}
+
+select[multiple],
+select option {
+    color: var(--plugin-select-option-color, #1E1E1E);
+    background-color: var(--plugin-select-option-background-color, #F6F6F6);
+    /* Add a transparent border so that text does not move around on hover */
+    border: 1px solid transparent;
+}
+
+select option:hover {
+    color: var(--plugin-select-option-hover-foreground-color, #1E1E1E);
+    background-color: var(--plugin-select-option-hover-background-color, #C9DEF5);
+    border: 1px solid var(--plugin-select-option-hover-border-color, #C9DEF5);
+}
+
+select option:checked {
+    color: var(--plugin-select-option-checked-foreground-color, #1E1E1E);
+    background-color: var(--plugin-select-option-checked-background-color, #C9DEF5);
+    border: 1px solid var(--plugin-select-option-checked-border-color, #C9DEF5);
+}
+
+/* Input styles */
+input {
+    font: var(--plugin-font-weight, normal) var(--plugin-font-size, 9pt) var(--plugin-font-family, "'Segoe UI', Arial, sans-serif");
+    color: var(--plugin-textbox-color, #1E1E1E);
+    background-color: var(--plugin-textbox-background-color, #FFFFFF);
+    border: 1px solid var(--plugin-textbox-border-color, #DBDDE6);
+    padding: 0 3px;
+}
+
+input:disabled {
+    color: var(--plugin-textbox-disabled-color, #A2A4A5);
+    background-color: var(--plugin-textbox-disabled-background-color, #FFFFFF);
+    border: 1px solid var(--plugin-textbox-disabled-border-color, #DBDDE6);
+}
+
+input[type="checkbox"],
+input[type="radio"]
+ {
+    border: none;
+    background-color: inherit;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+
+input[type="file"],
+input[type="image"]
+ {
+    border: none;
+    background-color: inherit;
+    padding: 0;
+}
+
+/* TextArea styles */
+textarea {
+    font-family: var(--plugin-font-family, "Segoe UI"), Arial, sans-serif;
+    font-size: var(--plugin-font-size, 9pt);
+    font-weight: var(--plugin-font-weight, normal);
+    color: var(--plugin-color, #1E1E1E);
+    background-color: var(--plugin-textbox-background-color, #F6F6F6);
+    border: 1px solid var(--plugin-textbox-border-color, #DBDDE6);
+    padding: 0 3px;
+    resize: none;
+}
+
+/* Button styles */
+button,
+input[type="button"],
+input[type="reset"],
+input[type="submit"] {
+    color: #000000;
+    background-image: -ms-linear-gradient(top, #F0F0F0 0%, #E5E5E5 100%);
+    border: 1px solid #ACACAC;
+    font-family: var(--plugin-font-family, "Segoe UI"), Arial, sans-serif;
+    font-size: var(--plugin-font-size, 9pt);
+    font-weight: var(--plugin-font-weight, normal);
+    min-width: 73px;
+    padding: 1px 19px 2px 19px;
+}
+
+button:hover,
+input[type="button"]:hover,
+input[type="reset"]:hover,
+input[type="submit"]:hover {
+    background-image: -ms-linear-gradient(top, #ECF4FC 0%, #DCECFC 100%);
+    border: 1px solid #7EB4EA;
+}
+
+button:focus,
+input[type="button"]:focus,
+input[type="reset"]:focus,
+input[type="submit"]:focus {
+    border: 1px solid #569DE5;
+}
+
+button:active,
+input[type="button"]:active,
+input[type="reset"]:active,
+input[type="submit"]:active {
+    background-image: -ms-linear-gradient(top, #DAECFC 0%, #C4E0FC 100%);
+    border: 1px solid #569DE5;
+}
+
+button[disabled],
+input[type="button"][disabled],
+input[type="reset"][disabled],
+input[type="submit"][disabled] {
+    color: #838383;
+    background: #F4F4F4 none;
+    border: 1px solid #B1B1B2;
+}
+
+/* Other form styles */
+fieldset {
+    border: 1px solid var(--plugin-textbox-border-color, #DBDDE6);
+}
+
+/* Link styles */
+a, a:link, a:visited, a:focus {
+    color: var(--plugin-link-color, #0E70C0);
+    text-decoration: none;
+}
+
+a:hover {
+    color: var(--plugin-link-hover-color, #0E70C0);
+    text-decoration: underline;
+}
+
+a:active {
+    color: var(--plugin-link-active-color, #0E70C0);
+}
+
+/* Table styles */
+th {
+    color: var(--plugin-table-header-color, #1E1E1E);
+    background-color: var(--plugin-table-header-background-color, #EFEFE2);
+}
+
+td, th {
+    border-color: var(--plugin-table-border-color, #F0F0F0);
+}
+
+/* Disabled styles */
+:disabled {
+    color: var(--plugin-inactive-color, #A2A4A5);
+}
+
+/* Highlight styles
+   Use this class when you have a highlighted item, for example a highlighted row in a grid */
+.plugin-highlight {
+    color: var(--plugin-highlight-color, #FFFFFF);
+    background-color: var(--plugin-highlight-background-color, #3399FF);
+}
+
+/* Tooltip styles
+   This class will be included automatically on all tooltips
+   In VS tooltips aren't, by default, themed, so we just copy
+   the WPF tooltip defaults, which is what VS uses for its tooltips.
+   The one exception is that under system high-contrast themes tooltips
+   are in fact themed, so we use the !HCOnly to indicate we only want
+   our color tokens substituted under high-contrast themes.
+
+   We set its initial display style to none and its initial position
+   to (-500,-500) just to ensure that when we insert it into the document
+   (for measuring) it isn't visible until we have done the layout and
+   calculated its final position.
+*/
+#plugin-vs-tooltip {
+    display: none;
+    position: absolute;
+    top: -500px;
+    left: -500px;
+    -ms-high-contrast-adjust: none;
+    color: var(--plugin-tooltip-text-color, #575757);
+    background-color: var(--plugin-tooltip-background-color, #F1F2F7);
+    border: thin solid var(--plugin-tooltip-border-color, #767676);
+    padding: 4px 5px 3px 5px;
+    line-height: normal;
+    box-sizing: border-box;
+}
+
+#plugin-vs-tooltip > #plugin-vs-tooltip-nested-cell {
+    display: table-cell;
+    vertical-align: middle;
+    -ms-high-contrast-adjust: none;
+    color: var(--plugin-tooltip-text-color, #575757);
+    background-color: var(--plugin-tooltip-background-color, #F1F2F7);
+}
+
+#plugin-vs-tooltip > #plugin-vs-tooltip-nested-cell > #plugin-vs-tooltip-content {
+    -ms-high-contrast-adjust: none;
+    color: var(--plugin-tooltip-text-color, #575757);
+    background-color: var(--plugin-tooltip-background-color, #F1F2F7);
+}
+
+/* Selection styles */
+.selectNone {
+    -ms-user-select: none;
+    user-select: none;
+}
+
+.selectElement {
+    -ms-user-select: element;
+    user-select: auto;
+}
+
+/* Context Menu styles */
+ul.plugin-contextmenu {
+    background-color: var(--plugin-contextmenu-background-color, #e9e8ea);
+    border: thin solid var(--plugin-contextmenu-border-color, #cdd0d6);
+    color: var(--plugin-contextmenu-color, #1E1E1E);
+    padding: 1px 2px 2px 2px;
+    margin: 0;
+    position: absolute;
+    display: none;
+    outline: none;
+    z-index: 100;
+    white-space: nowrap;
+    -ms-high-contrast-adjust: none;
+    line-height: normal;
+}
+
+.plugin-contextmenu .menuitem {
+    display: flex;
+    align-items: center;
+    /* VS context menu max width: https://devdiv.visualstudio.com/DevDiv/_git/VS?path=/src/env/shell/UIInternal/MainWindow/Controls/VsMenuItem.cs&version=GBmain&line=85&lineEnd=92&lineStartColumn=9&lineEndColumn=10&lineStyle=plain&_a=contents */
+    max-width: 660px;
+    cursor: default;
+    outline: none;
+    list-style: none;
+    margin-top: 1px;
+    border: 1px solid transparent;
+    box-sizing: border-box;
+}
+
+.plugin-contextmenu .menuitem:focus {
+    background-color: var(--plugin-contextmenu-hover-color, #f9f9fa);
+    color: var(--plugin-contextmenu-hover-text-color, #1E1E1E);
+    border-color: var(--plugin-contextmenu-hover-border-color);
+}
+
+.plugin-contextmenu .menuitem:active,
+.plugin-contextmenu .active {
+    background-color: var(--plugin-contextmenu-active-color, #f9f9fa);
+    color: var(--plugin-contextmenu-hover-text-color, #1E1E1E);
+    border-color: var(--plugin-highlight-background-color);
+}
+
+.plugin-contextmenu .disabled:hover,
+.plugin-contextmenu .disabled:active,
+.plugin-contextmenu .disabled:focus,
+.plugin-contextmenu .disabled {
+    background-color: var(--plugin-contextmenu-background-color, #e9e8ea);
+    color: var(--plugin-contextmenu-inactive-text-color, #a2a4a5);
+}
+
+.plugin-contextmenu .menuitem .icon {
+    margin: 0 10px 0 6px;
+    background-color: transparent;
+    width: 16px;
+    height: 16px;
+}
+
+.plugin-contextmenu .menuitem .checkbox {
+    background-image: var(--plugin-contextmenu-icon-checkbox, url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAJpJREFUeNpi/PbtGwMpgAWIfXx8iFS9ZcsWJgYSAQuctW7tejzqgoIDIQx8Nrx69QqobvKUyciC+DSsXLUSSIaHhROlAWj8/v37HB2dxMTEiNKA1Xh0DR2dHUBHvwIDrMajhBIQJCUmnTp1EmI2VuPRNQDNA5oKNBvIxmo8Fj/ATcVqPLoNEEvwxyALZlziBySnJUZSkzdAgAEAfm84vuieuk0AAAAASUVORK5CYII=));
+}
+
+.plugin-contextmenu .hidden {
+    display: none;
+}
+
+.plugin-contextmenu .disabled {
+    color: var(--plugin-contextmenu-inactive-text-color, #a2a4a5);
+}
+
+.plugin-contextmenu .menuitem .main {
+    padding: 4px 50px 5px 0;
+    margin-right: auto;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.plugin-contextmenu .menuitem .shortcut {
+    min-width: 25px;
+    flex-shrink: 0;
+    padding-right: 25px;
+}
+
+.plugin-contextmenu .menuitem .arrow {
+    overflow: visible;
+}
+
+.plugin-contextmenu .menuitem .arrow:before,
+.plugin-contextmenu .menuitem.disabled:hover .arrow:before,
+.plugin-contextmenu .menuitem.disabled:active .arrow:before,
+.plugin-contextmenu .menuitem.disabled:focus .arrow:before,
+.plugin-contextmenu .menuitem.disabled .arrow:before {
+    content: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAHCAYAAADAp4fuAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAFZJREFUeNpiWL5i5X8gYEDGTKdOnmCYOXP2fwYkwAQibt68ztDXP+E/iiAIPHn8iGHChIn/UQSFhIQZCgryGUFsFhAhIyvHUFRYwAg3dMaMWRi2AwQYAAcRMJwq3CX+AAAAAElFTkSuQmCC);
+}
+
+.plugin-contextmenu .menuitem:hover .arrow:before,
+.plugin-contextmenu .menuitem:active .arrow:before,
+.plugin-contextmenu .menuitem:focus .arrow:before,
+.plugin-contextmenu .active .arrow:before {
+    content: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAHCAYAAADAp4fuAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAFRJREFUeNpiKNzy6D8QMCBjBoaqM/+DltxGkWACCjOsu/aRwXrmDZASMGCCMY49+spgP/vmfxRBdRF2hoOp6oxwQSs5boYbhTqMMAUM6JaAMECAAQDqqjmrw1gHVwAAAABJRU5ErkJggg==);
+}
+
+.plugin-contextmenu .menuitem[role="separator"] > * {
+    height: 0;
+}
+
+.plugin-contextmenu .menuitem .hr,
+.plugin-contextmenu .menuitem:hover .hr,
+.plugin-contextmenu .menuitem:active .hr,
+.plugin-contextmenu .menuitem:focus .hr,
+.plugin-contextmenu .active .hr {
+    height: 1px;
+    width: 100%;
+    background-color: var(--plugin-contextmenu-separator-color, #cdd0d6);
+    padding: 0;
+}
+</style>
+    <script src="http://scriptedhost.vs/plugin.js" type="text/javascript" class="selectNone"></script>
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" class="selectNone">
+    <meta charset="utf-8" class="selectNone">
+    <link rel="stylesheet" href="c:\program files\microsoft visual studio\18\professional\common7\ide\commonextensions\microsoft\markdown\Preview\Dependencies\daytona-highlight-dark.css" id="CSSTheme" class="selectNone">
+    <link rel="stylesheet" href=" " id="FontSize" class="selectNone">
+    <script type="text/javascript" src="./DOMPurify/purify.min.js" id="DomPurifyTag" class="selectNone"></script>
+    <script type="text/javascript" src="./daytonaHtmlContextMenu.js" id="HTMLContextMenuScript" class="selectNone"></script>
+    <script type="text/javascript" src="./mermaidJS/mermaid.min.js" class="selectNone"></script>
+    <script type="text/javascript" src="./mermaidScripting/mermaidZoomControls.js" class="selectNone"></script>
+    <script type="text/javascript" src="./mermaidScripting/mermaidRenderer.js" class="selectNone"></script>
+    <!-- Whenever we have a single mermaid diagram on the page, the diagram gets centered on the page, and we enable zoom controls and panning capabilities.
+         If the contents are not just a single mermaid diagram, we dynamically disable this styling.
+         (see ToggleMermaidSingletonStyling in WebViewHost.cs) -->
+    <style id="mermaid-singleton-style" class="selectNone">
+        /* Max-out the dimensions of the document so that the mermaid diagram can be zoomed and panned around the entirety of the preview's screenspace*/
+        html, body {
+            height: 100%; /* By default, the height doesn't take up 100% of the available height */
+            overflow: hidden; /* Don't show scrollbar */
+        }
+
+        #___markdown-content___ {
+            height: 100%;
+        }
+
+        /* The mermaid diagram and zoom controls are wrapped inside a "zoomwrapper" div */
+        #mermaid-diagram-zoomwrapper {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: relative;
+            cursor: grab;
+            user-select: none;
+        }
+
+        #mermaid-diagram-zoomcontrols {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 10;
+        }
+            /* Zoom-control buttons*/
+            #mermaid-diagram-zoomcontrols button {
+                background: rgba(255, 255, 255, 0.7);
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                font-size: 16px;
+                cursor: pointer;
+                padding: 4px; /* 4px on all sides */
+                text-align: center;
+                min-width: 30px;
+            }
+
+        #mermaid-diagram-zoomwrapper:hover #mermaid-diagram-zoomcontrols {
+            opacity: 0.8;
+        }
+    </style>
+    <!-- Default styling -->
+    <style class="selectNone">
+        html, body {
+        }
+    </style>
+    <title class="selectNone">Markdown Preview</title>
+    <meta http-equiv="cache-control" content="no-cache" class="selectNone">
+<base href="file://C:/Users/dhucu/AppData/Local/Temp/513eb9a2-5b1e-4f25-b7cb-6d90ede90c80.md"></head>
+<body class="selectNone">
+    <div id="___markdown-content___" class="selectNone" data-plugin-contextmenu="plugin-contextmenu-4fa1813c-6941-b24d-f166-d969730fbafc"><div id="mermaid-diagram-zoomwrapper" style="cursor: grab;"><svg aria-roledescription="flowchart-v2" role="graphics-document document" viewBox="0 0 10796.55078125 929" style="max-width: 10796.6px; transform-origin: 0px 0px; transform: translate(-2030.78px, -9.87443px) scale(4.17725);" class="flowchart" xmlns="http://www.w3.org/2000/svg" width="100%" id="mermaid-0" data-zoom-and-pan-initialized="true"><style>#mermaid-0{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#ccc;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mermaid-0 .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mermaid-0 .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mermaid-0 .error-icon{fill:#a44141;}#mermaid-0 .error-text{fill:#ddd;stroke:#ddd;}#mermaid-0 .edge-thickness-normal{stroke-width:1px;}#mermaid-0 .edge-thickness-thick{stroke-width:3.5px;}#mermaid-0 .edge-pattern-solid{stroke-dasharray:0;}#mermaid-0 .edge-thickness-invisible{stroke-width:0;fill:none;}#mermaid-0 .edge-pattern-dashed{stroke-dasharray:3;}#mermaid-0 .edge-pattern-dotted{stroke-dasharray:2;}#mermaid-0 .marker{fill:lightgrey;stroke:lightgrey;}#mermaid-0 .marker.cross{stroke:lightgrey;}#mermaid-0 svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#mermaid-0 p{margin:0;}#mermaid-0 .label{font-family:"trebuchet ms",verdana,arial,sans-serif;color:#ccc;}#mermaid-0 .cluster-label text{fill:#F9FFFE;}#mermaid-0 .cluster-label span{color:#F9FFFE;}#mermaid-0 .cluster-label span p{background-color:transparent;}#mermaid-0 .label text,#mermaid-0 span{fill:#ccc;color:#ccc;}#mermaid-0 .node rect,#mermaid-0 .node circle,#mermaid-0 .node ellipse,#mermaid-0 .node polygon,#mermaid-0 .node path{fill:#1f2020;stroke:#ccc;stroke-width:1px;}#mermaid-0 .rough-node .label text,#mermaid-0 .node .label text,#mermaid-0 .image-shape .label,#mermaid-0 .icon-shape .label{text-anchor:middle;}#mermaid-0 .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mermaid-0 .rough-node .label,#mermaid-0 .node .label,#mermaid-0 .image-shape .label,#mermaid-0 .icon-shape .label{text-align:center;}#mermaid-0 .node.clickable{cursor:pointer;}#mermaid-0 .root .anchor path{fill:lightgrey!important;stroke-width:0;stroke:lightgrey;}#mermaid-0 .arrowheadPath{fill:lightgrey;}#mermaid-0 .edgePath .path{stroke:lightgrey;stroke-width:2.0px;}#mermaid-0 .flowchart-link{stroke:lightgrey;fill:none;}#mermaid-0 .edgeLabel{background-color:hsl(0, 0%, 34.4117647059%);text-align:center;}#mermaid-0 .edgeLabel p{background-color:hsl(0, 0%, 34.4117647059%);}#mermaid-0 .edgeLabel rect{opacity:0.5;background-color:hsl(0, 0%, 34.4117647059%);fill:hsl(0, 0%, 34.4117647059%);}#mermaid-0 .labelBkg{background-color:rgba(87.75, 87.75, 87.75, 0.5);}#mermaid-0 .cluster rect{fill:hsl(180, 1.5873015873%, 28.3529411765%);stroke:rgba(255, 255, 255, 0.25);stroke-width:1px;}#mermaid-0 .cluster text{fill:#F9FFFE;}#mermaid-0 .cluster span{color:#F9FFFE;}#mermaid-0 div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:12px;background:hsl(20, 1.5873015873%, 12.3529411765%);border:1px solid rgba(255, 255, 255, 0.25);border-radius:2px;pointer-events:none;z-index:100;}#mermaid-0 .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#ccc;}#mermaid-0 rect.text{fill:none;stroke-width:0;}#mermaid-0 .icon-shape,#mermaid-0 .image-shape{background-color:hsl(0, 0%, 34.4117647059%);text-align:center;}#mermaid-0 .icon-shape p,#mermaid-0 .image-shape p{background-color:hsl(0, 0%, 34.4117647059%);padding:2px;}#mermaid-0 .icon-shape rect,#mermaid-0 .image-shape rect{opacity:0.5;background-color:hsl(0, 0%, 34.4117647059%);fill:hsl(0, 0%, 34.4117647059%);}#mermaid-0 .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#mermaid-0 .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#mermaid-0 :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g><marker orient="auto" markerHeight="8" markerWidth="8" markerUnits="userSpaceOnUse" refY="5" refX="5" viewBox="0 0 10 10" class="marker flowchart-v2" id="mermaid-0_flowchart-v2-pointEnd"><path style="stroke-width: 1; stroke-dasharray: 1, 0;" class="arrowMarkerPath" d="M 0 0 L 10 5 L 0 10 z"></path></marker><marker orient="auto" markerHeight="8" markerWidth="8" markerUnits="userSpaceOnUse" refY="5" refX="4.5" viewBox="0 0 10 10" class="marker flowchart-v2" id="mermaid-0_flowchart-v2-pointStart"><path style="stroke-width: 1; stroke-dasharray: 1, 0;" class="arrowMarkerPath" d="M 0 5 L 10 10 L 10 0 z"></path></marker><marker orient="auto" markerHeight="11" markerWidth="11" markerUnits="userSpaceOnUse" refY="5" refX="11" viewBox="0 0 10 10" class="marker flowchart-v2" id="mermaid-0_flowchart-v2-circleEnd"><circle style="stroke-width: 1; stroke-dasharray: 1, 0;" class="arrowMarkerPath" r="5" cy="5" cx="5"></circle></marker><marker orient="auto" markerHeight="11" markerWidth="11" markerUnits="userSpaceOnUse" refY="5" refX="-1" viewBox="0 0 10 10" class="marker flowchart-v2" id="mermaid-0_flowchart-v2-circleStart"><circle style="stroke-width: 1; stroke-dasharray: 1, 0;" class="arrowMarkerPath" r="5" cy="5" cx="5"></circle></marker><marker orient="auto" markerHeight="11" markerWidth="11" markerUnits="userSpaceOnUse" refY="5.2" refX="12" viewBox="0 0 11 11" class="marker cross flowchart-v2" id="mermaid-0_flowchart-v2-crossEnd"><path style="stroke-width: 2; stroke-dasharray: 1, 0;" class="arrowMarkerPath" d="M 1,1 l 9,9 M 10,1 l -9,9"></path></marker><marker orient="auto" markerHeight="11" markerWidth="11" markerUnits="userSpaceOnUse" refY="5.2" refX="-1" viewBox="0 0 11 11" class="marker cross flowchart-v2" id="mermaid-0_flowchart-v2-crossStart"><path style="stroke-width: 2; stroke-dasharray: 1, 0;" class="arrowMarkerPath" d="M 1,1 l 9,9 M 10,1 l -9,9"></path></marker><g class="root"><g class="clusters"><g data-look="classic" id="UI" class="cluster"><rect height="128" width="2222.4609375" y="793" x="4566.6640625" style=""></rect><g transform="translate(5640.3671875, 793)" class="cluster-label"><foreignObject height="24" width="75.0546875"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Console UI</p></span></div></foreignObject></g></g><g data-look="classic" id="Types" class="cluster"><rect height="128" width="3607.138671875" y="793" x="7181.412109375" style=""></rect><g transform="translate(8907.0673828125, 793)" class="cluster-label"><foreignObject height="24" width="155.828125"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Data Types &amp; Headers</p></span></div></foreignObject></g></g><g data-look="classic" id="Output" class="cluster"><rect height="381" width="330" y="540" x="8" style=""></rect><g transform="translate(132.453125, 540)" class="cluster-label"><foreignObject height="24" width="81.09375"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>File Output</p></span></div></foreignObject></g></g><g data-look="classic" id="Verification" class="cluster"><rect height="203" width="1260" y="540" x="358" style=""></rect><g transform="translate(888, 540)" class="cluster-label"><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Verification &amp; Fingerprinting</p></span></div></foreignObject></g></g><g data-look="classic" id="Scanning" class="cluster"><rect height="203" width="2841.978515625" y="540" x="5636.12109375" style=""></rect><g transform="translate(6997.5400390625, 540)" class="cluster-label"><foreignObject height="24" width="119.140625"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Quality Scanning</p></span></div></foreignObject></g></g><g data-look="classic" id="Drive" class="cluster"><rect height="381" width="1288.6640625" y="540" x="3258" style=""></rect><g transform="translate(3861.671875, 540)" class="cluster-label"><foreignObject height="24" width="81.3203125"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Drive Layer</p></span></div></foreignObject></g></g><g data-look="classic" id="Core" class="cluster"><rect height="256" width="8040.3515625" y="234" x="1275.5" style=""></rect><g transform="translate(5227.6796875, 234)" class="cluster-label"><foreignObject height="24" width="135.9921875"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Core Orchestration</p></span></div></foreignObject></g></g><g data-look="classic" id="Entry" class="cluster"><rect height="176" width="4396.9453125" y="8" x="555.5" style=""></rect><g transform="translate(2714.4765625, 8)" class="cluster-label"><foreignObject height="24" width="78.9921875"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Entry Point</p></span></div></foreignObject></g></g></g><g class="edgePaths"><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_MAIN_ACD_0" d="M1985.166,111.519L1883.972,123.599C1782.777,135.679,1580.389,159.84,1479.194,176.086C1378,192.333,1378,200.667,1378,209C1378,217.333,1378,225.667,1378,240.5C1378,255.333,1378,276.667,1378,298C1378,319.333,1378,340.667,1910.317,361.571C2442.634,382.474,3507.269,402.949,4039.586,413.186L4571.903,423.423"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_MAIN_CW_0" d="M2245.166,100.061L2693.046,114.051C3140.926,128.04,4036.686,156.02,4484.565,174.177C4932.445,192.333,4932.445,200.667,4932.445,209C4932.445,217.333,4932.445,225.667,4932.445,233.333C4932.445,241,4932.445,248,4932.445,251.5L4932.445,255"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_MAIN_MUI_0" d="M1985.166,115.619L1909.646,127.015C1834.125,138.412,1683.084,161.206,1607.563,176.77C1532.043,192.333,1532.043,200.667,1532.043,209C1532.043,217.333,1532.043,225.667,1532.043,235.333C1532.043,245,1532.043,256,1532.043,261.5L1532.043,267"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_MAIN_AR_0" d="M1985.166,103.851L1763.972,117.209C1542.777,130.567,1100.389,157.284,879.194,174.808C658,192.333,658,200.667,658,209C658,217.333,658,225.667,658,240.5C658,255.333,658,276.667,658,298C658,319.333,658,340.667,658,362C658,383.333,658,404.667,658,426C658,447.333,658,468.667,738.833,483.5C819.667,498.333,981.333,506.667,1062.167,515C1143,523.333,1143,531.667,1143,545.583C1143,559.5,1143,579,1143,588.75L1143,598.5"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_ACD_SCSI_CORE_0" d="M4575.902,435.528L4452.03,444.606C4328.157,453.685,4080.411,471.843,3956.539,485.088C3832.666,498.333,3832.666,506.667,3832.666,515C3832.666,523.333,3832.666,531.667,3832.666,545.583C3832.666,559.5,3832.666,579,3832.666,588.75L3832.666,598.5"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_ACD_FOUT_0" d="M4575.902,428.5L4042.919,438.75C3509.935,449,2443.967,469.5,1710.15,483.917C976.333,498.333,574.667,506.667,373.833,515C173,523.333,173,531.667,173,545.583C173,559.5,173,579,173,588.75L173,598.5"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_CW_ACD_0" d="M4932.445,337L4932.445,341.167C4932.445,345.333,4932.445,353.667,4916.996,362.198C4901.547,370.729,4870.65,379.458,4855.201,383.822L4839.752,388.187"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_SCSI_CORE_SCSI_READ_0" d="M3702.666,668.866L3643.972,681.222C3585.277,693.577,3467.889,718.289,3409.194,734.811C3350.5,751.333,3350.5,759.667,3350.5,768C3350.5,776.333,3350.5,784.667,3354.72,792.559C3358.941,800.451,3367.381,807.902,3371.601,811.627L3375.822,815.353"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_SCSI_CORE_SCSI_CAP_0" d="M3799.878,680.5L3791.12,690.917C3782.362,701.333,3764.847,722.167,3756.09,736.75C3747.332,751.333,3747.332,759.667,3747.332,768C3747.332,776.333,3747.332,784.667,3747.332,792.333C3747.332,800,3747.332,807,3747.332,810.5L3747.332,814"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_SCSI_CORE_SCSI_OFF_0" d="M3924.498,680.5L3949.025,690.917C3973.553,701.333,4022.609,722.167,4047.136,736.75C4071.664,751.333,4071.664,759.667,4071.664,768C4071.664,776.333,4071.664,784.667,4071.664,792.333C4071.664,800,4071.664,807,4071.664,810.5L4071.664,814"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_ROT_ET_0" d="M7193.873,660.428L7288.392,674.19C7382.911,687.952,7571.949,715.476,7788.586,733.405C8005.224,751.333,8249.462,759.667,8371.58,768C8493.699,776.333,8493.699,784.667,8493.699,792.333C8493.699,800,8493.699,807,8493.699,810.5L8493.699,814"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_ROT_SR_0" d="M6933.873,670.5L6879.706,682.583C6825.54,694.667,6717.206,718.833,6839.296,735.083C6961.386,751.333,7313.899,759.667,7490.156,768C7666.412,776.333,7666.412,784.667,7694.093,794.739C7721.775,804.811,7777.137,816.621,7804.819,822.527L7832.5,828.432"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_FOUT_FU_0" d="M173,680.5L173,690.917C173,701.333,173,722.167,173,736.75C173,751.333,173,759.667,173,768C173,776.333,173,784.667,173,792.333C173,800,173,807,173,810.5L173,814"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_ACD_DT_0" d="M4835.902,428.194L5446.269,438.495C6056.635,448.796,7277.367,469.398,7887.733,483.866C8498.1,498.333,8498.1,506.667,8498.1,515C8498.1,523.333,8498.1,531.667,8498.1,552.75C8498.1,573.833,8498.1,607.667,8498.1,641.5C8498.1,675.333,8498.1,709.167,8306.152,730.25C8114.204,751.333,7730.308,759.667,7538.36,768C7346.412,776.333,7346.412,784.667,7346.412,792.333C7346.412,800,7346.412,807,7346.412,810.5L7346.412,814"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_ACD_SR_0" d="M4835.902,427.954L5523.769,438.295C6211.635,448.636,7587.367,469.318,8275.233,483.826C8963.1,498.333,8963.1,506.667,8963.1,515C8963.1,523.333,8963.1,531.667,8963.1,552.75C8963.1,573.833,8963.1,607.667,8963.1,641.5C8963.1,675.333,8963.1,709.167,8857.366,730.25C8751.633,751.333,8540.166,759.667,8434.433,768C8328.699,776.333,8328.699,784.667,8290.641,795.556C8252.583,806.446,8176.467,819.893,8138.409,826.616L8100.351,833.339"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_ACD_SRT_0" d="M4835.902,427.842L5567.144,438.201C6298.385,448.561,7760.868,469.281,8492.11,483.807C9223.352,498.333,9223.352,506.667,9223.352,515C9223.352,523.333,9223.352,531.667,9223.352,552.75C9223.352,573.833,9223.352,607.667,9223.352,641.5C9223.352,675.333,9223.352,709.167,9223.352,730.25C9223.352,751.333,9223.352,759.667,9223.352,768C9223.352,776.333,9223.352,784.667,9223.352,792.333C9223.352,800,9223.352,807,9223.352,810.5L9223.352,814"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_ACD_Reading_0" d="M4575.902,429.669L4219.585,439.724C3863.268,449.779,3150.634,469.89,2794.317,484.111C2438,498.333,2438,506.667,2438,515C2438,523.333,2438,531.667,2438,539.333C2438,547,2438,554,2438,557.5L2438,561"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_ACD_Scanning_0" d="M4835.902,433.597L4996.772,442.997C5157.642,452.398,5479.382,471.199,5640.251,484.766C5801.121,498.333,5801.121,506.667,5801.121,514.333C5801.121,522,5801.121,529,5801.121,532.5L5801.121,536"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_ACD_Verification_0" d="M4575.902,428.647L4073.752,438.873C3571.602,449.098,2567.301,469.549,1891.817,483.941C1216.333,498.333,869.667,506.667,696.333,514.333C523,522,523,529,523,532.5L523,536"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_Reading_SCSI_READ_0" d="M3223,714.767L3273.417,719.472C3323.833,724.178,3424.667,733.589,3475.083,742.461C3525.5,751.333,3525.5,759.667,3525.5,768C3525.5,776.333,3525.5,784.667,3519.392,792.647C3513.285,800.627,3501.069,808.254,3494.962,812.068L3488.854,815.881"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_Scanning_SCSI_READ_0" d="M5738.621,743L5379.712,747.167C5020.803,751.333,4302.984,759.667,3944.075,768C3585.166,776.333,3585.166,784.667,3575.228,792.755C3565.291,800.844,3545.416,808.688,3535.478,812.61L3525.541,816.532"></path><path marker-end="url(#mermaid-0_flowchart-v2-pointEnd)" style="" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" id="L_Scanning_PROG_0" d="M5998.621,743L5998.621,747.167C5998.621,751.333,5998.621,759.667,5998.621,768C5998.621,776.333,5998.621,784.667,5998.621,794.333C5998.621,804,5998.621,815,5998.621,820.5L5998.621,826"></path></g><g class="edgeLabels"><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g transform="translate(0, 0)" class="label"><foreignObject height="0" width="0"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" class="labelBkg" xmlns="http://www.w3.org/1999/xhtml"><span class="edgeLabel"></span></div></foreignObject></g></g></g><g class="nodes"><g transform="translate(1645, 557)" class="root"><g class="clusters"><g data-look="classic" id="Reading" class="cluster"><rect height="153" width="1570" y="8" x="8" style=""></rect><g transform="translate(740.5390625, 8)" class="cluster-label"><foreignObject height="24" width="104.921875"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Reading Modes</p></span></div></foreignObject></g></g></g><g class="edgePaths"></g><g class="edgeLabels"></g><g class="nodes"><g transform="translate(173, 84.5)" id="flowchart-BASIC-9" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>BasicReading\nSimple single-pass</p></span></div></foreignObject></g></g><g transform="translate(483, 84.5)" id="flowchart-STD-10" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>StandardRead\nRetry + error handling</p></span></div></foreignObject></g></g><g transform="translate(793, 84.5)" id="flowchart-SEC-11" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>SecureRead\nMulti-pass consensus</p></span></div></foreignObject></g></g><g transform="translate(1103, 84.5)" id="flowchart-BURST-12" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>BurstRead\nFast uncorrected copy</p></span></div></foreignObject></g></g><g transform="translate(1413, 84.5)" id="flowchart-UTIL-13" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Utilities\nCache defeat, hashing</p></span></div></foreignObject></g></g></g></g><g transform="translate(2115.166015625, 96)" id="flowchart-MAIN-0" class="node default"><rect height="126" width="260" y="-63" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -48)" style="" class="label"><rect></rect><foreignObject height="96" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>main.cpp\nConsole init, drive discovery,\ninteractive menu loop</p></span></div></foreignObject></g></g><g transform="translate(4705.90234375, 426)" id="flowchart-ACD-1" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>AudioCDCopier.h / .cpp\nMain façade class</p></span></div></foreignObject></g></g><g transform="translate(4932.4453125, 298)" id="flowchart-CW-2" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>CopyWorkflow\nEnd-to-end copy pipeline</p></span></div></foreignObject></g></g><g transform="translate(1532.04296875, 298)" id="flowchart-MUI-3" class="node default"><rect height="54" width="238.0859375" y="-27" x="-119.04296875" style="" class="basic label-container"></rect><g transform="translate(-89.04296875, -12)" style="" class="label"><rect></rect><foreignObject height="24" width="178.0859375"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>MenuUI\nMenu rendering</p></span></div></foreignObject></g></g><g transform="translate(3832.666015625, 641.5)" id="flowchart-SCSI_CORE-4" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>ScsiDrive.Core\nOpen / Close / IOCTL</p></span></div></foreignObject></g></g><g transform="translate(3423, 857)" id="flowchart-SCSI_READ-5" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>ScsiDrive.Read\nSector &amp; C2 reading</p></span></div></foreignObject></g></g><g transform="translate(3747.33203125, 857)" id="flowchart-SCSI_CAP-6" class="node default"><rect height="78" width="288.6640625" y="-39" x="-144.33203125" style="" class="basic label-container"></rect><g transform="translate(-114.33203125, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="228.6640625"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>ScsiDrive.Capabilities\nFeature detection</p></span></div></foreignObject></g></g><g transform="translate(4071.6640625, 857)" id="flowchart-SCSI_OFF-7" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>ScsiDrive.Offset\nRead-offset calibration</p></span></div></foreignObject></g></g><g transform="translate(4381.6640625, 857)" id="flowchart-DRV-8" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Drive\nEnumeration &amp; handle helpers</p></span></div></foreignObject></g></g><g transform="translate(5801.12109375, 641.5)" id="flowchart-BLER-14" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>BLER Scan\nBlock error rate</p></span></div></foreignObject></g></g><g transform="translate(6111.12109375, 641.5)" id="flowchart-C2-15" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>C2 Scan\nC2 pointer analysis</p></span></div></foreignObject></g></g><g transform="translate(7063.873046875, 641.5)" id="flowchart-ROT-16" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Disc Rot Scan\nZone &amp; cluster analysis</p></span></div></foreignObject></g></g><g transform="translate(7373.873046875, 641.5)" id="flowchart-SURF-17" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Surface Map\nVisual surface imaging</p></span></div></foreignObject></g></g><g transform="translate(7688.486328125, 641.5)" id="flowchart-COMP-18" class="node default"><rect height="78" width="269.2265625" y="-39" x="-134.61328125" style="" class="basic label-container"></rect><g transform="translate(-104.61328125, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="209.2265625"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Comprehensive\nAggregated scan + score</p></span></div></foreignObject></g></g><g transform="translate(8003.099609375, 641.5)" id="flowchart-AUDIO-19" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Audio Analysis\nSilence / clipping detection</p></span></div></foreignObject></g></g><g transform="translate(8313.099609375, 641.5)" id="flowchart-PERF-20" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Performance\nSpeed comparison, seek times</p></span></div></foreignObject></g></g><g transform="translate(523, 641.5)" id="flowchart-VER-21" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Verification\nCRC, structure, re-read checks</p></span></div></foreignObject></g></g><g transform="translate(833, 641.5)" id="flowchart-FP-22" class="node default"><rect height="102" width="260" y="-51" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -36)" style="" class="label"><rect></rect><foreignObject height="72" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Fingerprinting\nCDDB, MusicBrainz, AccurateRip IDs</p></span></div></foreignObject></g></g><g transform="translate(1143, 641.5)" id="flowchart-AR-23" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>AccurateRip\nCRC calc &amp; database lookup</p></span></div></foreignObject></g></g><g transform="translate(1453, 641.5)" id="flowchart-OCAL-24" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>OffsetCalibration\nDrive offset detection</p></span></div></foreignObject></g></g><g transform="translate(173, 641.5)" id="flowchart-FOUT-25" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>FileOutput\nWAV writing, CUE sheets, logs</p></span></div></foreignObject></g></g><g transform="translate(173, 857)" id="flowchart-FU-26" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>FileUtils\nPath &amp; disk-space helpers</p></span></div></foreignObject></g></g><g transform="translate(7346.412109375, 857)" id="flowchart-DT-27" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>DiscTypes.h\nDiscInfo, TrackInfo</p></span></div></foreignObject></g></g><g transform="translate(7656.412109375, 857)" id="flowchart-CDS-28" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>CDStructures.h\nTOC / session structs</p></span></div></foreignObject></g></g><g transform="translate(7966.412109375, 857)" id="flowchart-SR-29" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>ScanResults.h\nBlerResult, DiscRotAnalysis</p></span></div></foreignObject></g></g><g transform="translate(8493.69921875, 857)" id="flowchart-ET-30" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>ErrorTypes.h\nErrorCluster, DiscZoneStats</p></span></div></foreignObject></g></g><g transform="translate(8841.96484375, 857)" id="flowchart-AT-31" class="node default"><rect height="78" width="336.53125" y="-39" x="-168.265625" style="" class="basic label-container"></rect><g transform="translate(-138.265625, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="276.53125"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>AnalysisTypes.h\nAudioAnalysisResult, SeekTimeResult</p></span></div></foreignObject></g></g><g transform="translate(9223.3515625, 857)" id="flowchart-SRT-32" class="node default"><rect height="78" width="326.2421875" y="-39" x="-163.12109375" style="" class="basic label-container"></rect><g transform="translate(-133.12109375, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="266.2421875"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>SecureRipTypes.h\nSecureRipConfig, results</p></span></div></foreignObject></g></g><g transform="translate(9582.59375, 857)" id="flowchart-FPT-33" class="node default"><rect height="78" width="292.2421875" y="-39" x="-146.12109375" style="" class="basic label-container"></rect><g transform="translate(-116.12109375, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="232.2421875"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>FingerprintTypes.h\nFingerprint structs</p></span></div></foreignObject></g></g><g transform="translate(9927.55078125, 857)" id="flowchart-DRT-34" class="node default"><rect height="78" width="297.671875" y="-39" x="-148.8359375" style="" class="basic label-container"></rect><g transform="translate(-118.8359375, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="237.671875"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>DriveTypes.h\nDriveCapabilities, C2Mode</p></span></div></foreignObject></g></g><g transform="translate(10257.50390625, 857)" id="flowchart-SCT-35" class="node default"><rect height="54" width="262.234375" y="-27" x="-131.1171875" style="" class="basic label-container"></rect><g transform="translate(-101.1171875, -12)" style="" class="label"><rect></rect><foreignObject height="24" width="202.234375"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>ScsiTypes.h\nC2ReadOptions</p></span></div></foreignObject></g></g><g transform="translate(10596.0859375, 857)" id="flowchart-CON-36" class="node default"><rect height="78" width="314.9296875" y="-39" x="-157.46484375" style="" class="basic label-container"></rect><g transform="translate(-127.46484375, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="254.9296875"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Constants.h\nAUDIO_SECTOR_SIZE, speeds</p></span></div></foreignObject></g></g><g transform="translate(4731.6640625, 857)" id="flowchart-CC-37" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>ConsoleColors.h\nANSI color helpers</p></span></div></foreignObject></g></g><g transform="translate(5040.34765625, 857)" id="flowchart-CB-38" class="node default"><rect height="54" width="257.3671875" y="-27" x="-128.68359375" style="" class="basic label-container"></rect><g transform="translate(-98.68359375, -12)" style="" class="label"><rect></rect><foreignObject height="24" width="197.3671875"><div style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>ConsoleBox.h\nBox drawing</p></span></div></foreignObject></g></g><g transform="translate(5351.36328125, 857)" id="flowchart-CS-39" class="node default"><rect height="78" width="264.6640625" y="-39" x="-132.33203125" style="" class="basic label-container"></rect><g transform="translate(-102.33203125, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="204.6640625"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>ConsoleSymbols.h\nUnicode glyphs</p></span></div></foreignObject></g></g><g transform="translate(5673.40625, 857)" id="flowchart-CF-40" class="node default"><rect height="78" width="279.421875" y="-39" x="-139.7109375" style="" class="basic label-container"></rect><g transform="translate(-109.7109375, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="219.421875"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>ConsoleFormat.h\nFormatting utilities</p></span></div></foreignObject></g></g><g transform="translate(5998.62109375, 857)" id="flowchart-PROG-41" class="node default"><rect height="54" width="271.0078125" y="-27" x="-135.50390625" style="" class="basic label-container"></rect><g transform="translate(-105.50390625, -12)" style="" class="label"><rect></rect><foreignObject height="24" width="211.0078125"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>Progress.h\nProgressIndicator</p></span></div></foreignObject></g></g><g transform="translate(6314.125, 857)" id="flowchart-MH-42" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>MenuHelpers.h\nInput parsing</p></span></div></foreignObject></g></g><g transform="translate(6624.125, 857)" id="flowchart-IH-43" class="node default"><rect height="78" width="260" y="-39" x="-130" style="" class="basic label-container"></rect><g transform="translate(-100, -24)" style="" class="label"><rect></rect><foreignObject height="48" width="200"><div style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;" xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>InterruptHandler.h\nCtrl+C / Esc handling</p></span></div></foreignObject></g></g></g></g></g></svg><div id="mermaid-diagram-zoomcontrols"><button title="Zoom In">+</button><button title="Zoom Out">−</button><button title="Reset Zoom">⟳</button></div></div>
+</div>
+
+<div id="plugin-contextmenu-container" class="selectNone"><ul id="plugin-contextmenu-4fa1813c-6941-b24d-f166-d969730fbafc" class="plugin-contextmenu" data-plugin-is-contextmenu="true" style="display: none;"><li class="menuitem disabled" tabindex="1" role="menuitem" id="Copy" data-plugin-contextmenu-item-type="command" aria-disabled="true"><img class="icon" style="visibility: hidden;"><div class="main">Copy</div></li><li class="menuitem" tabindex="2" role="menuitem" id="Save" data-plugin-contextmenu-item-type="command"><img class="icon" style="visibility: hidden;"><div class="main">Save As HTML... </div></li><li class="menuitem" tabindex="3" role="menuitem" id="Print" data-plugin-contextmenu-item-type="command"><img class="icon" style="visibility: hidden;"><div class="main">Print HTML...</div></li></ul></div></body>
