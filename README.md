@@ -2,9 +2,9 @@
 "You take the blue pill—the story ends, you wake up in your bed and believe whatever you want to believe.
 You take the red pill—you stay in Wonderland, and I show you how deep the codebase goes."
 
-A Windows command-line tool for high-quality audio CD ripping with advanced disc diagnostics, written in C++.
+A Windows command-line tool for high-quality audio CD ripping, writing, and advanced disc diagnostics, written in C++.
 
-AudioCopy reads audio CDs at the raw sector level using SCSI/MMC commands and provides multiple quality scanning modes to assess disc health before, during, or after extraction.
+AudioCopy reads and writes audio CDs at the raw sector level using SCSI/MMC commands and provides multiple quality scanning modes to assess disc health before, during, or after extraction.
 
 ---
 
@@ -20,6 +20,16 @@ AudioCopy reads audio CDs at the raw sector level using SCSI/MMC commands and pr
 - **CUE sheet generation**
 - **Disc fingerprinting** — CDDB, MusicBrainz, and AccurateRip disc IDs
 
+### Disc Writing
+- **Write audio CDs** from `.bin` / `.cue` / `.sub` file sets
+- **Automatic write mode negotiation** — tries Raw DAO with subchannel, falls back to SAO
+- **Subchannel writing** — writes packed or raw P-W subchannel data from `.sub` files when the drive supports it
+- **CD-Text writing** — builds and sends CD-Text packs (Title, Performer) from CUE sheet metadata
+- **CD-RW detection and blanking** — detects rewritable media, supports quick and full blank with progress tracking
+- **Optical Power Calibration (OPC)** — optional laser power calibration before writing
+- **Write verification** — cache flush, session close, lead-out finalization, and post-write sector readback
+- **Configurable write speed** with drive speed selection
+
 ### Disc Diagnostics
 - **C2 error scan** — quick pass/fail quality check
 - **BLER scan** — detailed per-second error rate with Red Book compliance check
@@ -32,6 +42,7 @@ AudioCopy reads audio CDs at the raw sector level using SCSI/MMC commands and pr
 - **Audio content analysis** — detects silent, clipped, low-level, and DC-offset sectors
 - **Seek time analysis** — measures seek latency to detect mechanical issues
 - **C2 validation test** — verifies that the drive's C2 error reporting is reliable
+- **Copy-protection detection** — heuristic scan for common audio CD protection schemes
 
 ---
 
@@ -245,7 +256,7 @@ The **R–W channels** (subchannels **3 through 8**) *can* carry meaningful data
 - **CD+G graphics** (commonly used for karaoke)
 - **CD-Text** (in some implementations)
 
-### Why it’s often missing
+### Why it's often missing
 Most consumer CD burning software defaults to **not writing** R–W subchannel content unless explicitly configured. Examples include:
 
 - Nero
@@ -284,8 +295,8 @@ During common burn modes like:
 ### Result
 Because timing is created in real time:
 
-- it can be subject to small inconsistencies (“jitter”)
-- it’s usually fine for audio playback
+- it can be subject to small inconsistencies ("jitter")
+- it's usually fine for audio playback
 - but it can sometimes trip up:
   - very picky older CD players
   - certain data recovery or verification workflows that expect highly consistent subchannel timing
@@ -315,9 +326,9 @@ Because timing is created in real time:
 
 For standard audio CD burns, these behaviors explain why:
 
-- some players show a “CD+G” label or track name while others don’t
+- some players show a "CD+G" label or track name while others don't
 - burned discs may take longer to load than pressed discs
-- special features like CD+G graphics often don’t work unless explicitly authored and written
+- special features like CD+G graphics often don't work unless explicitly authored and written
 
 If you need maximum compatibility for special features (especially **CD+G**), use software/hardware that supports:
 
@@ -401,6 +412,125 @@ A high subchannel error rate is a signal to inspect the disc further (run a C2 o
 **Output:** Sector count, per-category error totals, burst analysis, and measured read speed.
 
 **When to use:** Before ripping discs where index point accuracy matters (live albums, gapless recordings), or as a general disc health indicator to decide whether further diagnostics are warranted.
+
+---
+
+## Disc Writing
+
+AudioCopy can write audio CDs from `.bin` / `.cue` / `.sub` file sets produced by a previous rip. The write workflow handles media detection, mode negotiation, CD-Text embedding, and session finalization automatically.
+
+### Write Mode Negotiation
+
+Not all drives support the same write modes. AudioCopy probes the drive by testing both MODE SELECT and SEND CUE SHEET together, since some drives accept the mode page but reject the CUE sheet. The negotiation tries modes in priority order:
+
+| Priority | Mode | Block size | Description |
+|---|---|---|---|
+| 1 | Raw DAO + packed P-W | 2448 bytes | Exact 1:1 copy including subchannel data (best fidelity) |
+| 2 | Raw DAO + raw P-W | 2448 bytes | Raw subchannel format (deinterleaving handled by host) |
+| 3 | SAO + packed P-W | 2448 bytes | Session-At-Once with packed subchannel |
+| 4 | SAO + raw P-W | 2448 bytes | Session-At-Once with raw subchannel |
+| 5 | Plain SAO | 2352 bytes | Audio only — drive generates subchannel automatically (last resort) |
+
+If the drive silently downgrades the requested write parameters (accepts MODE SELECT but stores different values), AudioCopy detects this via readback verification and rejects the mode.
+
+### Subchannel Writing
+
+When a `.sub` file is provided alongside the `.bin` and `.cue`, AudioCopy validates it against the expected sector count and writes subchannel data interleaved with the audio. Raw P-W subchannel data is automatically deinterleaved to packed format when required by the negotiated write mode.
+
+If the drive does not support any subchannel write mode, AudioCopy falls back to plain SAO and writes audio only, with a warning that subchannel data will be omitted.
+
+### CD-Text Embedding
+
+If the CUE file contains `TITLE` and/or `PERFORMER` commands (at disc and/or track level), AudioCopy automatically:
+
+1. Builds CD-Text packs (pack types 0x80 Title, 0x81 Performer, 0x8F Size Information)
+2. Computes CRC-16 (CRC-CCITT, inverted per Red Book) for each 18-byte pack
+3. Sends the packs to the drive via WRITE BUFFER (buffer ID 0x08)
+
+The drive embeds the CD-Text in the lead-in R-W subchannel during SAO/DAO writing. If the drive rejects the CD-Text data, the audio is still written normally.
+
+### CD-RW Detection and Blanking
+
+Before writing, AudioCopy queries the disc via READ DISC INFORMATION (0x51) to detect:
+
+- **Media type** — CD-R (write-once) or CD-RW (rewritable)
+- **Disc status** — empty, appendable, or complete (full)
+
+If the primary command fails (e.g., corrupted TOC), a fallback via GET CONFIGURATION (0x46) determines the media profile.
+
+For CD-RW media that needs erasing, two blanking modes are available:
+
+| Mode | SCSI blank type | Behavior |
+|---|---|---|
+| **Quick blank** | 0x01 (minimal) | Erases PMA, lead-in, and pregap only (~1–2 minutes) |
+| **Full blank** | 0x00 (entire disc) | Erases the entire disc surface (~10+ minutes) |
+
+If the standard blank fails (e.g., corrupted TOC prevents the drive from processing a normal blank), AudioCopy automatically attempts a recovery blank via erase session (type 0x06), then retries the original blank. Progress is tracked via REQUEST SENSE polling with a real-time progress bar.
+
+### Write Workflow
+
+The full write sequence is:
+
+1. **File validation** — verify `.bin`, `.cue`, and optional `.sub` files exist and are consistent
+2. **CUE sheet parsing** — extract track layout, pregap data, ISRC codes, and CD-Text metadata
+3. **Power calibration** — optional OPC (SEND OPC INFORMATION, 0x54)
+4. **Write mode negotiation** — probe drive capabilities and select best supported mode
+5. **SCSI CUE sheet** — build and send the disc layout (SEND CUE SHEET, 0x5D) with Track 1 pregap at MSF 00:00:00
+6. **CD-Text** — build and send packs if CUE metadata is present
+7. **Audio sector writing** — write 150 sectors of pregap silence followed by BIN file data via WRITE(10), with subchannel data appended when available
+8. **Finalization** — SYNCHRONIZE CACHE (0x35), CLOSE SESSION (0x5B), and lead-out polling until the drive is ready
+
+### Post-Write Verification
+
+After finalization, AudioCopy can verify the written disc by reading back the first and last sector of each track to confirm readability.
+
+---
+
+## Copy-Protection Detection
+
+**Question answered:** *"Is this disc copy-protected, and what scheme is being used?"*
+
+AudioCopy performs an 8-step heuristic scan that combines structural analysis (no disc I/O) with targeted reads to detect common audio CD copy-protection mechanisms.
+
+### Checks Performed
+
+| Step | Check | I/O required | Severity | What it detects |
+|---|---|---|---|---|
+| 1 | **Illegal TOC** | No | Strong | Track numbers outside 1–99, impossibly high start LBAs |
+| 2 | **Multi-session abuse** | No | Strong | Session count > 2 (used by MediaMax/XCP to confuse rippers) |
+| 3 | **Data track presence** | No | Strong | Non-audio track in last session (rootkit installer, autorun) |
+| 4 | **Pre-emphasis anomaly** | No | Weak | Pre-emphasis flag set inconsistently across tracks |
+| 5 | **Track gap anomalies** | No | Weak | Non-standard gap sizes between tracks |
+| 6 | **Intentional errors** | Yes | Strong | Clusters of C2 / read errors deliberately mastered onto the disc (CDS, MediaClyS) |
+| 7 | **Subchannel manipulation** | Yes | Strong | Corrupted or manipulated subchannel data patterns |
+| 8 | **Lead-in overread block** | Yes | Strong | Drive refuses to read lead-in area (some protections block this) |
+
+### Verdict Logic
+
+The scan classifies each indicator as **strong** (severity ≥ 2) or **weak** (severity < 2) and applies the following rules:
+
+| Condition | Verdict |
+|---|---|
+| No indicators detected | **No protection** |
+| Only weak indicators | **Unlikely** — minor anomalies, not protection |
+| 1 strong, no weak | **Inconclusive** — possible but not confirmed |
+| 1 strong + 1 weak | **Inconclusive** — insufficient corroborating evidence |
+| ≥ 2 strong, or ≥ 1 strong + ≥ 2 weak | **Protection likely** — specific scheme identified if possible |
+
+### Identified Schemes
+
+When sufficient indicators are present, AudioCopy attempts to identify the specific protection scheme:
+
+| Indicator combination | Identified scheme |
+|---|---|
+| Data track + multi-session | MediaMax / XCP-style |
+| Intentional errors + illegal TOC | Cactus Data Shield / Key2Audio-style |
+| Intentional errors alone | CDS / MediaClyS-style |
+| Subchannel manipulation | Subchannel-based protection |
+
+**Output:** Per-indicator results, aggregate verdict, identified scheme (if any), and a text report saved to `protection_check.txt`.
+
+**When to use:** Before ripping unfamiliar discs — particularly commercial releases from 2001–2007 when audio CD copy-protection was widespread. The scan helps decide whether to use secure rip mode and warns about potential extraction issues.
 
 ---
 
