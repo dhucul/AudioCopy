@@ -211,7 +211,7 @@ bool AudioCDCopier::BlankRewritableDisk(int speed, bool quickBlank) {
 	if (totalSec > 0) {
 		if (totalSec >= 60)
 			std::cout << " in " << totalSec / 60 << "m "
-				<< std::setfill('0') << std::setw(2) << totalSec % 60 << "s";
+			<< std::setfill('0') << std::setw(2) << totalSec % 60 << "s";
 		else
 			std::cout << " in " << totalSec << "s";
 	}
@@ -419,6 +419,8 @@ static void DeinterleaveSubchannel(const BYTE* raw, BYTE* packed) {
 //     0 = SAO (0x02), no subchannel, block type 0x00 (2352 bytes)
 //     1 = Raw DAO (0x03), packed P-W subchannel, block type 0x02 (2448 bytes)
 //     2 = Raw DAO (0x03), raw P-W subchannel, block type 0x03 (2448 bytes)
+//     3 = SAO (0x02), packed P-W subchannel, block type 0x02 (2448 bytes)
+//     4 = SAO (0x02), raw P-W subchannel, block type 0x03 (2448 bytes)
 // ============================================================================
 static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode) {
 	BYTE modeData[60] = { 0 };
@@ -427,18 +429,40 @@ static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode) {
 	page[0] = 0x05;  // Page code
 	page[1] = 0x32;  // Page length = 50
 
+	// Expected values for readback verification
+	BYTE expectedWriteType;
+	BYTE expectedBlockType;
+
 	switch (subchannelMode) {
 	case 2:  // Raw DAO + raw P-W subchannel
 		page[2] = 0x43;  // BUFE | Write Type 0x03 (Raw)
 		page[4] = 0x03;  // Data block type 3: raw P-W (2448 bytes)
+		expectedWriteType = 0x03;
+		expectedBlockType = 0x03;
 		break;
 	case 1:  // Raw DAO + packed P-W subchannel
 		page[2] = 0x43;  // BUFE | Write Type 0x03 (Raw)
 		page[4] = 0x02;  // Data block type 2: packed P-W (2448 bytes)
+		expectedWriteType = 0x03;
+		expectedBlockType = 0x02;
+		break;
+	case 4:  // SAO + raw P-W subchannel
+		page[2] = 0x42;  // BUFE | Write Type 0x02 (SAO)
+		page[4] = 0x03;  // Data block type 3: raw P-W (2448 bytes)
+		expectedWriteType = 0x02;
+		expectedBlockType = 0x03;
+		break;
+	case 3:  // SAO + packed P-W subchannel
+		page[2] = 0x42;  // BUFE | Write Type 0x02 (SAO)
+		page[4] = 0x02;  // Data block type 2: packed P-W (2448 bytes)
+		expectedWriteType = 0x02;
+		expectedBlockType = 0x02;
 		break;
 	default: // SAO, no subchannel
 		page[2] = 0x42;  // BUFE | Write Type 0x02 (SAO)
 		page[4] = 0x00;  // Data block type 0: audio only (2352 bytes)
+		expectedWriteType = 0x02;
+		expectedBlockType = 0x00;
 		break;
 	}
 
@@ -459,7 +483,7 @@ static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode) {
 		return false;
 	}
 
-	// Verify readback
+	// Verify readback — reject if the drive silently downgraded the mode
 	BYTE senseCdb[10] = { 0x5A, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x00 };
 	BYTE verifyBuf[60] = { 0 };
 	if (drive.SendSCSI(senseCdb, sizeof(senseCdb), verifyBuf, sizeof(verifyBuf), true)) {
@@ -473,6 +497,19 @@ static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode) {
 		int blockSize = (blockType >= 0x02) ? 2448 : (blockType == 0x01) ? 2368 : 2352;
 		Console::Success("Write parameters verified (");
 		std::cout << modeName << ", Audio, " << blockSize << "-byte blocks, sub: " << subName << ")\n";
+
+		// Detect silent downgrade: drive accepted MODE SELECT but stored
+		// different values (e.g., clamped block type 0x02 → 0x00).
+		if (writeType != expectedWriteType || blockType != expectedBlockType) {
+			Console::Warning("Drive silently changed write parameters (requested write type 0x");
+			std::cout << std::hex << std::setfill('0') << std::setw(2)
+				<< static_cast<int>(expectedWriteType) << "/block 0x"
+				<< std::setw(2) << static_cast<int>(expectedBlockType)
+				<< ", got 0x" << std::setw(2) << static_cast<int>(writeType)
+				<< "/0x" << std::setw(2) << static_cast<int>(blockType)
+				<< std::dec << std::setfill(' ') << ")\n";
+			return false;
+		}
 	}
 
 	return true;
@@ -481,18 +518,33 @@ static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode) {
 // ============================================================================
 // Helper: Build and send SCSI CUE sheet
 // Always includes Track 1 pregap at MSF 00:00:00 (required by Red Book).
-// subchannelMode: 0 = SAO (Data Form 0x00), 1 = packed P-W (0x02), 2 = raw P-W (0x03)
+// subchannelMode:
+//   0 = SAO, no subchannel   (Data Form 0x00)
+//   1 = Raw DAO, packed P-W  (Data Form 0x02)
+//   2 = Raw DAO, raw P-W     (Data Form 0x03)
+//   3 = SAO, packed P-W      (Data Form 0x02)
+//   4 = SAO, raw P-W         (Data Form 0x03)
 // ============================================================================
 static bool BuildAndSendCueSheet(ScsiDrive& drive,
 	const std::vector<AudioCDCopier::TrackWriteInfo>& tracks,
 	DWORD totalSectors, int subchannelMode) {
 
-	// Data Form must match the block type set in Mode Page 0x05
+	// MMC-3 Table 31 — CUE sheet Data Form byte for audio tracks:
+	//   Bits 5-4: Main Channel Data Form (00 = 2352-byte audio)
+	//   Bits 3-0: Sub-Channel Data Form
+	//     0000 = no sub-channel data
+	//     0010 = packed P-W (96 bytes)
+	//     0011 = raw P-W (96 bytes)
+	// Encoding is the same for both SAO and Raw DAO write types.
 	BYTE trackDataForm;
 	switch (subchannelMode) {
-	case 1:  trackDataForm = 0x02; break;  // packed P-W
-	case 2:  trackDataForm = 0x03; break;  // raw P-W
-	default: trackDataForm = 0x00; break;  // SAO, no subchannel
+	case 1:  // Raw DAO, packed P-W
+	case 3:  // SAO, packed P-W
+		trackDataForm = 0x02; break;
+	case 2:  // Raw DAO, raw P-W
+	case 4:  // SAO, raw P-W
+		trackDataForm = 0x03; break;
+	default: trackDataForm = 0x00; break;  // no subchannel
 	}
 
 	// Count entries: lead-in + Track 1 pregap (always) + per-track entries + lead-out
@@ -510,14 +562,17 @@ static bool BuildAndSendCueSheet(ScsiDrive& drive,
 	std::vector<BYTE> cueSheet(cueSheetSize, 0);
 	size_t ei = 0;
 
-	// ── Lead-in (Data Form must match session type) ──────────
-	// MMC-3 Table 28: For audio CD-DA sessions:
-	//   0x01 = CD-DA (SAO, no sub-channel data provided)
-	//   0x03 = CD-DA (Raw, packed P-W subchannel)
-	//   0x03 = CD-DA (Raw, raw P-W subchannel)
-	// Using trackDataForm for lead-in ensures consistency with the write mode.
-	// For SAO, trackDataForm is 0x00 which some drives reject; use 0x01 instead.
-	BYTE leadInDataForm = (subchannelMode == 0) ? 0x01 : trackDataForm;
+	// ── Lead-in ──────────────────────────────────────────────
+	// Raw DAO: lead-in Data Form must match track entries.
+	// SAO:     lead-in Data Form = 0x01 (CD-DA session type);
+	//          drive generates lead-in internally.
+	BYTE leadInDataForm;
+	if (subchannelMode == 1 || subchannelMode == 2) {
+		leadInDataForm = trackDataForm;  // Raw DAO: must match track entries
+	}
+	else {
+		leadInDataForm = 0x01;           // SAO: CD-DA session indicator
+	}
 
 	cueSheet[ei * 8 + 0] = 0x01;  // CTL/ADR: audio
 	cueSheet[ei * 8 + 1] = 0x00;  // TNO: lead-in
@@ -589,6 +644,8 @@ static bool BuildAndSendCueSheet(ScsiDrive& drive,
 		else if (e[1] == 0xAA)  std::cout << "  Lead-out";
 		else                    std::cout << "  Track " << std::setw(2) << static_cast<int>(e[1]);
 		std::cout << "  Index " << static_cast<int>(e[2])
+			<< "  DataForm 0x" << std::hex << std::setfill('0') << std::setw(2)
+			<< static_cast<int>(e[3]) << std::dec
 			<< "  MSF " << std::setfill('0') << std::setw(2) << static_cast<int>(e[5])
 			<< ":" << std::setw(2) << static_cast<int>(e[6])
 			<< ":" << std::setw(2) << static_cast<int>(e[7])
@@ -708,32 +765,61 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 	Console::Success("Drive speed set to ");
 	std::cout << speed << "x\n";
 
-	// Negotiate write mode: try packed P-W first (most compatible Raw DAO),
-	// then raw P-W, then SAO fallback
-	// subchannelMode: 0 = SAO, 1 = packed P-W, 2 = raw P-W
+	// Negotiate write mode by testing both MODE SELECT and SEND CUE SHEET
+	// together. Some drives accept the mode page but reject the CUE sheet,
+	// so testing MODE SELECT alone gives false positives.
+	//
+	// Priority order:
+	//   1. Raw DAO + packed P-W   (best: exact 1:1 copy with subchannel)
+	//   2. Raw DAO + raw P-W
+	//   3. SAO + packed P-W       (subchannel via SAO/R96P)
+	//   4. SAO + raw P-W          (subchannel via SAO/R96R)
+	//   5. Plain SAO              (no subchannel — last resort)
 	int subchannelMode = 0;
 
 	if (hasSubchannel) {
-		// Try packed P-W (block type 0x02) — most drives that support Raw DAO use this
-		Console::Info("Trying Raw DAO with packed P-W subchannel...\n");
-		if (PrepareDriveForWrite(m_drive, 1)) {
-			subchannelMode = 1;
-			needsDeinterleave = true;  // .sub file is raw, drive wants packed
-			Console::Success("Drive accepts packed P-W subchannel (Raw DAO)\n");
+		struct WriteMode {
+			int mode;
+			bool deinterleave;
+			const char* description;
+		};
+
+		const WriteMode candidates[] = {
+			{ 1, true,  "Raw DAO + packed P-W subchannel" },
+			{ 2, false, "Raw DAO + raw P-W subchannel"    },
+			{ 3, true,  "SAO + packed P-W subchannel"     },
+			{ 4, false, "SAO + raw P-W subchannel"        },
+		};
+
+		bool modeFound = false;
+		for (const auto& wm : candidates) {
+			Console::Info("Trying ");
+			std::cout << wm.description << "...\n";
+
+			if (!PrepareDriveForWrite(m_drive, wm.mode)) {
+				Console::Info("  MODE SELECT rejected — skipping\n");
+				continue;
+			}
+
+			// Mode page accepted — now test if drive also accepts the CUE sheet
+			if (!BuildAndSendCueSheet(m_drive, tracks, totalSectors, wm.mode)) {
+				Console::Info("  CUE sheet rejected — skipping\n");
+				continue;
+			}
+
+			// Both accepted — use this mode
+			subchannelMode = wm.mode;
+			needsDeinterleave = wm.deinterleave;
+			Console::Success("Drive accepts ");
+			std::cout << wm.description << "\n";
+			modeFound = true;
+			break;
 		}
-		else {
-			// Try raw P-W (block type 0x03) — rare but matches .sub file format
-			Console::Info("Trying Raw DAO with raw P-W subchannel...\n");
-			if (PrepareDriveForWrite(m_drive, 2)) {
-				subchannelMode = 2;
-				needsDeinterleave = false;  // .sub file is already raw
-				Console::Success("Drive accepts raw P-W subchannel (Raw DAO)\n");
-			}
-			else {
-				Console::Warning("Drive does not support Raw DAO — subchannel data will not be written\n");
-				Console::Info("Falling back to SAO (drive-generated subchannel from CUE sheet)\n");
-				hasSubchannel = false;
-			}
+
+		if (!modeFound) {
+			Console::Warning("Drive does not support subchannel writing\n");
+			Console::Info("Subchannel data from .sub file will NOT be written\n");
+			hasSubchannel = false;
 		}
 	}
 
@@ -741,24 +827,9 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 		if (!PrepareDriveForWrite(m_drive, 0)) {
 			return false;
 		}
-	}
 
-	// Send SCSI CUE sheet
-	Console::Info("\nSending disc layout to drive...\n");
-	if (!BuildAndSendCueSheet(m_drive, tracks, totalSectors, subchannelMode)) {
-		if (hasSubchannel) {
-			Console::Warning("Drive rejected CUE sheet for Raw DAO — falling back to SAO\n");
-			Console::Warning("Subchannel data from .sub file will NOT be written\n");
-			hasSubchannel = false;
-			needsDeinterleave = false;
-			subchannelMode = 0;
-			if (!PrepareDriveForWrite(m_drive, 0)) return false;
-			if (!BuildAndSendCueSheet(m_drive, tracks, totalSectors, 0)) {
-				Console::Error("Drive rejected disc layout\n");
-				return false;
-			}
-		}
-		else {
+		Console::Info("\nSending disc layout to drive...\n");
+		if (!BuildAndSendCueSheet(m_drive, tracks, totalSectors, 0)) {
 			Console::Error("Drive rejected disc layout\n");
 			return false;
 		}
@@ -815,7 +886,7 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 	std::cout << writeTotalSectors << " sectors (150 pregap + " << totalSectors << " audio)\n";
 
 	if (hasSubchannel) {
-		Console::Info("Write mode: Raw DAO (2448 bytes/sector = 2352 audio + 96 subchannel");
+		Console::Info("Write mode: 2448 bytes/sector (2352 audio + 96 subchannel");
 		if (needsDeinterleave) std::cout << ", deinterleaving";
 		std::cout << ")\n";
 	}
@@ -836,7 +907,7 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 	BYTE rawSub[SUBCHANNEL_SIZE];  // Temp buffer for deinterleaving
 
 	DWORD sectorsWritten = 0;
-	int32_t currentLBA = -150;  // Start at pregap (signed for negative LBA)
+	int32_t currentLBA = -150;  // Start at pregap (signed for negative values)
 	int consecutiveErrors = 0;
 	size_t currentTrackIdx = 0;
 
