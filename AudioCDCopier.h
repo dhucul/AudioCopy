@@ -159,10 +159,16 @@ public:
 		bool isAudio;
 		bool hasPregap;        // true only when INDEX 00 was explicitly in the CUE file
 		std::string isrcCode;
+		std::string title;     // CD-Text: track title from CUE TITLE command
+		std::string performer; // CD-Text: track performer from CUE PERFORMER command
 	};
 
 	bool ParseCueSheet(const std::wstring& cueFile,
 		std::vector<TrackWriteInfo>& tracks);
+	// Overload that also extracts disc-level CD-Text metadata
+	bool ParseCueSheet(const std::wstring& cueFile,
+		std::vector<TrackWriteInfo>& tracks,
+		std::string& discTitle, std::string& discPerformer);
 
 	bool WriteAudioSectors(const std::wstring& binFile,
 		const std::wstring& subFile,
