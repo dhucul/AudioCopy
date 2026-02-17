@@ -115,12 +115,18 @@ void PrintHelpMenu() {
 		"   secure rip modes (burst/standard/paranoid), and detailed logging.",
 		"Creating high-quality digital backups of your audio CDs." });
 
+	PrintEntry({ "2. Write Disc",
+		"Burns audio data back to a blank CD-R/CD-RW from .bin/.cue/.sub files.\n"
+		"   Supports writing audio images previously ripped with this tool,\n"
+		"   including subchannel data restoration when .sub files are present.",
+		"Creating accurate copies of audio CDs from previously ripped images." });
+
 	// ═════════════════════════════════════════════════════════════════════
 	//  Disc Quality
 	// ═════════════════════════════════════════════════════════════════════
 	PrintSection("Disc Quality");
 
-	PrintEntry({ "2. C2 Error Scan",
+	PrintEntry({ "3. C2 Error Scan",
 		"Performs a disc quality scan using the drive's C2 error reporting capability.\n"
 		"   Auto-detects best C2 mode: error pointers (standard MMC), error block,\n"
 		"   or Plextor vendor D8 commands when available.\n"
@@ -132,7 +138,7 @@ void PrintHelpMenu() {
 		"   checks before ripping or detailed analysis of damaged discs.",
 		"Quick disc health assessment or detailed error analysis before ripping." });
 
-	PrintEntry({ "3. BLER Scan (Detailed)",
+	PrintEntry({ "4. BLER Scan (Detailed)",
 		"Measures Block Error Rate - the frequency of raw errors before correction.\n"
 		"   Provides per-track statistics, error clustering analysis, zone distribution,\n"
 		"   and a text-based error graph across the disc surface.\n"
@@ -145,18 +151,18 @@ void PrintHelpMenu() {
 		"   Red Book standard: average BLER should be < 220 errors/second.",
 		"Professional-grade disc quality analysis with C1/C2 breakdown." });
 
-	PrintEntry({ "4. Disc Rot Detection",
+	PrintEntry({ "5. Disc Rot Detection",
 		"Analyzes error patterns to detect physical degradation (disc rot/bronzing).\n"
 		"   Checks for characteristic edge deterioration and oxidation patterns.",
 		"Evaluating older discs or checking storage conditions." });
 
-	PrintEntry({ "5. Generate Surface Map",
+	PrintEntry({ "6. Generate Surface Map",
 		"Creates a visual representation of the entire disc surface quality.\n"
 		"   Shows error density patterns, scratch locations, and problem areas.\n"
 		"   Outputs a text file with a grid of symbols indicating sector health.",
 		"Visual documentation of disc condition or identifying damaged regions." });
 
-	PrintEntry({ "6. Multi-Pass Verification",
+	PrintEntry({ "7. Multi-Pass Verification",
 		"Reads the disc multiple times (2-10 passes) and compares results.\n"
 		"   Inconsistent reads indicate marginal sectors or drive issues.\n"
 		"   Sectors that differ between passes are flagged as unreliable.",
@@ -167,13 +173,13 @@ void PrintHelpMenu() {
 	// ═════════════════════════════════════════════════════════════════════
 	PrintSection("Disc Info");
 
-	PrintEntry({ "7. Audio Content Analysis",
+	PrintEntry({ "8. Audio Content Analysis",
 		"Analyzes audio characteristics: silence detection, clipping, levels.\n"
 		"   Detects pre-emphasis, HDCD encoding, and dynamic range.\n"
 		"   Reports peak levels and average loudness per track.",
 		"Understanding the audio mastering of the disc." });
 
-	PrintEntry({ "8. Disc Fingerprint",
+	PrintEntry({ "9. Disc Fingerprint",
 		"Generates unique disc identifiers for online database lookups:\n"
 		"   - CDDB/FreeDB ID for metadata lookup\n"
 		"   - MusicBrainz Disc ID for accurate metadata matching\n"
@@ -182,19 +188,19 @@ void PrintHelpMenu() {
 		"   Results are saved to disc_fingerprint.txt.",
 		"Looking up album metadata or verifying disc identity." });
 
-	PrintEntry({ "9. Lead Area Check",
+	PrintEntry({ "10. Lead Area Check",
 		"Examines lead-in and lead-out areas for hidden data or damage.\n"
 		"   These areas contain TOC data and are critical for disc recognition.\n"
 		"   Can reveal hidden track zero audio (HTOA) or pre-gap content.",
 		"Diagnosing discs that fail to load or have TOC issues." });
 
-	PrintEntry({ "10. Subchannel Integrity",
+	PrintEntry({ "11. Subchannel Integrity",
 		"Verifies the integrity of subchannel data (Q-channel timing, etc.).\n"
 		"   Subchannel errors can cause incorrect track indexing or timing issues.\n"
 		"   Reports total error count across all sectors.",
 		"Diagnosing timing/indexing issues or verifying subchannel extraction." });
 
-	PrintEntry({ "11. Verify Subchannel Burn Status",
+	PrintEntry({ "12. Verify Subchannel Burn Status",
 		"Samples sectors across the disc and reads raw subchannel data to determine\n"
 		"   whether subchannel information was actually mastered/burned onto the disc.\n"
 		"   Checks Q-channel CRC validity, P-channel pause/play state, R-W channel\n"
@@ -204,7 +210,7 @@ void PrintHelpMenu() {
 		"   or may not, depending on the burning software and settings used.",
 		"Deciding if subchannel extraction is useful before ripping, or identifying burned copies vs. originals." });
 
-	PrintEntry({ "12. Copy-Protection Check",
+	PrintEntry({ "13. Copy-Protection Check",
 		"Scans the disc for common audio CD copy-protection mechanisms.\n"
 		"   Performs 8 heuristic checks:\n"
 		"   - Illegal / non-standard TOC entries\n"
@@ -226,33 +232,33 @@ void PrintHelpMenu() {
 	// ═════════════════════════════════════════════════════════════════════
 	PrintSection("Drive");
 
-	PrintEntry({ "13. Drive Capabilities",
+	PrintEntry({ "14. Drive Capabilities",
 		"Detects and displays your CD/DVD drive's hardware capabilities.\n"
 		"   Shows support for: C2 errors, accurate stream, CD-TEXT, subchannel.\n"
 		"   Also displays: read/write speeds, buffer size, overread capability.\n"
 		"   Provides a ripping quality score to assess drive suitability.",
 		"Checking if your drive is suitable for accurate ripping." });
 
-	PrintEntry({ "14. Drive Offset Detection",
+	PrintEntry({ "15. Drive Offset Detection",
 		"Automatically detects your CD drive's read offset using AccurateRip database.\n"
 		"   Offset correction ensures sample-accurate rips that match the original master.\n"
 		"   Displays the detected offset in samples along with a confidence percentage.",
 		"Configuring your drive for accurate ripping." });
 
-	PrintEntry({ "15. C2 Validation Test",
+	PrintEntry({ "16. C2 Validation Test",
 		"Tests the reliability of your drive's C2 error reporting at different speeds.\n"
 		"   Some drives report false C2 errors at high speeds. This test verifies accuracy\n"
 		"   by comparing C2 results at slow and fast speeds for consistency.\n"
 		"   Tests up to 3 sectors spread across inner, middle, and outer disc regions.",
 		"Determining if your drive's C2 detection is trustworthy before scanning." });
 
-	PrintEntry({ "16. Speed Comparison Test",
+	PrintEntry({ "17. Speed Comparison Test",
 		"Tests read performance at multiple speeds to find optimal ripping speed.\n"
 		"   Slower speeds often yield better results on damaged discs.\n"
 		"   Compares C2 error counts at each speed to identify the best trade-off.",
 		"Determining the best speed for problematic discs." });
 
-	PrintEntry({ "17. Seek Time Analysis",
+	PrintEntry({ "18. Seek Time Analysis",
 		"Measures drive seek performance across the disc surface.\n"
 		"   Slow seeks may indicate mechanical issues or disc damage.\n"
 		"   Tests seek latency at various positions from inner to outer edge.",
@@ -263,17 +269,17 @@ void PrintHelpMenu() {
 	// ═════════════════════════════════════════════════════════════════════
 	PrintSection("Utility");
 
-	PrintEntry({ "18. Rescan Disc",
+	PrintEntry({ "19. Rescan Disc",
 		"Re-scans drives and reloads disc metadata (TOC, CD-TEXT, ISRC, AccurateRip).\n"
 		"   Automatically detects if the drive letter changed and re-opens the handle.\n"
 		"   Supports switching between multiple drives if more than one is present.",
 		"Use after swapping discs without restarting the program." });
 
-	PrintEntry({ "19. Help (test descriptions)",
+	PrintEntry({ "20. Help (test descriptions)",
 		"Displays this help screen with detailed descriptions of each operation.",
 		"Understanding the purpose and details of each operation." });
 
-	PrintEntry({ "20. Exit",
+	PrintEntry({ "21. Exit",
 		"Exits the program.",
 		"Closing the tool when done." });
 

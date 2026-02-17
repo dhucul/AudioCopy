@@ -3,107 +3,11 @@
 #include "ConsoleColors.h"
 #include "Progress.h"
 #include "InterruptHandler.h"
+#include "WriteDiscInternal.h"
 #include <iostream>
 #include <fstream>
-#include <filesystem>
-#include <conio.h>
-#include <sstream>
-#include <iomanip>
+#include <vector>
 #include <windows.h>
-
-// ============================================================================
-// Helper: Convert wide string to UTF-8 string (Windows API)
-// ============================================================================
-static std::string WideToUTF8(const std::wstring& wide) {
-	if (wide.empty()) return std::string();
-
-	// Calculate required buffer size
-	int requiredSize = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, nullptr, 0, nullptr, nullptr);
-	if (requiredSize == 0) return std::string();
-
-	std::string utf8(requiredSize - 1, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, &utf8[0], requiredSize, nullptr, nullptr);
-
-	return utf8;
-}
-
-// ============================================================================
-// CheckRewritableDisk - Detect rewritable disc and capacity
-// ============================================================================
-bool AudioCDCopier::CheckRewritableDisk(bool& isFull, bool& isRewritable) {
-	isFull = false;
-	isRewritable = false;
-
-	Console::Info("Querying disc media type...\n");
-
-	BYTE cmd[10] = { 0x51, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFC, 0x00 };
-	BYTE response[252] = { 0 };
-	BYTE senseKey = 0, asc = 0, ascq = 0;
-
-	if (!m_drive.SendSCSIWithSense(cmd, sizeof(cmd), response, sizeof(response),
-		&senseKey, &asc, &ascq, true)) {
-
-		Console::Warning("Disc information query failed");
-		std::string senseDesc = m_drive.GetSenseDescription(senseKey, asc, ascq);
-		if (!senseDesc.empty()) {
-			Console::Info(" (");
-			std::cout << senseDesc << ")\n";
-		}
-		else {
-			std::cout << "\n";
-		}
-
-		Console::Warning("Attempting fallback disc detection...\n");
-
-		BYTE profileCmd[10] = { 0x46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00 };
-		BYTE profileResponse[8] = { 0 };
-
-		if (m_drive.SendSCSI(profileCmd, sizeof(profileCmd), profileResponse, sizeof(profileResponse), true)) {
-			WORD profile = (static_cast<WORD>(profileResponse[6]) << 8) | profileResponse[7];
-			isRewritable = (profile == 0x0A);
-
-			// Fallback cannot determine disc status from GET CONFIGURATION alone.
-			// If the disc is rewritable, assume it may need blanking (treat as full)
-			// so the caller gets an opportunity to erase before writing.
-			if (isRewritable)
-				isFull = true;
-
-			Console::Success("Media type detected: ");
-			switch (profile) {
-			case 0x08: std::cout << "CD-ROM\n"; break;
-			case 0x09: std::cout << "CD-R (write-once)\n"; isRewritable = false; break;
-			case 0x0A: std::cout << "CD-RW (rewritable)\n"; isRewritable = true; break;
-			default:
-				std::cout << "Unknown (0x" << std::hex << profile << std::dec << ")\n";
-				break;
-			}
-			return true;
-		}
-
-		Console::Warning("Could not determine disc type\n");
-		return false;
-	}
-
-	// READ DISC INFORMATION succeeded — parse response
-	BYTE discStatus = response[2] & 0x03;
-	isFull = (discStatus == 0x02);
-
-	// Erasable bit is bit 4 of byte 2 (not byte 8)
-	isRewritable = (response[2] & 0x10) != 0;
-
-	Console::Success("Disc media type: ");
-	std::cout << (isRewritable ? "CD-RW (rewritable)\n" : "CD-R (write-once)\n");
-
-	Console::Success("Disc status: ");
-	switch (discStatus) {
-	case 0x00: std::cout << "Empty\n"; break;
-	case 0x01: std::cout << "Appendable\n"; break;
-	case 0x02: std::cout << "Complete (full)\n"; break;
-	default: std::cout << "Unknown\n"; break;
-	}
-
-	return true;
-}
 
 // ============================================================================
 // Helper: Wait for drive to become ready (poll TEST UNIT READY)
@@ -126,358 +30,6 @@ static bool WaitForDriveReady(ScsiDrive& drive, int timeoutSeconds) {
 }
 
 // ============================================================================
-// BlankRewritableDisk - Erase rewritable media (quick or full)
-// Tries standard blanking first. If the drive rejects it due to a
-// corrupted TOC (SK=0x05 ILLEGAL REQUEST or SK=0x03 MEDIUM ERROR),
-// falls back to blanking type 0x06 (erase session) which can recover
-// some drives, then retries the original blank.
-// ============================================================================
-bool AudioCDCopier::BlankRewritableDisk(int speed, bool quickBlank) {
-	Console::Warning(quickBlank ? "\nQuick blanking rewritable disc...\n"
-		: "\nFull blanking rewritable disc...\n");
-	Console::Info("⚠ This operation will erase all data on the disc!\n");
-	std::cout << "Confirm blanking? (y/n): ";
-	char confirm = _getch();
-	std::cout << confirm << "\n";
-	if (tolower(confirm) != 'y') {
-		Console::Info("Blank operation cancelled\n");
-		return false;
-	}
-
-	// Set drive speed before blanking
-	m_drive.SetSpeed(speed);
-
-	// SCSI BLANK command (0xA1)
-	// Byte 1 bit 4: Immed — return immediately so we can poll progress
-	// Byte 1 bits 2-0: blanking type
-	//   0x00 = full blank (entire disc)
-	//   0x01 = minimal/quick blank (PMA + lead-in + pregap)
-	//   0x06 = erase session (erases last session — useful as recovery step)
-	BYTE standardType = (quickBlank ? 0x01 : 0x00) | 0x10;  // Immed + blank type
-	BYTE cmd[12] = { 0xA1, standardType, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-
-	bool blankStarted = false;
-	const char* usedMethod = quickBlank ? "quick blank" : "full blank";
-
-	// Try the standard blank type first (universally supported)
-	if (m_drive.SendSCSI(cmd, sizeof(cmd), nullptr, 0, false)) {
-		blankStarted = true;
-	}
-	else {
-		// Standard blank failed — attempt recovery via erase session (0x06).
-		// This can help when the disc has a corrupted TOC that prevents
-		// the drive from processing a normal blank.
-		Console::Warning("Standard blank failed — trying erase session recovery...\n");
-
-		BYTE recoveryCmd[12] = { 0xA1, 0x16, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-		// 0x16 = Immed (0x10) | erase session (0x06)
-
-		if (m_drive.SendSCSI(recoveryCmd, sizeof(recoveryCmd), nullptr, 0, false)) {
-			// Wait for erase session to complete before retrying
-			Console::Info("Erase session in progress...\n");
-			WaitForDriveReady(m_drive, 120);
-
-			// Retry the original standard blank
-			Console::Info("Retrying ");
-			std::cout << usedMethod << "...\n";
-			if (m_drive.SendSCSI(cmd, sizeof(cmd), nullptr, 0, false)) {
-				blankStarted = true;
-			}
-			else {
-				Console::Error("Retry after erase session also failed\n");
-			}
-		}
-		else {
-			Console::Warning("Erase session not supported by drive\n");
-		}
-	}
-
-	if (!blankStarted) {
-		Console::Error("Blank command failed\n");
-		return false;
-	}
-
-	Console::Info("Blanking method: ");
-	std::cout << usedMethod << "\n";
-
-	// Poll drive with REQUEST SENSE for real progress indication.
-	// The drive reports NOT READY (SK=0x02, ASC=0x04, ASCQ=0x07) with a
-	// progress percentage in the Sense Key Specific field while blanking.
-	int maxWait = quickBlank ? 120 : 600;
-	int barWidth = 35;
-	std::string label = quickBlank ? "Quick blank" : "Full blank";
-	int lastPct = -1;
-	int lastLineLen = 0;
-	auto startTime = std::chrono::steady_clock::now();
-
-	for (int i = 0; i < maxWait; i++) {
-		Sleep(1000);
-
-		if (InterruptHandler::Instance().IsInterrupted()) {
-			std::cout << "\n";
-			Console::Error("Blank operation cancelled\n");
-			return false;
-		}
-
-		// Query actual drive progress via REQUEST SENSE
-		BYTE sk = 0, asc = 0, ascq = 0;
-		int drivePct = -1;
-		m_drive.RequestSenseProgress(sk, asc, ascq, drivePct);
-
-		// Drive ready (TEST UNIT READY succeeds) — blank is done
-		BYTE testCmd[6] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-		BYTE tsk = 0, tasc = 0, tascq = 0;
-		if (m_drive.SendSCSIWithSense(testCmd, sizeof(testCmd), nullptr, 0,
-			&tsk, &tasc, &tascq, true)) {
-			drivePct = 100;
-		}
-
-		// Use drive-reported progress if available, else fall back to time estimate
-		int pct;
-		if (drivePct >= 0) {
-			pct = std::min(drivePct, 100);
-		}
-		else {
-			pct = std::min((i + 1) * 100 / maxWait, 99);
-		}
-
-		// Render progress bar
-		if (pct != lastPct) {
-			lastPct = pct;
-			std::ostringstream ss;
-			ss << "\r" << label << " [";
-			int filled = pct * barWidth / 100;
-			for (int j = 0; j < barWidth; j++) {
-				ss << (j < filled ? "\xe2\x96\x88" : "\xe2\x96\x91"); // █ or ░
-			}
-			ss << "] " << std::setw(3) << pct << "%";
-
-			// Elapsed time
-			auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-				std::chrono::steady_clock::now() - startTime).count();
-			if (elapsed >= 60)
-				ss << " " << elapsed / 60 << "m " << std::setfill('0') << std::setw(2) << elapsed % 60 << "s";
-			else
-				ss << " " << elapsed << "s";
-
-			std::string line = ss.str();
-			if (static_cast<int>(line.size()) < lastLineLen)
-				line.append(lastLineLen - line.size(), ' ');
-			std::cout << line << std::flush;
-			lastLineLen = static_cast<int>(line.size());
-		}
-
-		if (drivePct >= 100) break;
-	}
-
-	// Final summary
-	auto totalSec = std::chrono::duration_cast<std::chrono::seconds>(
-		std::chrono::steady_clock::now() - startTime).count();
-	std::cout << "\n  Done";
-	if (totalSec > 0) {
-		if (totalSec >= 60)
-			std::cout << " in " << totalSec / 60 << "m "
-			<< std::setfill('0') << std::setw(2) << totalSec % 60 << "s";
-		else
-			std::cout << " in " << totalSec << "s";
-	}
-	std::cout << "\n";
-
-	Console::Success("Disc blanked successfully\n");
-	return true;
-}
-
-// ============================================================================
-// PerformPowerCalibration - Calibrate laser power for writing
-// ============================================================================
-bool AudioCDCopier::PerformPowerCalibration() {
-	Console::Info("Performing power calibration (OPC)...\n");
-
-	BYTE cmd[10] = { 0x54, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-
-	if (!m_drive.SendSCSI(cmd, sizeof(cmd), nullptr, 0, false)) {
-		Console::Warning("Power calibration not supported by drive (continuing)\n");
-		return true;
-	}
-
-	Console::Info("Waiting for power calibration to complete");
-	for (int i = 0; i < 5; i++) {
-		std::cout << ".";
-		Sleep(1000);
-		if (InterruptHandler::Instance().IsInterrupted()) {
-			Console::Error("\nPower calibration cancelled\n");
-			return false;
-		}
-	}
-	std::cout << "\n";
-
-	Console::Success("Power calibration complete\n");
-	return true;
-}
-
-// ============================================================================
-// ParseCueSheet - Parse CUE file to extract track information with pregaps
-//                 and CD-Text metadata (TITLE / PERFORMER)
-// ============================================================================
-bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
-	std::vector<TrackWriteInfo>& tracks) {
-	std::string discTitle, discPerformer;
-	return ParseCueSheet(cueFile, tracks, discTitle, discPerformer);
-}
-
-bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
-	std::vector<TrackWriteInfo>& tracks,
-	std::string& discTitle, std::string& discPerformer) {
-
-	std::wifstream file(cueFile);
-	if (!file.is_open()) {
-		Console::Error("Cannot open CUE file: ");
-		std::wcout << cueFile << L"\n";
-		return false;
-	}
-
-	discTitle.clear();
-	discPerformer.clear();
-
-	std::wstring line;
-	TrackWriteInfo currentTrack = {};
-	currentTrack.hasPregap = false;
-	bool inTrack = false;
-
-	// Helper: extract quoted string from a line like TITLE "My Title"
-	auto extractQuoted = [](const std::wstring& ln, const std::wstring& keyword) -> std::string {
-		size_t pos = ln.find(keyword);
-		if (pos == std::wstring::npos) return {};
-		size_t q1 = ln.find(L'"', pos + keyword.size());
-		if (q1 == std::wstring::npos) return {};
-		size_t q2 = ln.find(L'"', q1 + 1);
-		if (q2 == std::wstring::npos) return {};
-		std::wstring val = ln.substr(q1 + 1, q2 - q1 - 1);
-		return WideToUTF8(val);
-		};
-
-	while (std::getline(file, line)) {
-		size_t start = line.find_first_not_of(L" \t");
-		if (start == std::wstring::npos) continue;
-		line = line.substr(start);
-
-		if (line.find(L"TRACK") == 0) {
-			if (inTrack && currentTrack.trackNumber > 0) {
-				tracks.push_back(currentTrack);
-			}
-			inTrack = true;
-			currentTrack = {};
-			currentTrack.hasPregap = false;
-			currentTrack.isAudio = (line.find(L"AUDIO") != std::wstring::npos);
-
-			std::wistringstream iss(line);
-			std::wstring cmd;
-			iss >> cmd >> currentTrack.trackNumber;
-		}
-		else if (line.find(L"TITLE") == 0) {
-			std::string val = extractQuoted(line, L"TITLE");
-			if (!val.empty()) {
-				if (inTrack)
-					currentTrack.title = val;
-				else
-					discTitle = val;
-			}
-		}
-		else if (line.find(L"PERFORMER") == 0) {
-			std::string val = extractQuoted(line, L"PERFORMER");
-			if (!val.empty()) {
-				if (inTrack)
-					currentTrack.performer = val;
-				else
-					discPerformer = val;
-			}
-		}
-		else if (line.find(L"INDEX") == 0 && inTrack) {
-			int indexNum = 0;
-			std::wstring timeStr;
-			std::wistringstream iss(line);
-			std::wstring cmd;
-			iss >> cmd >> indexNum >> timeStr;
-
-			int mm = 0, ss = 0, ff = 0;
-			wchar_t sep;
-			std::wistringstream tss(timeStr);
-			tss >> mm >> sep >> ss >> sep >> ff;
-
-			DWORD lba = mm * 60 * 75 + ss * 75 + ff;
-
-			if (indexNum == 0) {
-				currentTrack.pregapLBA = lba;
-				currentTrack.hasPregap = true;
-			}
-			else if (indexNum == 1) {
-				currentTrack.startLBA = lba;
-			}
-		}
-		else if (line.find(L"ISRC") == 0 && inTrack) {
-			std::wistringstream iss(line);
-			std::wstring cmd, isrc;
-			iss >> cmd >> isrc;
-			currentTrack.isrcCode = WideToUTF8(isrc);
-		}
-		// PREGAP command = drive-generated pregap, NOT in the BIN file.
-		// Don't set hasPregap — nothing to write.
-	}
-
-	if (inTrack && currentTrack.trackNumber > 0) {
-		tracks.push_back(currentTrack);
-	}
-
-	file.close();
-
-	// Compute endLBA for each track from the next track's start (or pregap)
-	for (size_t i = 0; i < tracks.size(); i++) {
-		if (i + 1 < tracks.size()) {
-			tracks[i].endLBA = tracks[i + 1].hasPregap
-				? tracks[i + 1].pregapLBA - 1
-				: tracks[i + 1].startLBA - 1;
-		}
-	}
-
-	Console::Success("Parsed CUE sheet: ");
-	std::cout << tracks.size() << " tracks\n";
-
-	if (!discTitle.empty() || !discPerformer.empty()) {
-		Console::Info("CD-Text: ");
-		if (!discPerformer.empty()) std::cout << discPerformer;
-		if (!discPerformer.empty() && !discTitle.empty()) std::cout << " - ";
-		if (!discTitle.empty()) std::cout << discTitle;
-		std::cout << "\n";
-	}
-
-	for (const auto& t : tracks) {
-		Console::Info("  Track ");
-		std::cout << t.trackNumber << ": LBA " << t.startLBA
-			<< " - " << t.endLBA;
-		if (t.hasPregap) {
-			std::cout << " (pregap at " << t.pregapLBA
-				<< ", " << (t.startLBA - t.pregapLBA) << " frames)";
-		}
-		if (!t.title.empty()) {
-			std::cout << " \"" << t.title << "\"";
-		}
-		std::cout << "\n";
-	}
-
-	return !tracks.empty();
-}
-
-// ============================================================================
-// Helper: Convert LBA to MSF absolute disc time
-// ============================================================================
-static void LBAtoMSF(int lba, BYTE& m, BYTE& s, BYTE& f) {
-	int absFrame = lba + 150;
-	m = static_cast<BYTE>(absFrame / (75 * 60));
-	s = static_cast<BYTE>((absFrame / 75) % 60);
-	f = static_cast<BYTE>(absFrame % 75);
-}
-
-// ============================================================================
 // Helper: Flush drive write buffer via SYNCHRONIZE CACHE (0x35)
 // ============================================================================
 static bool SynchronizeCache(ScsiDrive& drive) {
@@ -494,8 +46,6 @@ static bool SynchronizeCache(ScsiDrive& drive) {
 
 // ============================================================================
 // Helper: Deinterleave raw P-W subchannel to packed format
-// Raw:    96 bytes where each byte contains one bit per channel (P,Q,R,S,T,U,V,W)
-// Packed: 96 bytes grouped by channel (12 bytes P, 12 bytes Q, ... 12 bytes W)
 // ============================================================================
 static void DeinterleaveSubchannel(const BYTE* raw, BYTE* packed) {
 	memset(packed, 0, SUBCHANNEL_SIZE);
@@ -508,488 +58,6 @@ static void DeinterleaveSubchannel(const BYTE* raw, BYTE* packed) {
 			}
 		}
 	}
-}
-
-// ============================================================================
-// Helper: Set Write Parameters Mode Page 0x05
-//   subchannelMode:
-//     0 = SAO (0x02), no subchannel, block type 0x00 (2352 bytes)
-//     1 = Raw DAO (0x03), packed P-W subchannel, block type 0x02 (2448 bytes)
-//     2 = Raw DAO (0x03), raw P-W subchannel, block type 0x03 (2448 bytes)
-//     3 = SAO (0x02), packed P-W subchannel, block type 0x02 (2448 bytes)
-//     4 = SAO (0x02), raw P-W subchannel, block type 0x03 (2448 bytes)
-// ============================================================================
-static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode) {
-	BYTE modeData[60] = { 0 };
-
-	BYTE* page = modeData + 8;
-	page[0] = 0x05;  // Page code
-	page[1] = 0x32;  // Page length = 50
-
-	// Expected values for readback verification
-	BYTE expectedWriteType;
-	BYTE expectedBlockType;
-
-	switch (subchannelMode) {
-	case 2:  // Raw DAO + raw P-W subchannel
-		page[2] = 0x43;  // BUFE | Write Type 0x03 (Raw)
-		page[4] = 0x03;  // Data block type 3: raw P-W (2448 bytes)
-		expectedWriteType = 0x03;
-		expectedBlockType = 0x03;
-		break;
-	case 1:  // Raw DAO + packed P-W subchannel
-		page[2] = 0x43;  // BUFE | Write Type 0x03 (Raw)
-		page[4] = 0x02;  // Data block type 2: packed P-W (2448 bytes)
-		expectedWriteType = 0x03;
-		expectedBlockType = 0x02;
-		break;
-	case 4:  // SAO + raw P-W subchannel
-		page[2] = 0x42;  // BUFE | Write Type 0x02 (SAO)
-		page[4] = 0x03;  // Data block type 3: raw P-W (2448 bytes)
-		expectedWriteType = 0x02;
-		expectedBlockType = 0x03;
-		break;
-	case 3:  // SAO + packed P-W subchannel
-		page[2] = 0x42;  // BUFE | Write Type 0x02 (SAO)
-		page[4] = 0x02;  // Data block type 2: packed P-W (2448 bytes)
-		expectedWriteType = 0x02;
-		expectedBlockType = 0x02;
-		break;
-	default: // SAO, no subchannel
-		page[2] = 0x42;  // BUFE | Write Type 0x02 (SAO)
-		page[4] = 0x00;  // Data block type 0: audio only (2352 bytes)
-		expectedWriteType = 0x02;
-		expectedBlockType = 0x00;
-		break;
-	}
-
-	page[3] = 0x00;  // Track mode: 2-channel audio, no pre-emphasis
-	page[5] = 0x00;  // Link size
-	page[8] = 0x00;  // Session format: CD-DA / CD-ROM
-
-	WORD totalLen = 60;
-	BYTE selectCdb[10] = { 0x55, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-	selectCdb[7] = static_cast<BYTE>((totalLen >> 8) & 0xFF);
-	selectCdb[8] = static_cast<BYTE>(totalLen & 0xFF);
-
-	BYTE senseKey = 0, asc = 0, ascq = 0;
-	if (!drive.SendSCSIWithSense(selectCdb, sizeof(selectCdb), modeData, totalLen,
-		&senseKey, &asc, &ascq, false)) {
-		Console::Error("MODE SELECT for Write Parameters failed (");
-		std::cout << drive.GetSenseDescription(senseKey, asc, ascq) << ")\n";
-		return false;
-	}
-
-	// Verify readback — reject if the drive silently downgraded the mode
-	BYTE senseCdb[10] = { 0x5A, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x00 };
-	BYTE verifyBuf[60] = { 0 };
-	if (drive.SendSCSI(senseCdb, sizeof(senseCdb), verifyBuf, sizeof(verifyBuf), true)) {
-		WORD bdLen = (static_cast<WORD>(verifyBuf[6]) << 8) | verifyBuf[7];
-		BYTE* vPage = verifyBuf + 8 + bdLen;
-		BYTE writeType = vPage[2] & 0x0F;
-		BYTE blockType = vPage[4];
-		const char* modeName = (writeType == 0x03) ? "Raw DAO" : "SAO";
-		const char* subName = (blockType == 0x03) ? "raw P-W" :
-			(blockType == 0x02) ? "packed P-W" : "none";
-		int blockSize = (blockType >= 0x02) ? 2448 : (blockType == 0x01) ? 2368 : 2352;
-		Console::Success("Write parameters verified (");
-		std::cout << modeName << ", Audio, " << blockSize << "-byte blocks, sub: " << subName << ")\n";
-
-		// Detect silent downgrade: drive accepted MODE SELECT but stored
-		// different values (e.g., clamped block type 0x02 → 0x00).
-		if (writeType != expectedWriteType || blockType != expectedBlockType) {
-			Console::Warning("Drive silently changed write parameters (requested write type 0x");
-			std::cout << std::hex << std::setfill('0') << std::setw(2)
-				<< static_cast<int>(expectedWriteType) << "/block 0x"
-				<< std::setw(2) << static_cast<int>(expectedBlockType)
-				<< ", got 0x" << std::setw(2) << static_cast<int>(writeType)
-				<< "/0x" << std::setw(2) << static_cast<int>(blockType)
-				<< std::dec << std::setfill(' ') << ")\n";
-			return false;
-		}
-	}
-
-	return true;
-}
-
-// ============================================================================
-// Helper: Build and send SCSI CUE sheet
-// Always includes Track 1 pregap at MSF 00:00:00 (required by Red Book).
-// subchannelMode:
-//   0 = SAO, no subchannel   (Data Form 0x00)
-//   1 = Raw DAO, packed P-W  (Data Form 0x02)
-//   2 = Raw DAO, raw P-W     (Data Form 0x03)
-//   3 = SAO, packed P-W      (Data Form 0x02)
-//   4 = SAO, raw P-W         (Data Form 0x03)
-// ============================================================================
-static bool BuildAndSendCueSheet(ScsiDrive& drive,
-	const std::vector<AudioCDCopier::TrackWriteInfo>& tracks,
-	DWORD totalSectors, int subchannelMode) {
-
-	// MMC-3 Table 31 — CUE sheet Data Form byte for audio tracks:
-	//   Bits 5-4: Main Channel Data Form (00 = 2352-byte audio)
-	//   Bits 3-0: Sub-Channel Data Form
-	//     0000 = no sub-channel data
-	//     0010 = packed P-W (96 bytes)
-	//     0011 = raw P-W (96 bytes)
-	// Encoding is the same for both SAO and Raw DAO write types.
-	BYTE trackDataForm;
-	switch (subchannelMode) {
-	case 1:  // Raw DAO, packed P-W
-	case 3:  // SAO, packed P-W
-		trackDataForm = 0x02; break;
-	case 2:  // Raw DAO, raw P-W
-	case 4:  // SAO, raw P-W
-		trackDataForm = 0x03; break;
-	default: trackDataForm = 0x00; break;  // no subchannel
-	}
-
-	// Count entries: lead-in + Track 1 pregap (always) + per-track entries + lead-out
-	size_t entryCount = 2;  // lead-in + lead-out
-	entryCount++;           // Track 1 Index 00 (always present)
-	for (size_t i = 0; i < tracks.size(); i++) {
-		entryCount++;  // Index 01
-		// Additional Index 00 for tracks 2+ that have pregap data in the BIN
-		if (i > 0 && tracks[i].hasPregap && tracks[i].pregapLBA < tracks[i].startLBA) {
-			entryCount++;
-		}
-	}
-
-	size_t cueSheetSize = entryCount * 8;
-	std::vector<BYTE> cueSheet(cueSheetSize, 0);
-	size_t ei = 0;
-
-	// ── Lead-in ──────────────────────────────────────────────
-	// Raw DAO: lead-in Data Form must match track entries.
-	// SAO:     lead-in Data Form = 0x01 (CD-DA session type);
-	//          drive generates lead-in internally.
-	BYTE leadInDataForm;
-	if (subchannelMode == 1 || subchannelMode == 2) {
-		leadInDataForm = trackDataForm;  // Raw DAO: must match track entries
-	}
-	else {
-		leadInDataForm = 0x01;           // SAO: CD-DA session indicator
-	}
-
-	cueSheet[ei * 8 + 0] = 0x01;  // CTL/ADR: audio
-	cueSheet[ei * 8 + 1] = 0x00;  // TNO: lead-in
-	cueSheet[ei * 8 + 2] = 0x00;  // Index 0
-	cueSheet[ei * 8 + 3] = leadInDataForm;
-	ei++;
-
-	// ── Track 1 Index 00 (mandatory pregap at MSF 00:00:00) ──
-	cueSheet[ei * 8 + 0] = 0x01;
-	cueSheet[ei * 8 + 1] = 0x01;  // Track 1
-	cueSheet[ei * 8 + 2] = 0x00;  // Index 00
-	cueSheet[ei * 8 + 3] = trackDataForm;
-	cueSheet[ei * 8 + 5] = 0x00;  // M = 0
-	cueSheet[ei * 8 + 6] = 0x00;  // S = 0
-	cueSheet[ei * 8 + 7] = 0x00;  // F = 0
-	ei++;
-
-	// ── All tracks (Index 00 for tracks 2+ if present, Index 01 for all) ─
-	for (size_t i = 0; i < tracks.size(); i++) {
-		const auto& t = tracks[i];
-
-		// Index 00 for tracks 2+ with pregap data in the BIN
-		if (i > 0 && t.hasPregap && t.pregapLBA < t.startLBA) {
-			BYTE m, s, f;
-			LBAtoMSF(static_cast<int>(t.pregapLBA), m, s, f);
-
-			cueSheet[ei * 8 + 0] = 0x01;
-			cueSheet[ei * 8 + 1] = static_cast<BYTE>(t.trackNumber);
-			cueSheet[ei * 8 + 2] = 0x00;
-			cueSheet[ei * 8 + 3] = trackDataForm;
-			cueSheet[ei * 8 + 5] = m;
-			cueSheet[ei * 8 + 6] = s;
-			cueSheet[ei * 8 + 7] = f;
-			ei++;
-		}
-
-		// Index 01
-		BYTE m, s, f;
-		LBAtoMSF(static_cast<int>(t.startLBA), m, s, f);
-
-		cueSheet[ei * 8 + 0] = 0x01;
-		cueSheet[ei * 8 + 1] = static_cast<BYTE>(t.trackNumber);
-		cueSheet[ei * 8 + 2] = 0x01;
-		cueSheet[ei * 8 + 3] = trackDataForm;
-		cueSheet[ei * 8 + 5] = m;
-		cueSheet[ei * 8 + 6] = s;
-		cueSheet[ei * 8 + 7] = f;
-		ei++;
-	}
-
-	// ── Lead-out ─────────────────────────────────────────────
-	{
-		BYTE m, s, f;
-		LBAtoMSF(static_cast<int>(totalSectors), m, s, f);
-		cueSheet[ei * 8 + 0] = 0x01;
-		cueSheet[ei * 8 + 1] = 0xAA;
-		cueSheet[ei * 8 + 2] = 0x01;
-		cueSheet[ei * 8 + 3] = trackDataForm;
-		cueSheet[ei * 8 + 5] = m;
-		cueSheet[ei * 8 + 6] = s;
-		cueSheet[ei * 8 + 7] = f;
-	}
-
-	// ── Log ──────────────────────────────────────────────────
-	Console::Info("SCSI CUE sheet layout:\n");
-	for (size_t i = 0; i < entryCount; i++) {
-		BYTE* e = &cueSheet[i * 8];
-		if (e[1] == 0x00)       std::cout << "  Lead-in ";
-		else if (e[1] == 0xAA)  std::cout << "  Lead-out";
-		else                    std::cout << "  Track " << std::setw(2) << static_cast<int>(e[1]);
-		std::cout << "  Index " << static_cast<int>(e[2])
-			<< "  DataForm 0x" << std::hex << std::setfill('0') << std::setw(2)
-			<< static_cast<int>(e[3]) << std::dec
-			<< "  MSF " << std::setfill('0') << std::setw(2) << static_cast<int>(e[5])
-			<< ":" << std::setw(2) << static_cast<int>(e[6])
-			<< ":" << std::setw(2) << static_cast<int>(e[7])
-			<< std::setfill(' ') << "\n";
-	}
-
-	// ── SEND CUE SHEET (0x5D) ────────────────────────────────
-	BYTE cdb[10] = { 0x5D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-	DWORD size = static_cast<DWORD>(cueSheetSize);
-	cdb[6] = static_cast<BYTE>((size >> 16) & 0xFF);
-	cdb[7] = static_cast<BYTE>((size >> 8) & 0xFF);
-	cdb[8] = static_cast<BYTE>(size & 0xFF);
-
-	BYTE senseKey = 0, asc = 0, ascq = 0;
-	if (!drive.SendSCSIWithSense(cdb, sizeof(cdb), cueSheet.data(), size,
-		&senseKey, &asc, &ascq, false)) {
-		Console::Error("SEND CUE SHEET failed (");
-		std::cout << drive.GetSenseDescription(senseKey, asc, ascq) << ")\n";
-		return false;
-	}
-
-	Console::Success("CUE sheet accepted (");
-	std::cout << entryCount << " entries, " << tracks.size() << " tracks)\n";
-	return true;
-}
-
-// ============================================================================
-// Helper: Prepare drive for writing
-// ============================================================================
-static bool PrepareDriveForWrite(ScsiDrive& drive, int subchannelMode) {
-	Console::Info("Checking drive readiness...\n");
-	if (!WaitForDriveReady(drive, 15)) {
-		Console::Error("Drive did not become ready\n");
-		return false;
-	}
-	Console::Success("Drive is ready\n");
-
-	Console::Info("Configuring write parameters...\n");
-	if (!SetWriteParametersPage(drive, subchannelMode)) {
-		Console::Error("Failed to configure write parameters\n");
-		return false;
-	}
-
-	return true;
-}
-
-// ============================================================================
-// Helper: Calculate CRC-16 for CD-Text packs (CRC-CCITT, poly 0x1021)
-// ============================================================================
-static uint16_t CDTextCRC(const BYTE* data, int len) {
-	uint16_t crc = 0;
-	for (int i = 0; i < len; i++) {
-		crc ^= static_cast<uint16_t>(data[i]) << 8;
-		for (int b = 0; b < 8; b++) {
-			if (crc & 0x8000)
-				crc = (crc << 1) ^ 0x1021;
-			else
-				crc <<= 1;
-		}
-	}
-	return ~crc;  // Inverted per Red Book
-}
-
-// ============================================================================
-// Helper: Build CD-Text packs from CUE metadata
-//
-// CD-Text is stored as 18-byte packs in the lead-in R-W subchannel.
-// Each pack: [packType, trackNum, seqNum, charPos|blockInfo, 12 bytes text, CRC hi, CRC lo]
-//
-// Pack types used:
-//   0x80 = Title (disc-level for TNO=0, per-track for TNO=1..99)
-//   0x81 = Performer
-//   0x8F = Size Information (mandatory summary block)
-// ============================================================================
-static std::vector<BYTE> BuildCDTextPacks(
-	const std::string& discTitle,
-	const std::string& discPerformer,
-	const std::vector<AudioCDCopier::TrackWriteInfo>& tracks) {
-
-	std::vector<BYTE> packs;
-
-	// Collect all strings for a given pack type.
-	// Track 0 = disc-level, tracks 1..N = per-track.
-	auto buildPacksForType = [&](BYTE packType,
-		const std::string& discStr,
-		const std::vector<std::string>& trackStrs) {
-
-			// Concatenate all NUL-terminated strings into a flat buffer,
-			// and record the actual track number for each string boundary.
-			std::vector<BYTE> textBuf;
-			std::vector<BYTE> trackNumAtString;  // TNO for each string in textBuf
-
-			// Disc-level string (TNO = 0)
-			trackNumAtString.push_back(0x00);
-			for (char c : discStr) textBuf.push_back(static_cast<BYTE>(c));
-			textBuf.push_back(0x00);
-
-			// Per-track strings (TNO = actual track number)
-			for (size_t ti = 0; ti < trackStrs.size(); ti++) {
-				BYTE tno = static_cast<BYTE>(tracks[ti].trackNumber);
-				trackNumAtString.push_back(tno);
-				for (char c : trackStrs[ti]) textBuf.push_back(static_cast<BYTE>(c));
-				textBuf.push_back(0x00);
-			}
-
-			// Split into 12-byte payloads → 18-byte packs
-			BYTE seqBase = static_cast<BYTE>(packs.size() / 18);
-			size_t offset = 0;
-			int stringIdx = 0;          // Which string we're currently in
-			int charInString = 0;       // Character offset within current string
-
-			while (offset < textBuf.size()) {
-				BYTE pack[18] = { 0 };
-				pack[0] = packType;
-				pack[1] = trackNumAtString[stringIdx];
-				pack[2] = seqBase++;
-				pack[3] = static_cast<BYTE>(charInString);
-
-				for (int i = 0; i < 12 && offset < textBuf.size(); i++, offset++) {
-					pack[4 + i] = textBuf[offset];
-					if (textBuf[offset] == 0x00) {
-						// NUL terminator — advance to next string
-						stringIdx++;
-						charInString = 0;
-					}
-					else {
-						charInString++;
-					}
-				}
-
-				// CRC-16 over bytes 0-15
-				uint16_t crc = CDTextCRC(pack, 16);
-				pack[16] = static_cast<BYTE>((crc >> 8) & 0xFF);
-				pack[17] = static_cast<BYTE>(crc & 0xFF);
-
-				packs.insert(packs.end(), pack, pack + 18);
-			}
-		};
-
-	// Collect per-track strings
-	std::vector<std::string> trackTitles, trackPerformers;
-	for (const auto& t : tracks) {
-		trackTitles.push_back(t.title.empty() ? "" : t.title);
-		trackPerformers.push_back(t.performer.empty() ? "" : t.performer);
-	}
-
-	// Build Title packs (0x80)
-	buildPacksForType(0x80, discTitle, trackTitles);
-
-	// Build Performer packs (0x81)
-	buildPacksForType(0x81, discPerformer, trackPerformers);
-
-	// Build Size Information pack (0x8F) — mandatory for CD-Text
-	// This describes the block structure so the player can decode it.
-	{
-		int totalPacks = static_cast<int>(packs.size() / 18);
-		int titlePacks = 0, performerPacks = 0;
-		for (int i = 0; i < totalPacks; i++) {
-			BYTE pt = packs[i * 18];
-			if (pt == 0x80) titlePacks++;
-			else if (pt == 0x81) performerPacks++;
-		}
-
-		BYTE firstTrack = static_cast<BYTE>(tracks.empty() ? 1 : tracks.front().trackNumber);
-		BYTE lastTrack = static_cast<BYTE>(tracks.empty() ? 0 : tracks.back().trackNumber);
-
-		// 0x8F packs: 3 packs of 12 bytes each = 36 bytes of size info
-		BYTE sizeInfo[36] = { 0 };
-		sizeInfo[0] = 0x00;          // Character code: ISO 8859-1
-		sizeInfo[1] = firstTrack;    // First track number
-		sizeInfo[2] = lastTrack;     // Last track number
-		sizeInfo[3] = 0x00;          // Copyright flags (none)
-		// Bytes 4-11: pack count per type for block 0 (0x80-0x87)
-		sizeInfo[4] = static_cast<BYTE>(titlePacks);      // 0x80
-		sizeInfo[5] = static_cast<BYTE>(performerPacks);  // 0x81
-		// Pack 2: TOC info
-		sizeInfo[15] = 3;  // Number of 0x8F packs (always 3)
-		// Bytes 16-23: last sequence number per block (only block 0 used)
-		sizeInfo[16] = static_cast<BYTE>(totalPacks + 2);
-		// Bytes 24-35: language codes per block
-		sizeInfo[24] = 0x09;  // Block 0 = English
-
-		// Emit 3 packs for the size info
-		BYTE seqBase = static_cast<BYTE>(packs.size() / 18);
-		for (int p = 0; p < 3; p++) {
-			BYTE pack[18] = { 0 };
-			pack[0] = 0x8F;
-			pack[1] = static_cast<BYTE>(p);
-			pack[2] = seqBase++;
-			pack[3] = 0x00;
-			memcpy(&pack[4], &sizeInfo[p * 12], 12);
-
-			uint16_t crc = CDTextCRC(pack, 16);
-			pack[16] = static_cast<BYTE>((crc >> 8) & 0xFF);
-			pack[17] = static_cast<BYTE>(crc & 0xFF);
-
-			packs.insert(packs.end(), pack, pack + 18);
-		}
-	}
-
-	return packs;
-}
-
-// ============================================================================
-// Helper: Check if any CD-Text content exists
-// ============================================================================
-static bool HasCDTextContent(const std::string& discTitle,
-	const std::string& discPerformer,
-	const std::vector<AudioCDCopier::TrackWriteInfo>& tracks) {
-	if (!discTitle.empty() || !discPerformer.empty()) return true;
-	for (const auto& t : tracks) {
-		if (!t.title.empty() || !t.performer.empty()) return true;
-	}
-	return false;
-}
-
-// ============================================================================
-// Helper: Send CD-Text packs to drive via WRITE BUFFER (0x3B) buffer ID 0x08
-// ============================================================================
-static bool SendCDTextToDevice(ScsiDrive& drive, const std::vector<BYTE>& packs) {
-	if (packs.empty()) return false;
-
-	DWORD packDataLen = static_cast<DWORD>(packs.size());
-	DWORD totalLen = 4 + packDataLen;
-	std::vector<BYTE> buf(totalLen, 0);
-
-	WORD dataLen = static_cast<WORD>(totalLen - 2);
-	buf[0] = static_cast<BYTE>((dataLen >> 8) & 0xFF);
-	buf[1] = static_cast<BYTE>(dataLen & 0xFF);
-	memcpy(buf.data() + 4, packs.data(), packDataLen);
-
-	BYTE cdb[10] = { 0x3B, 0x02, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-	cdb[6] = static_cast<BYTE>((totalLen >> 16) & 0xFF);
-	cdb[7] = static_cast<BYTE>((totalLen >> 8) & 0xFF);
-	cdb[8] = static_cast<BYTE>(totalLen & 0xFF);
-
-	BYTE senseKey = 0, asc = 0, ascq = 0;
-	if (drive.SendSCSIWithSense(cdb, sizeof(cdb), buf.data(), totalLen,
-		&senseKey, &asc, &ascq, false)) {
-		Console::Success("CD-Text sent via WRITE BUFFER (");
-		std::cout << (packDataLen / 18) << " packs)\n";
-		return true;
-	}
-
-	Console::Warning("CD-Text WRITE BUFFER failed (");
-	std::cout << drive.GetSenseDescription(senseKey, asc, ascq) << ")\n";
-	return false;
 }
 
 // ============================================================================
@@ -1066,16 +134,6 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 	Console::Success("Drive speed set to ");
 	std::cout << speed << "x\n";
 
-	// Negotiate write mode by testing both MODE SELECT and SEND CUE SHEET
-	// together. Some drives accept the mode page but reject the CUE sheet,
-	// so testing MODE SELECT alone gives false positives.
-	//
-	// Priority order:
-	//   1. Raw DAO + packed P-W   (best: exact 1:1 copy with subchannel)
-	//   2. Raw DAO + raw P-W
-	//   3. SAO + packed P-W       (subchannel via SAO/R96P)
-	//   4. SAO + raw P-W          (subchannel via SAO/R96R)
-	//   5. Plain SAO              (no subchannel — last resort)
 	int subchannelMode = 0;
 
 	if (hasSubchannel) {
@@ -1097,18 +155,16 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 			Console::Info("Trying ");
 			std::cout << wm.description << "...\n";
 
-			if (!PrepareDriveForWrite(m_drive, wm.mode)) {
+			if (!WriteDiscInternal::PrepareDriveForWrite(m_drive, wm.mode)) {
 				Console::Info("  MODE SELECT rejected — skipping\n");
 				continue;
 			}
 
-			// Mode page accepted — now test if drive also accepts the CUE sheet
-			if (!BuildAndSendCueSheet(m_drive, tracks, totalSectors, wm.mode)) {
+			if (!WriteDiscInternal::BuildAndSendCueSheet(m_drive, tracks, totalSectors, wm.mode)) {
 				Console::Info("  CUE sheet rejected — skipping\n");
 				continue;
 			}
 
-			// Both accepted — use this mode
 			subchannelMode = wm.mode;
 			needsDeinterleave = wm.deinterleave;
 			Console::Success("Drive accepts ");
@@ -1125,24 +181,20 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 	}
 
 	if (!hasSubchannel) {
-		if (!PrepareDriveForWrite(m_drive, 0)) {
+		if (!WriteDiscInternal::PrepareDriveForWrite(m_drive, 0)) {
 			return false;
 		}
 
 		Console::Info("\nSending disc layout to drive...\n");
-		if (!BuildAndSendCueSheet(m_drive, tracks, totalSectors, 0)) {
+		if (!WriteDiscInternal::BuildAndSendCueSheet(m_drive, tracks, totalSectors, 0)) {
 			Console::Error("Drive rejected disc layout\n");
 			return false;
 		}
 	}
 
-	// Send CD-Text to drive (if CUE file contained TITLE/PERFORMER).
-	// This must happen AFTER the CUE sheet is accepted and the drive is in
-	// write-ready state. The drive embeds the CD-Text packs in the lead-in
-	// R-W subchannel automatically during SAO/DAO writing.
-	if (HasCDTextContent(discTitle, discPerformer, tracks)) {
+	if (WriteDiscInternal::HasCDTextContent(discTitle, discPerformer, tracks)) {
 		Console::Info("Building CD-Text from CUE metadata...\n");
-		std::vector<BYTE> cdTextPacks = BuildCDTextPacks(discTitle, discPerformer, tracks);
+		std::vector<BYTE> cdTextPacks = WriteDiscInternal::BuildCDTextPacks(discTitle, discPerformer, tracks);
 
 		if (!cdTextPacks.empty()) {
 			Console::Info("CD-Text: ");
@@ -1152,14 +204,13 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 			if (!discTitle.empty()) std::cout << discTitle;
 			std::cout << ")\n";
 
-			if (!SendCDTextToDevice(m_drive, cdTextPacks)) {
+			if (!WriteDiscInternal::SendCDTextToDevice(m_drive, cdTextPacks)) {
 				Console::Warning("CD-Text will not be written (drive rejected data)\n");
 				Console::Info("Audio data will still be written normally\n");
 			}
 		}
 	}
 
-	// Write audio sectors
 	Console::Info("\nWriting audio sectors...\n");
 	if (!WriteAudioSectors(binFile, subFile, tracks, totalSectors,
 		hasSubchannel, needsDeinterleave)) {
@@ -1198,8 +249,6 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 
 	const DWORD sectorSize = hasSubchannel ? RAW_SECTOR_SIZE : AUDIO_SECTOR_SIZE;
 
-	// The CUE sheet declares Track 1 pregap at MSF 00:00:00 (LBA -150).
-	// The host must provide 150 sectors of silence for the pregap, then the BIN data.
 	constexpr DWORD PREGAP_SECTORS = 150;
 	DWORD writeTotalSectors = PREGAP_SECTORS + totalSectors;
 
@@ -1228,10 +277,10 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 
 	const DWORD SECTORS_PER_WRITE = hasSubchannel ? 20 : 27;
 	std::vector<BYTE> writeBuffer(sectorSize * SECTORS_PER_WRITE);
-	BYTE rawSub[SUBCHANNEL_SIZE];  // Temp buffer for deinterleaving
+	BYTE rawSub[SUBCHANNEL_SIZE];
 
 	DWORD sectorsWritten = 0;
-	int32_t currentLBA = -150;  // Start at pregap (signed for negative values)
+	int32_t currentLBA = -150;
 	int consecutiveErrors = 0;
 	size_t currentTrackIdx = 0;
 
@@ -1247,29 +296,24 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 		DWORD remaining = writeTotalSectors - sectorsWritten;
 		DWORD batchSize = (remaining < SECTORS_PER_WRITE) ? remaining : SECTORS_PER_WRITE;
 
-		// Fill write buffer — pregap silence for first 150 sectors, then BIN data
 		for (DWORD s = 0; s < batchSize; s++) {
 			BYTE* dest = writeBuffer.data() + s * sectorSize;
 			DWORD globalSector = sectorsWritten + s;
 
 			if (globalSector < PREGAP_SECTORS) {
-				// Pregap: silence (zero audio + zero subchannel)
 				memset(dest, 0x00, sectorSize);
 			}
 			else {
-				// BIN file data
 				binInput.read(reinterpret_cast<char*>(dest), AUDIO_SECTOR_SIZE);
 				size_t audioRead = binInput.gcount();
 				if (audioRead < AUDIO_SECTOR_SIZE) {
 					std::fill(dest + audioRead, dest + AUDIO_SECTOR_SIZE, 0x00);
 				}
 
-				// Subchannel data (appended after audio)
 				if (hasSubchannel) {
 					BYTE* subDest = dest + AUDIO_SECTOR_SIZE;
 
 					if (needsDeinterleave) {
-						// Read raw subchannel, deinterleave to packed format
 						subInput.read(reinterpret_cast<char*>(rawSub), SUBCHANNEL_SIZE);
 						size_t subRead = subInput.gcount();
 						if (subRead < SUBCHANNEL_SIZE) {
@@ -1278,7 +322,6 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 						DeinterleaveSubchannel(rawSub, subDest);
 					}
 					else {
-						// Raw format matches — copy directly
 						subInput.read(reinterpret_cast<char*>(subDest), SUBCHANNEL_SIZE);
 						size_t subRead = subInput.gcount();
 						if (subRead < SUBCHANNEL_SIZE) {
@@ -1291,7 +334,6 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 
 		DWORD transferBytes = batchSize * sectorSize;
 
-		// WRITE(10) — LBA is signed, two's complement for negative values
 		BYTE writeCmd[10] = { 0x2A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 		DWORD lbaUnsigned = static_cast<DWORD>(currentLBA);
 		writeCmd[2] = static_cast<BYTE>((lbaUnsigned >> 24) & 0xFF);
@@ -1318,7 +360,6 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 					}
 					continue;
 				}
-				// Rewind files to retry
 				DWORD binSector = (sectorsWritten >= PREGAP_SECTORS) ? sectorsWritten - PREGAP_SECTORS : 0;
 				binInput.seekg(static_cast<long long>(binSector) * AUDIO_SECTOR_SIZE);
 				if (hasSubchannel)
@@ -1353,7 +394,6 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 		currentLBA += batchSize;
 		progress.Update(sectorsWritten, writeTotalSectors);
 
-		// Log track transitions (offset by pregap)
 		DWORD binPosition = (sectorsWritten > PREGAP_SECTORS) ? sectorsWritten - PREGAP_SECTORS : 0;
 		while (currentTrackIdx + 1 < tracks.size() &&
 			binPosition >= tracks[currentTrackIdx + 1].startLBA) {
@@ -1378,23 +418,19 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 // VerifyWriteCompletion - Flush cache and close session
 // ============================================================================
 bool AudioCDCopier::VerifyWriteCompletion(const std::wstring& /*binFile*/) {
-	// Flush remaining data from drive buffer to disc
 	Console::Info("Flushing write cache...\n");
 	if (!SynchronizeCache(m_drive)) {
 		Console::Warning("Cache flush reported failure (disc may still finalize)\n");
 	}
 
-	// Wait for flush to complete
 	WaitForDriveReady(m_drive, 60);
 
-	// Close session (0x5B) — writes lead-out and finalizes the disc
 	Console::Info("Closing session (writing lead-out)...\n");
 	BYTE closeCmd[10] = { 0x5B, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 	BYTE senseKey = 0, asc = 0, ascq = 0;
 
 	if (!m_drive.SendSCSIWithSense(closeCmd, sizeof(closeCmd), nullptr, 0,
 		&senseKey, &asc, &ascq, false)) {
-		// Drive may be busy writing lead-out, poll until ready
 		if (senseKey == 0x02 && asc == 0x04) {
 			Console::Info("Waiting for finalization");
 		}
@@ -1404,7 +440,6 @@ bool AudioCDCopier::VerifyWriteCompletion(const std::wstring& /*binFile*/) {
 		}
 	}
 
-	// Lead-out can take 30-90 seconds
 	Console::Info("Finalizing disc");
 	for (int i = 0; i < 120; i++) {
 		BYTE testCmd[6] = { 0x00 };
@@ -1437,7 +472,6 @@ bool AudioCDCopier::VerifyWrittenDisc(const std::vector<TrackWriteInfo>& tracks)
 	progress.SetLabel("Verifying");
 	progress.Start();
 
-	// Verify first and last sector of each track
 	int verifyCount = 0;
 	int successCount = 0;
 	DWORD totalChecks = static_cast<DWORD>(tracks.size() * 2);
@@ -1446,21 +480,19 @@ bool AudioCDCopier::VerifyWrittenDisc(const std::vector<TrackWriteInfo>& tracks)
 		BYTE audio[AUDIO_SECTOR_SIZE] = { 0 };
 		BYTE subchannel[SUBCHANNEL_SIZE] = { 0 };
 
-		// Verify first sector
 		if (m_drive.ReadSector(track.startLBA, audio, subchannel)) {
 			successCount++;
 		}
 		verifyCount++;
 		progress.Update(verifyCount, totalChecks);
 
-		// Verify last sector
 		if (track.endLBA > track.startLBA) {
 			if (m_drive.ReadSector(track.endLBA, audio, subchannel)) {
 				successCount++;
 			}
 		}
 		else {
-			successCount++;  // Single-sector track, already verified
+			successCount++;
 		}
 		verifyCount++;
 		progress.Update(verifyCount, totalChecks);

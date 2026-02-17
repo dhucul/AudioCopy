@@ -143,14 +143,19 @@
     <ClCompile Include="AudioCDCopier_Utilities.cpp" />
     <ClCompile Include="AudioCDCopier_Verification.cpp" />
     <ClCompile Include="AudioCDCopier_WriteDisc.cpp" />
+    <ClCompile Include="AudioCDCopier_WriteDisc_CDText.cpp" />
+    <ClCompile Include="AudioCDCopier_WriteDisc_Cue.cpp" />
+    <ClCompile Include="AudioCDCopier_WriteDisc_Media.cpp" />
     <ClCompile Include="CopyWorkflow.cpp" />
     <ClCompile Include="Drive.cpp" />
+    <ClCompile Include="DriveSelection.cpp" />
     <ClCompile Include="FileUtils.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="AccurateRip.cpp" />
     <ClCompile Include="AudioCDCopier.cpp" />
     <ClCompile Include="AudioCDCopier_MenuSelection.cpp" />
     <ClCompile Include="AudioCDCopier_TOCReading.cpp" />
+    <ClCompile Include="MainMenu.cpp" />
     <ClCompile Include="MenuUI.cpp" />
     <ClCompile Include="OffsetCalibration.cpp" />
     <ClCompile Include="ProtectionCheck.cpp" />
@@ -179,11 +184,13 @@
     <ClInclude Include="DiscTypes.h" />
     <ClInclude Include="Drive.h" />
     <ClInclude Include="DriveOffsets.h" />
+    <ClInclude Include="DriveSelection.h" />
     <ClInclude Include="DriveTypes.h" />
     <ClInclude Include="ErrorTypes.h" />
     <ClInclude Include="FileUtils.h" />
     <ClInclude Include="FingerprintTypes.h" />
     <ClInclude Include="InterruptHandler.h" />
+    <ClInclude Include="MainMenu.h" />
     <ClInclude Include="MenuHelpers.h" />
     <ClInclude Include="MenuUI.h" />
     <ClInclude Include="OffsetCalibration.h" />
@@ -193,6 +200,7 @@
     <ClInclude Include="ScsiDrive.h" />
     <ClInclude Include="ScsiTypes.h" />
     <ClInclude Include="SecureRipTypes.h" />
+    <ClInclude Include="WriteDiscInternal.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

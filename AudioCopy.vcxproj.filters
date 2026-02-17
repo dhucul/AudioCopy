@@ -133,6 +133,21 @@
     <ClCompile Include="AudioCDCopier_WriteDisc.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DriveSelection.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MainMenu.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_WriteDisc_Media.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_WriteDisc_Cue.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_WriteDisc_CDText.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DiscTypes.h">
@@ -220,6 +235,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ProtectionCheck.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DriveSelection.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MainMenu.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WriteDiscInternal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
