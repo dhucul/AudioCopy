@@ -106,7 +106,31 @@ bool AudioCDCopier::CheckRewritableDisk(bool& isFull, bool& isRewritable) {
 }
 
 // ============================================================================
+// Helper: Wait for drive to become ready (poll TEST UNIT READY)
+// ============================================================================
+static bool WaitForDriveReady(ScsiDrive& drive, int timeoutSeconds) {
+	for (int i = 0; i < timeoutSeconds * 4; i++) {
+		BYTE testCmd[6] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+		BYTE sk = 0, asc = 0, ascq = 0;
+		if (drive.SendSCSIWithSense(testCmd, sizeof(testCmd), nullptr, 0,
+			&sk, &asc, &ascq, true)) {
+			return true;
+		}
+		if (sk == 0x02 && asc == 0x04) {
+			Sleep(250);
+			continue;
+		}
+		return false;
+	}
+	return false;
+}
+
+// ============================================================================
 // BlankRewritableDisk - Erase rewritable media (quick or full)
+// Tries standard blanking first. If the drive rejects it due to a
+// corrupted TOC (SK=0x05 ILLEGAL REQUEST or SK=0x03 MEDIUM ERROR),
+// falls back to blanking type 0x06 (erase session) which can recover
+// some drives, then retries the original blank.
 // ============================================================================
 bool AudioCDCopier::BlankRewritableDisk(int speed, bool quickBlank) {
 	Console::Warning(quickBlank ? "\nQuick blanking rewritable disc...\n"
@@ -125,14 +149,56 @@ bool AudioCDCopier::BlankRewritableDisk(int speed, bool quickBlank) {
 
 	// SCSI BLANK command (0xA1)
 	// Byte 1 bit 4: Immed — return immediately so we can poll progress
-	// Byte 1 bits 2-0: blanking type — 0x00 = full, 0x01 = quick (minimal)
-	BYTE blankType = (quickBlank ? 0x01 : 0x00) | 0x10;  // Immed + blank type
-	BYTE cmd[12] = { 0xA1, blankType, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	// Byte 1 bits 2-0: blanking type
+	//   0x00 = full blank (entire disc)
+	//   0x01 = minimal/quick blank (PMA + lead-in + pregap)
+	//   0x06 = erase session (erases last session — useful as recovery step)
+	BYTE standardType = (quickBlank ? 0x01 : 0x00) | 0x10;  // Immed + blank type
+	BYTE cmd[12] = { 0xA1, standardType, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-	if (!m_drive.SendSCSI(cmd, sizeof(cmd), nullptr, 0, false)) {
+	bool blankStarted = false;
+	const char* usedMethod = quickBlank ? "quick blank" : "full blank";
+
+	// Try the standard blank type first (universally supported)
+	if (m_drive.SendSCSI(cmd, sizeof(cmd), nullptr, 0, false)) {
+		blankStarted = true;
+	}
+	else {
+		// Standard blank failed — attempt recovery via erase session (0x06).
+		// This can help when the disc has a corrupted TOC that prevents
+		// the drive from processing a normal blank.
+		Console::Warning("Standard blank failed — trying erase session recovery...\n");
+
+		BYTE recoveryCmd[12] = { 0xA1, 0x16, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+		// 0x16 = Immed (0x10) | erase session (0x06)
+
+		if (m_drive.SendSCSI(recoveryCmd, sizeof(recoveryCmd), nullptr, 0, false)) {
+			// Wait for erase session to complete before retrying
+			Console::Info("Erase session in progress...\n");
+			WaitForDriveReady(m_drive, 120);
+
+			// Retry the original standard blank
+			Console::Info("Retrying ");
+			std::cout << usedMethod << "...\n";
+			if (m_drive.SendSCSI(cmd, sizeof(cmd), nullptr, 0, false)) {
+				blankStarted = true;
+			}
+			else {
+				Console::Error("Retry after erase session also failed\n");
+			}
+		}
+		else {
+			Console::Warning("Erase session not supported by drive\n");
+		}
+	}
+
+	if (!blankStarted) {
 		Console::Error("Blank command failed\n");
 		return false;
 	}
+
+	Console::Info("Blanking method: ");
+	std::cout << usedMethod << "\n";
 
 	// Poll drive with REQUEST SENSE for real progress indication.
 	// The drive reports NOT READY (SK=0x02, ASC=0x04, ASCQ=0x07) with a
@@ -288,7 +354,7 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 		if (q2 == std::wstring::npos) return {};
 		std::wstring val = ln.substr(q1 + 1, q2 - q1 - 1);
 		return WideToUTF8(val);
-	};
+		};
 
 	while (std::getline(file, line)) {
 		size_t start = line.find_first_not_of(L" \t");
@@ -409,26 +475,6 @@ static void LBAtoMSF(int lba, BYTE& m, BYTE& s, BYTE& f) {
 	m = static_cast<BYTE>(absFrame / (75 * 60));
 	s = static_cast<BYTE>((absFrame / 75) % 60);
 	f = static_cast<BYTE>(absFrame % 75);
-}
-
-// ============================================================================
-// Helper: Wait for drive to become ready (poll TEST UNIT READY)
-// ============================================================================
-static bool WaitForDriveReady(ScsiDrive& drive, int timeoutSeconds) {
-	for (int i = 0; i < timeoutSeconds * 4; i++) {
-		BYTE testCmd[6] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-		BYTE sk = 0, asc = 0, ascq = 0;
-		if (drive.SendSCSIWithSense(testCmd, sizeof(testCmd), nullptr, 0,
-			&sk, &asc, &ascq, true)) {
-			return true;
-		}
-		if (sk == 0x02 && asc == 0x04) {
-			Sleep(250);
-			continue;
-		}
-		return false;
-	}
-	return false;
 }
 
 // ============================================================================
@@ -784,57 +830,57 @@ static std::vector<BYTE> BuildCDTextPacks(
 		const std::string& discStr,
 		const std::vector<std::string>& trackStrs) {
 
-		// Concatenate all NUL-terminated strings into a flat buffer,
-		// and record the actual track number for each string boundary.
-		std::vector<BYTE> textBuf;
-		std::vector<BYTE> trackNumAtString;  // TNO for each string in textBuf
+			// Concatenate all NUL-terminated strings into a flat buffer,
+			// and record the actual track number for each string boundary.
+			std::vector<BYTE> textBuf;
+			std::vector<BYTE> trackNumAtString;  // TNO for each string in textBuf
 
-		// Disc-level string (TNO = 0)
-		trackNumAtString.push_back(0x00);
-		for (char c : discStr) textBuf.push_back(static_cast<BYTE>(c));
-		textBuf.push_back(0x00);
-
-		// Per-track strings (TNO = actual track number)
-		for (size_t ti = 0; ti < trackStrs.size(); ti++) {
-			BYTE tno = static_cast<BYTE>(tracks[ti].trackNumber);
-			trackNumAtString.push_back(tno);
-			for (char c : trackStrs[ti]) textBuf.push_back(static_cast<BYTE>(c));
+			// Disc-level string (TNO = 0)
+			trackNumAtString.push_back(0x00);
+			for (char c : discStr) textBuf.push_back(static_cast<BYTE>(c));
 			textBuf.push_back(0x00);
-		}
 
-		// Split into 12-byte payloads → 18-byte packs
-		BYTE seqBase = static_cast<BYTE>(packs.size() / 18);
-		size_t offset = 0;
-		int stringIdx = 0;          // Which string we're currently in
-		int charInString = 0;       // Character offset within current string
-
-		while (offset < textBuf.size()) {
-			BYTE pack[18] = { 0 };
-			pack[0] = packType;
-			pack[1] = trackNumAtString[stringIdx];
-			pack[2] = seqBase++;
-			pack[3] = static_cast<BYTE>(charInString);
-
-			for (int i = 0; i < 12 && offset < textBuf.size(); i++, offset++) {
-				pack[4 + i] = textBuf[offset];
-				if (textBuf[offset] == 0x00) {
-					// NUL terminator — advance to next string
-					stringIdx++;
-					charInString = 0;
-				}
-				else {
-					charInString++;
-				}
+			// Per-track strings (TNO = actual track number)
+			for (size_t ti = 0; ti < trackStrs.size(); ti++) {
+				BYTE tno = static_cast<BYTE>(tracks[ti].trackNumber);
+				trackNumAtString.push_back(tno);
+				for (char c : trackStrs[ti]) textBuf.push_back(static_cast<BYTE>(c));
+				textBuf.push_back(0x00);
 			}
 
-			// CRC-16 over bytes 0-15
-			uint16_t crc = CDTextCRC(pack, 16);
-			pack[16] = static_cast<BYTE>((crc >> 8) & 0xFF);
-			pack[17] = static_cast<BYTE>(crc & 0xFF);
+			// Split into 12-byte payloads → 18-byte packs
+			BYTE seqBase = static_cast<BYTE>(packs.size() / 18);
+			size_t offset = 0;
+			int stringIdx = 0;          // Which string we're currently in
+			int charInString = 0;       // Character offset within current string
 
-			packs.insert(packs.end(), pack, pack + 18);
-		}
-	};
+			while (offset < textBuf.size()) {
+				BYTE pack[18] = { 0 };
+				pack[0] = packType;
+				pack[1] = trackNumAtString[stringIdx];
+				pack[2] = seqBase++;
+				pack[3] = static_cast<BYTE>(charInString);
+
+				for (int i = 0; i < 12 && offset < textBuf.size(); i++, offset++) {
+					pack[4 + i] = textBuf[offset];
+					if (textBuf[offset] == 0x00) {
+						// NUL terminator — advance to next string
+						stringIdx++;
+						charInString = 0;
+					}
+					else {
+						charInString++;
+					}
+				}
+
+				// CRC-16 over bytes 0-15
+				uint16_t crc = CDTextCRC(pack, 16);
+				pack[16] = static_cast<BYTE>((crc >> 8) & 0xFF);
+				pack[17] = static_cast<BYTE>(crc & 0xFF);
+
+				packs.insert(packs.end(), pack, pack + 18);
+			}
+		};
 
 	// Collect per-track strings
 	std::vector<std::string> trackTitles, trackPerformers;
