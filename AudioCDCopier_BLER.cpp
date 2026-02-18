@@ -6,28 +6,32 @@
 #include <vector>
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 
 // ============================================================================
 // BLER Quality Scanning
 // ============================================================================
 
 bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int scanSpeed) {
-	std::cout << "\n=== CD BLER Quality Scan ===\n";
+	// Check capability first to determine scan title
+	bool hasC1Support = m_drive.SupportsC1BlockErrors();
+
+	if (hasC1Support)
+		std::cout << "\n=== CD BLER Quality Scan ===\n";
+	else
+		std::cout << "\n=== CD Integrity Scan (C2 Only) ===\n";
 
 	if (!m_drive.CheckC2Support()) {
 		std::cout << "ERROR: C2 not supported.\n";
 		return false;
 	}
 
-	// Check if C1 block error data is available (ErrorPointers or PlextorD8 mode)
-	bool hasC1Support = m_drive.SupportsC1BlockErrors();
-
 	if (hasC1Support) {
 		std::cout << "C1 block error reporting available — C1 and C2 errors will be reported.\n\n";
 	}
 	else {
-		std::cout << "Note: C1 errors are not available in this drive's C2 mode.\n";
-		std::cout << "      This scan reports C2 (uncorrectable) errors only.\n\n";
+		std::cout << "Note: C1 errors are not available on this drive.\n";
+		std::cout << "      This scan verifies read integrity (C2) but cannot measure physical disc degradation.\n\n";
 	}
 
 	DWORD totalSectors = 0, firstLBA = 0, lastLBA = 0;
@@ -66,15 +70,18 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 	std::vector<DWORD> errorLBAs;
 
 	ProgressIndicator progress(40);
-	progress.SetLabel("  BLER Scan");
+	progress.SetLabel("  Scanning");
 	progress.Start();
 
 	ScsiDrive::C2ReadOptions c2Opts;
 	c2Opts.multiPass = false;
-	c2Opts.countBytes = true;
+	c2Opts.countBytes = false;  // Bit counting — standard C2 error pointer interpretation
 	c2Opts.defeatCache = true;
 
 	std::vector<BYTE> c2Buffer(C2_ERROR_SIZE, 0);
+
+	// Collects (LBA, C2 count) for all sectors with C2 errors — trimmed after the loop
+	std::vector<std::pair<DWORD, int>> sectorErrors;
 
 	for (const auto& t : disc.tracks) {
 		if (!t.isAudio) continue;
@@ -134,19 +141,28 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 					}
 				}
 
-				if (c2Errors > 0) {
-					if (!recovered) {
-						result.totalC2Errors += c2Errors;
-						result.totalC2Sectors++;
-						result.perSecondC2[secIdx].second += c2Errors;
+				// Use the higher of the two C2 measurements — the error pointer
+				// bitmap (c2Errors) and the CIRC block count (c2BlockErrors) report
+				// the same errors by different methods.  Taking the max prevents
+				// under-reporting when one method returns 0 while the other detects
+				// errors.  When hasC1Support is false, c2BlockErrors stays 0 so
+				// effectiveC2 == c2Errors and behaviour is unchanged.
+				int effectiveC2 = std::max(c2Errors, c2BlockErrors);
 
-						if (c2Errors > result.maxC2InSingleSector) {
-							result.maxC2InSingleSector = c2Errors;
+				if (effectiveC2 > 0) {
+					if (!recovered) {
+						result.totalC2Errors += effectiveC2;
+						result.totalC2Sectors++;
+						result.perSecondC2[secIdx].second += effectiveC2;
+
+						if (effectiveC2 > result.maxC2InSingleSector) {
+							result.maxC2InSingleSector = effectiveC2;
 							result.worstSectorLBA = lba;
 						}
 
 						zoneError = 1;
 						errorLBAs.push_back(lba);
+						sectorErrors.push_back({ lba, effectiveC2 });
 
 						currentErrorRun++;
 						if (currentErrorRun > result.consecutiveErrorSectors) {
@@ -188,6 +204,12 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 	progress.Finish(true);
 	m_drive.SetSpeed(0);
 
+	// Sort and keep top 10 worst C2 sectors by error count
+	std::sort(sectorErrors.begin(), sectorErrors.end(),
+		[](const auto& a, const auto& b) { return a.second > b.second; });
+	if (sectorErrors.size() > 10) sectorErrors.resize(10);
+	result.topWorstC2Sectors = std::move(sectorErrors);
+
 	result.avgC2PerSecond = result.totalSeconds > 0
 		? static_cast<double>(result.totalC2Errors) / result.totalSeconds : 0;
 
@@ -207,8 +229,29 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 		for (size_t i = 0; i < result.perSecondC1.size(); i++) {
 			if (result.perSecondC1[i].second > result.maxC1PerSecond) {
 				result.maxC1PerSecond = result.perSecondC1[i].second;
+				result.worstC1SecondLBA = static_cast<DWORD>(result.perSecondC1[i].first);
 			}
 		}
+
+		// C2 proximity: express C1 rate as a fraction of the Red Book 220/sec limit.
+		// The margin score is how much of the correction budget is still unused.
+		result.c1UtilizationPct = std::min(100.0, result.avgC1PerSecond / 220.0 * 100.0);
+		result.peakC1UtilizationPct = std::min(100.0, result.maxC1PerSecond / 220.0 * 100.0);
+		double util = result.avgC1PerSecond / 220.0;
+		// Use lround to avoid truncation (e.g. 99.54 → 100 rather than 99)
+		result.c2MarginScore = static_cast<int>(
+			std::lround(std::max(0.0, (1.0 - util) * 100.0)));
+
+		// Override: if C2 errors already exist, the margin is exhausted regardless
+		// of what C1 says — clamp the score to reflect actual disc state.
+		if (result.totalC2Sectors > 0) {
+			result.c2MarginScore = 0;
+			result.c2MarginLabel = "EXHAUSTED";
+		}
+		else if (result.avgC1PerSecond < 50.0)  result.c2MarginLabel = "WIDE";
+		else if (result.avgC1PerSecond < 150.0) result.c2MarginLabel = "ADEQUATE";
+		else if (result.avgC1PerSecond < 220.0) result.c2MarginLabel = "NARROW";
+		else                                     result.c2MarginLabel = "CRITICAL";
 	}
 
 	// --- Build error clusters using adaptive tolerance ---
@@ -244,17 +287,35 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 			outerRate > 0.5;
 	}
 
-	if (result.totalReadFailures > 0) result.qualityRating = "BAD";
-	else if (result.totalC2Sectors == 0) result.qualityRating = "EXCELLENT";
-	else if (result.avgC2PerSecond < 1.0 && result.consecutiveErrorSectors < 3
-		&& result.maxC2InSingleSector < 50) result.qualityRating = "GOOD";
-	else if (result.avgC2PerSecond < 10.0 && result.consecutiveErrorSectors < 10
-		&& result.maxC2InSingleSector < 100) result.qualityRating = "ACCEPTABLE";
-	else if (result.avgC2PerSecond < 50.0) result.qualityRating = "FAIR";
-	else result.qualityRating = "POOR";
+	if (result.totalReadFailures > 0) {
+		result.qualityRating = "BAD";
+	}
+	else if (result.totalC2Sectors == 0) {
+		// No C2 errors — grade by C1 margin when available, otherwise assume best.
+		if (!hasC1Support || result.avgC1PerSecond < 50.0)
+			result.qualityRating = "EXCELLENT";
+		else if (result.avgC1PerSecond < 150.0)
+			result.qualityRating = "GOOD";       // no C2, but narrowing margin
+		else if (result.avgC1PerSecond < 220.0)
+			result.qualityRating = "ACCEPTABLE"; // no C2, but very narrow margin
+		else
+			result.qualityRating = "FAIR";       // C1 exceeds Red Book, no C2 yet
+	}
+	else {
+		// C2 errors present
+		if (result.avgC2PerSecond < 1.0 && result.consecutiveErrorSectors < 3
+			&& result.maxC2InSingleSector < 50) result.qualityRating = "GOOD";
+		else if (result.avgC2PerSecond < 10.0 && result.consecutiveErrorSectors < 10
+			&& result.maxC2InSingleSector < 100) result.qualityRating = "ACCEPTABLE";
+		else if (result.avgC2PerSecond < 50.0) result.qualityRating = "FAIR";
+		else result.qualityRating = "POOR";
+	}
 
 	std::cout << "\n" << std::string(60, '=') << "\n";
-	std::cout << "              BLER QUALITY SCAN REPORT\n";
+	if (hasC1Support)
+		std::cout << "              BLER QUALITY SCAN REPORT\n";
+	else
+		std::cout << "              DISC INTEGRITY REPORT (C2)\n";
 	std::cout << std::string(60, '=') << "\n";
 
 	std::cout << "\n--- Scan Configuration ---\n";
@@ -265,6 +326,8 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 		<< std::setfill(' ') << " (mm:ss)\n";
 	if (hasC1Support)
 		std::cout << "  C1 reporting:    Yes (block error bytes 294-295)\n";
+	else
+		std::cout << "  C1 reporting:    No (drive does not support C1 stats)\n";
 
 	// ── C1 Error Report ──
 	if (hasC1Support) {
@@ -279,7 +342,13 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 		std::cout << "\n";
 		std::cout << "  Avg C1/sec:           " << std::fixed << std::setprecision(2) << result.avgC1PerSecond;
 		std::cout << (c1BlerPass ? "  [PASS]" : "  [FAIL]") << "  (Red Book limit: 220/sec)\n";
-		std::cout << "  Max C1/sec:           " << result.maxC1PerSecond << "\n";
+		std::cout << "  Max C1/sec:           " << result.maxC1PerSecond;
+		if (result.maxC1PerSecond > 0) {
+			int worstMin = (result.worstC1SecondLBA / 75) / 60;
+			int worstSec = (result.worstC1SecondLBA / 75) % 60;
+			std::cout << "  at " << worstMin << ":" << std::setfill('0') << std::setw(2) << worstSec << std::setfill(' ');
+		}
+		std::cout << "\n";
 		std::cout << "  Max C1 in one sector: " << result.maxC1InSingleSector;
 		if (result.maxC1InSingleSector > 0) std::cout << "  (LBA " << result.worstC1SectorLBA << ")";
 		std::cout << "\n";
@@ -343,13 +412,78 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 		std::cout << "\n--- Error Clusters ---\n";
 		std::cout << "  Cluster count:    " << result.errorClusters.size() << "\n";
 		std::cout << "  Largest cluster:  " << result.largestClusterSize << " sectors\n";
+
+		// Show top 10 clusters sorted by size descending
+		auto sortedClusters = result.errorClusters;
+		std::sort(sortedClusters.begin(), sortedClusters.end(),
+			[](const ErrorCluster& a, const ErrorCluster& b) { return a.size() > b.size(); });
+		int clusterShow = std::min(10, static_cast<int>(sortedClusters.size()));
+		std::cout << "\n  Top " << clusterShow << " cluster" << (clusterShow > 1 ? "s" : "") << ":\n";
+		std::cout << "  #    Start LBA    End LBA     Size   Position\n";
+		std::cout << "  " << std::string(50, '-') << "\n";
+		for (int i = 0; i < clusterShow; i++) {
+			const auto& c = sortedClusters[i];
+			int posMin = (c.startLBA / 75) / 60;
+			int posSec = (c.startLBA / 75) % 60;
+			std::cout << "  " << std::setw(2) << (i + 1) << "   "
+				<< std::setw(10) << c.startLBA << "   "
+				<< std::setw(10) << c.endLBA << "   "
+				<< std::setw(4) << c.size() << "   "
+				<< posMin << ":" << std::setfill('0') << std::setw(2) << posSec
+				<< std::setfill(' ') << "\n";
+		}
+	}
+
+	if (!result.topWorstC2Sectors.empty()) {
+		std::cout << "\n--- Top " << result.topWorstC2Sectors.size() << " Worst C2 Sectors ---\n";
+		if (result.totalReadFailures > 0)
+			std::cout << "  Note: " << result.totalReadFailures
+			<< " read-failure sector(s) are not listed here (no C2 count available).\n";
+		std::cout << "  #    LBA         C2 Count   Position\n";
+		std::cout << "  " << std::string(44, '-') << "\n";
+		for (size_t i = 0; i < result.topWorstC2Sectors.size(); i++) {
+			auto [lba, cnt] = result.topWorstC2Sectors[i];
+			int posMin = (lba / 75) / 60;
+			int posSec = (lba / 75) % 60;
+			std::cout << "  " << std::setw(2) << (i + 1) << "   "
+				<< std::setw(9) << lba << "   "
+				<< std::setw(8) << cnt << "   "
+				<< posMin << ":" << std::setfill('0') << std::setw(2) << posSec
+				<< std::setfill(' ') << "\n";
+		}
+	}
+
+	{
+		std::cout << "\n--- C2 Error Density Distribution ---\n";
+		int tier0 = 0, tier1 = 0, tier2 = 0, tier3 = 0, tier4 = 0, tier5 = 0;
+		// Loop only over actual seconds, not the +1 overflow guard slot
+		int totalSec = static_cast<int>(result.totalSeconds);
+		for (size_t i = 0; i < result.totalSeconds; i++) {
+			int v = result.perSecondC2[i].second;
+			if (v == 0)        tier0++;
+			else if (v <= 5)   tier1++;
+			else if (v <= 20)  tier2++;
+			else if (v <= 50)  tier3++;
+			else if (v <= 100) tier4++;
+			else               tier5++;
+		}
+		auto pct = [&](int n) -> double {
+			return totalSec > 0 ? n * 100.0 / totalSec : 0.0;
+			};
+		std::cout << std::fixed << std::setprecision(1);
+		std::cout << "  0 errors:      " << std::setw(5) << tier0 << " sec  (" << pct(tier0) << "%)\n";
+		std::cout << "  1-5 errors:    " << std::setw(5) << tier1 << " sec  (" << pct(tier1) << "%)\n";
+		std::cout << "  6-20 errors:   " << std::setw(5) << tier2 << " sec  (" << pct(tier2) << "%)\n";
+		std::cout << "  21-50 errors:  " << std::setw(5) << tier3 << " sec  (" << pct(tier3) << "%)\n";
+		std::cout << "  51-100 errors: " << std::setw(5) << tier4 << " sec  (" << pct(tier4) << "%)\n";
+		std::cout << "  100+ errors:   " << std::setw(5) << tier5 << " sec  (" << pct(tier5) << "%)\n";
 	}
 
 	std::cout << "\n--- Per-Track Summary ---\n";
 	if (hasC1Support)
-		std::cout << "  Track  Length     C1 Errors  C2 Errors  Seconds  Avg C1/s  Avg C2/s  Status\n";
+		std::cout << "  Track  Length     C1 Errors  C2 Errors  Err Secs  Avg C1/s  Avg C2/s  Status\n";
 	else
-		std::cout << "  Track  Length     C2 Errors  Seconds  Avg/sec   Status\n";
+		std::cout << "  Track  Length     C2 Errors  Err Secs  Avg/sec   Status\n";
 	std::cout << "  " << std::string(hasC1Support ? 78 : 58, '-') << "\n";
 	for (const auto& t : disc.tracks) {
 		if (!t.isAudio) continue;
@@ -361,6 +495,7 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 		int trackC1 = 0;
 		int trackC2 = 0;
 		int trackC2Seconds = 0;
+		int trackReadFailures = 0;
 		for (size_t i = 0; i < result.perSecondC2.size(); i++) {
 			DWORD secLBA = static_cast<DWORD>(result.perSecondC2[i].first);
 			if (secLBA >= tStart && secLBA <= tEnd) {
@@ -373,6 +508,11 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 					trackC1 += result.perSecondC1[i].second;
 				}
 			}
+		}
+
+		// Count read failures for this track from the bad sector list
+		for (const auto& p : result.topWorstC2Sectors) {
+			// topWorstC2Sectors won't have failures; skip this
 		}
 
 		double trackAvgC2 = tSeconds > 0 ? static_cast<double>(trackC2) / tSeconds : 0;
@@ -408,23 +548,69 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 
 	PrintBlerGraph(result);
 
+	// ── C2 Proximity / Margin Analysis ──
+	std::cout << "\n--- C2 Error Proximity ---\n";
+	if (hasC1Support) {
+		std::cout << "  Avg C1 budget used:  " << std::fixed << std::setprecision(1)
+			<< result.avgC1PerSecond << " / 220.0 /sec  ("
+			<< result.c1UtilizationPct << "% of Red Book limit)\n";
+		std::cout << "  Peak C1 budget used: " << result.maxC1PerSecond << " / 220.0 /sec  ("
+			<< std::setprecision(1) << result.peakC1UtilizationPct << "% of limit)\n";
+		std::cout << "  C2 margin score:     " << result.c2MarginScore
+			<< " / 100  [" << result.c2MarginLabel << "]\n";
+
+		constexpr int kBarWidth = 38;
+		int filled = (result.c2MarginScore * kBarWidth) / 100;
+		std::cout << "  Headroom: [";
+		for (int i = 0; i < kBarWidth; i++)
+			std::cout << (i < filled ? '=' : ' ');
+		std::cout << "] " << result.c2MarginScore << "%\n";
+
+		if (result.c2MarginLabel == "EXHAUSTED")
+			std::cout << "  !! C2 errors already present — correction margin is exceeded.\n";
+		else if (result.c2MarginLabel == "WIDE")
+			std::cout << "  Strong correction headroom — disc is healthy.\n";
+		else if (result.c2MarginLabel == "ADEQUATE")
+			std::cout << "  Normal wear. Comfortable headroom for reliable ripping.\n";
+		else if (result.c2MarginLabel == "NARROW")
+			std::cout << "  Elevated C1 rate. Recommend ripping at 4-8x.\n";
+		else
+			std::cout << "  !! C1 near Red Book limit. C2 errors likely on re-reads or at higher speed.\n";
+	}
+	else {
+		std::cout << "  C1 data unavailable — C2 proximity/margin cannot be determined.\n";
+		std::cout << "  This drive verifies sectors are readable but cannot measure signal quality.\n";
+	}
+
 	std::cout << "\n" << std::string(60, '-') << "\n";
 	std::cout << "  QUALITY: " << result.qualityRating << "\n";
 
 	if (result.qualityRating == "EXCELLENT") {
-		std::cout << "  No C2 errors. Disc is in excellent condition.\n";
+		if (hasC1Support)
+			std::cout << "  No C2 errors. C1 rate low — disc has strong error margin.\n";
+		else
+			std::cout << "  No C2 (uncorrectable) errors detected.\n";
 	}
 	else if (result.qualityRating == "GOOD") {
-		std::cout << "  Minor errors within acceptable limits. Disc is safe to rip.\n";
+		if (result.totalC2Sectors == 0)
+			std::cout << "  No C2 errors, but C1 rate is elevated. Margin is narrowing.\n";
+		else
+			std::cout << "  Minor errors within acceptable limits. Disc is safe to rip.\n";
 	}
 	else if (result.qualityRating == "ACCEPTABLE") {
-		std::cout << "  Moderate error rate. Recommend secure rip mode.\n";
+		if (result.totalC2Sectors == 0)
+			std::cout << "  No C2 errors yet, but C1 rate is high. Rip soon at low speed.\n";
+		else
+			std::cout << "  Moderate error rate. Recommend secure rip mode.\n";
 	}
 	else if (result.qualityRating == "FAIR") {
-		std::cout << "  Elevated error rate. Use secure or paranoid rip mode.\n";
+		if (result.totalC2Sectors == 0)
+			std::cout << "  C1 rate exceeds Red Book limit. C2 errors may appear under stress.\n";
+		else
+			std::cout << "  Elevated error rate. Use secure or paranoid rip mode.\n";
 	}
 	else if (result.qualityRating == "POOR") {
-		std::cout << "  High error rate. Use Paranoid rip mode. Consider cleaning disc.\n";
+		std::cout << "  High C2 error rate. Use Paranoid rip mode. Consider cleaning disc.\n";
 	}
 	else {
 		std::cout << "  Read failures detected. Some data may be unrecoverable.\n";
@@ -503,10 +689,10 @@ void AudioCDCopier::PrintBlerGraph(const BlerResult& result, int width, int heig
 		if (maxC1 > 220) {
 			std::cout << std::string(padding, ' ')
 				<< "!! Peak C1/sec (" << maxC1 << ") exceeds Red Book BLER limit (220/sec)\n";
-   		}
+		}
 	}
 
-	// ── C2 Error Distribution Graph (existing) ──
+	// ── C2 Error Distribution Graph ──
 	if (result.totalC2Errors == 0 && result.totalReadFailures == 0) {
 		std::cout << "\n=== C2 Error Distribution ===\n";
 		std::cout << "  No C2 errors — graph skipped.\n";

@@ -253,6 +253,8 @@ bool AudioCDCopier::RunC2Scan(const DiscInfo& disc, BlerResult& result, int scan
 			else {
 				// SCSI command failed completely - this is a read failure
 				result.totalReadFailures++;
+				result.totalC2Sectors++;                          // count as an error sector
+				result.perSecondC2[secIdx].second++;              // register in per-second data
 				currentErrorRun++;
 				if (currentErrorRun > result.consecutiveErrorSectors) {
 					result.consecutiveErrorSectors = currentErrorRun;

@@ -165,6 +165,17 @@ bool ScsiDrive::ReadSectorWithC2Ex(DWORD lba, BYTE* audio, BYTE* subchannel,
 	if (!useErrorBlock) {
 		if (outC1BlockErrors) *outC1BlockErrors = static_cast<int>(c2Data[294]);
 		if (outC2BlockErrors) *outC2BlockErrors = static_cast<int>(c2Data[295]);
+
+		// Cross-check: the drive's CIRC decoder reports its own C2 block error
+		// count in byte 295.  If it says zero but the pointer bitmap produced a
+		// non-zero count, the bitmap contains drive-specific padding/status bytes
+		// rather than real error pointers.  Trust the hardware counter.
+		if (c2Errors > 0 && c2Data[295] == 0 && senseKey == 0x00) {
+			c2Errors = 0;
+			if (c2Raw) {
+				memset(c2Raw, 0, C2_POINTER_BYTES);
+			}
+		}
 	}
 	else {
 		if (outC1BlockErrors) *outC1BlockErrors = 0;
@@ -239,7 +250,9 @@ bool ScsiDrive::ReadSectorWithC2ExMultiPass(DWORD lba, BYTE* audio, BYTE* subcha
 	c2Errors = 0;
 	for (int i = 0; i < C2_POINTER_BYTES; i++) {
 		if (options.countBytes) {
-			if (aggregatedC2[i] != 0) c2Errors++;
+			// PlexTools-style: in ErrorPointers mode, 0xFF means "no error
+			// sample pointer" — only non-0xFF bytes indicate actual errors.
+			if (aggregatedC2[i] != 0 && aggregatedC2[i] != 0xFF) c2Errors++;
 		}
 		else {
 			BYTE b = aggregatedC2[i];

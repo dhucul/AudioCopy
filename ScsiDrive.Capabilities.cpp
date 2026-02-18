@@ -21,8 +21,8 @@ bool ScsiDrive::CheckC2Support() {
 		bool ok = SendSCSIWithSense(cdb, 12, buffer.data(), SECTOR_WITH_C2_SIZE, &sk, &a, &aq);
 		if (ok || sk == 0x01) {  // Recovered error = command worked, data valid
 			m_c2Mode = C2Mode::PlextorD8;
-			// D8 always provides C1 block errors in byte 294
-			m_c1BlockErrorsAvailable = true;
+			// Verify actual data availability (avoid fake reporting)
+			m_c1BlockErrorsAvailable = ProbeC1BlockErrors();
 			return true;
 		}
 	}
@@ -37,7 +37,8 @@ bool ScsiDrive::CheckC2Support() {
 	bool ok = SendSCSIWithSense(cdb1, 12, buffer.data(), SECTOR_WITH_C2_SIZE, &sk, &a, &aq);
 	if (ok || sk == 0x01) {
 		m_c2Mode = C2Mode::ErrorPointers;
-		m_c1BlockErrorsAvailable = true;
+		// Verify actual data availability
+		m_c1BlockErrorsAvailable = ProbeC1BlockErrors();
 		return true;
 	}
 
@@ -548,47 +549,48 @@ bool ScsiDrive::SupportsC1BlockErrors() const {
 
 bool ScsiDrive::ProbeC1BlockErrors() {
 	// Read several sectors spread across the disc and check whether byte 294
-	// (C1 block errors) is ever non-zero.  Even pristine discs have routine
-	// C1 corrections (typically 1-50/sec), so if the drive reports them we
-	// should see non-zero values within a modest sample.
-	//
-	// We sample 150 sectors (~2 seconds of audio) at 3 positions: LBA 0,
-	// mid-disc, and near the end.  If ALL are zero, the drive likely doesn't
-	// populate these bytes.
-
-	static constexpr int SAMPLES_PER_ZONE = 50;
+	// (C1 block errors) or the hardware counter is ever non-zero.
+	// Even pristine discs have routine C1 corrections (typically 1-50/sec),
+	// so if the drive reports them, we should see non-zero values within a modest sample.
+	
+	// Use different probe locations (Lead-in zone, middle, outer)
+	static constexpr int SAMPLES_PER_ZONE = 25;
 	static constexpr DWORD PROBE_LBAS[] = { 0, 75000, 200000 };
 
-	BYTE cdb[12] = {};
-	cdb[0] = SCSI_READ_CD;
-	cdb[1] = 0x04;
-	cdb[8] = 1;
-	cdb[9] = 0xFC;  // Audio + C2 error pointers + block error
-	cdb[10] = 0x00;
+	BYTE audio[AUDIO_SECTOR_SIZE];
+	C2ReadOptions opts;
+	opts.countBytes = false;
+	opts.defeatCache = false;
+	opts.multiPass = false;
 
-	std::vector<BYTE> buffer(SECTOR_WITH_C2_SIZE);
+	// Ensure drive is open
+	if (!IsOpen()) return false;
 
 	for (DWORD baseLBA : PROBE_LBAS) {
 		for (int i = 0; i < SAMPLES_PER_ZONE; i++) {
 			DWORD lba = baseLBA + i;
-			cdb[2] = (lba >> 24) & 0xFF;
-			cdb[3] = (lba >> 16) & 0xFF;
-			cdb[4] = (lba >> 8) & 0xFF;
-			cdb[5] = lba & 0xFF;
+			int c2Errors = 0;
+			int c1Block = 0;
+			int c2Block = 0;
 
-			BYTE sk = 0, a = 0, aq = 0;
-			if (!SendSCSIWithSense(cdb, 12, buffer.data(), SECTOR_WITH_C2_SIZE,
-				&sk, &a, &aq) && sk > 0x01) {
-				continue;  // Read failed — skip this sector
-			}
+			// Use ReadSectorWithC2Ex to automatically handle the active c2Mode 
+			// (PlextorD8 vs ErrorPointers) instead of hardcoding raw SCSI commands.
+			// This ensures we test the same path the actual scanner uses.
+			bool ok = ReadSectorWithC2Ex(lba, audio, nullptr, c2Errors, nullptr, opts, 
+				nullptr, nullptr, nullptr, &c1Block, &c2Block);
 
-			// Byte 294 of the C2 region = C1 block error count
-			BYTE c1 = buffer[AUDIO_SECTOR_SIZE + 294];
-			if (c1 != 0) {
-				return true;  // Drive populates C1 data
+			if (ok) {
+				// If we see *any* C1 activity in the block error counter, the feature works.
+				if (c1Block > 0) {
+					char msg[64];
+					snprintf(msg, 64, "ProbeC1: LBA %d returned C1=%d\n", lba, c1Block);
+					OutputDebugStringA(msg);
+					return true;
+				}
 			}
 		}
 	}
 
+	OutputDebugStringA("ProbeC1: All samples returned 0 C1 errors. C1 reporting not supported.\n");
 	return false;  // All samples returned zero — C1 not available
 }

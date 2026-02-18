@@ -54,36 +54,44 @@ struct QCheckResult {
 // Captures the output of a detailed error-rate scan.  BLER measures raw error
 // frequency before ECC correction.  Red Book spec: < 220 errors/second avg.
 struct BlerResult {
-	DWORD totalSectors = 0;                    // Sectors scanned
-	DWORD totalSeconds = 0;                    // Disc playing time covered
-	int totalC2Errors = 0;                     // Sum of all C2 errors
-	int totalC2Sectors = 0;                    // Sectors with at least one C2 error
-	int totalReadFailures = 0;                 // Sectors that failed to read entirely
-	double avgC2PerSecond = 0.0;               // Mean C2 errors per second
-	int maxC2PerSecond = 0;                    // Peak C2 errors in any single second
-	DWORD worstSecondLBA = 0;                  // LBA at start of the worst second
-	int maxC2InSingleSector = 0;               // Highest C2 count in a single sector
-	DWORD worstSectorLBA = 0;                  // LBA of that worst sector
-	int consecutiveErrorSectors = 0;           // Longest consecutive error run
-	std::vector<std::pair<int, int>> perSecondC2; // (start LBA, C2 count) per second
-	std::string qualityRating;                 // Overall quality grade
+	DWORD totalSectors = 0;
+	DWORD totalSeconds = 0;
+	int totalC2Errors = 0;
+	int totalC2Sectors = 0;
+	int totalReadFailures = 0;
+	double avgC2PerSecond = 0.0;
+	int maxC2PerSecond = 0;
+	DWORD worstSecondLBA = 0;
+	int maxC2InSingleSector = 0;
+	DWORD worstSectorLBA = 0;
+	int consecutiveErrorSectors = 0;
+	std::vector<std::pair<int, int>> perSecondC2;
+	std::string qualityRating;
 
-	// ── Plextor C1 error data (available only with Plextor drives) ──
-	bool hasC1Data = false;                    // true if C1 block errors were collected
-	int totalC1Errors = 0;                     // Sum of all C1 block errors
-	int totalC1Sectors = 0;                    // Sectors with at least one C1 error
-	double avgC1PerSecond = 0.0;               // Mean C1 errors per second
-	int maxC1PerSecond = 0;                    // Peak C1 errors in any single second
-	int maxC1InSingleSector = 0;               // Highest C1 count in a single sector
-	DWORD worstC1SectorLBA = 0;                // LBA of that worst C1 sector
-	std::vector<std::pair<int, int>> perSecondC1; // (start LBA, C1 count) per second
+	bool hasC1Data = false;
+	int totalC1Errors = 0;
+	int totalC1Sectors = 0;
+	double avgC1PerSecond = 0.0;
+	int maxC1PerSecond = 0;
+	DWORD worstC1SecondLBA = 0;                // LBA at start of the worst C1 second
+	int maxC1InSingleSector = 0;
+	DWORD worstC1SectorLBA = 0;
+	std::vector<std::pair<int, int>> perSecondC1;
 
-	// Optional zone / cluster analysis for BLER data
+	// Top-N worst individual sectors by C2 error count (LBA, C2 count)
+	std::vector<std::pair<DWORD, int>> topWorstC2Sectors;
+
 	DiscZoneStats zoneStats;
 	std::vector<ErrorCluster> errorClusters;
 	int largestClusterSize = 0;
 	bool hasEdgeConcentration = false;
 	bool hasProgressivePattern = false;
+
+	// C1 BLER margin / C2 proximity analysis (populated when hasC1Data is true)
+	double c1UtilizationPct = -1.0;      // -1 = C1 data unavailable
+	double peakC1UtilizationPct = -1.0;  // -1 = C1 data unavailable
+	int c2MarginScore = -1;              // 0–100; higher = more headroom; -1 = unavailable
+	std::string c2MarginLabel;           // "WIDE", "ADEQUATE", "NARROW", "CRITICAL"
 };
 
 // ── Disc rot analysis results ───────────────────────────────────────────────
