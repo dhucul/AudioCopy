@@ -44,17 +44,18 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 		PrintMenuItem(16, "C2 validation test");
 		PrintMenuItem(17, "Speed comparison test");
 		PrintMenuItem(18, "Seek time analysis");
+		PrintMenuItem(19, "Plextor Q-Check scan (hardware C1/C2/CU)");
 
 		// ── Utility ─────────────────────────────────────────────────────
 		PrintMenuSection("Utility");
-		PrintMenuItem(19, "Rescan disc");
-		PrintMenuItem(20, "Help (test descriptions)");
-		PrintMenuItem(21, "Exit", true);
+		PrintMenuItem(20, "Rescan disc");
+		PrintMenuItem(21, "Help (test descriptions)");
+		PrintMenuItem(22, "Exit", true);
 
 		Console::BoxFooter();
 		std::cout << Console::Sym::Arrow << " Choice: ";
 
-		int choice = GetMenuChoice(1, 21, 1);
+		int choice = GetMenuChoice(1, 22, 1);
 		std::cin.clear();
 		if (std::cin.peek() == '\n') {
 			std::cin.ignore();
@@ -360,12 +361,40 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
+			   // ── 19. Plextor Q-Check scan ───────────────────────────────
+		case 19: {
+			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
+			QCheckResult qcheckResult;
+			if (copier.RunQCheckScan(disc, qcheckResult)) {
+				// Save Q-Check results to CSV (consistent with other scan types)
+				std::wstring logPath = workDir + L"\\qcheck_scan.csv";
+				if (copier.SaveQCheckLog(qcheckResult, logPath)) {
+					Console::Success("Q-Check scan log saved to: ");
+					std::wcout << logPath << L"\n";
+				}
+			}
+			else {
+				if (!qcheckResult.supported) {
+					Console::Warning("Q-Check is not available on this drive.\n");
+					Console::Info("Q-Check requires a classic Plextor drive:\n");
+					Console::Info("  PX-708A, PX-712A/SA, PX-716A/SA/AL, PX-755A/SA, PX-760A/SA\n");
+					Console::Info("\nIf your drive supports D8 reads, use option 4 (BLER Scan) for\n");
+					Console::Info("C2 error analysis. C1 block error rates are not measurable\n");
+					Console::Info("without a Q-Check-capable drive.\n");
+				}
+				else {
+					Console::Error("Q-Check scan failed.\n");
+				}
+			}
+			break;
+		}
+
 			   // ════════════════════════════════════════════════════════════
 			   //  Utility
 			   // ════════════════════════════════════════════════════════════
 
-				  // ── 19. Rescan disc ────────────────────────────────────────
-		case 19: {
+				  // ── 20. Rescan disc ────────────────────────────────────────
+		case 20: {
 			Console::Info("\nScanning drives...\n");
 			wchar_t newAudioDrive = 0;
 			std::vector<wchar_t> newAudioDrives;
@@ -425,13 +454,13 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 20. Help ───────────────────────────────────────────────
-		case 20:
+			   // ── 21. Help ───────────────────────────────────────────────
+		case 21:
 			PrintHelpMenu();
 			break;
 
-			// ── 21. Exit ───────────────────────────────────────────────
-		case 21:
+			// ── 22. Exit ───────────────────────────────────────────────
+		case 22:
 			copier.Close();
 			Console::Success("\nGoodbye!\n");
 			return 0;
@@ -441,7 +470,7 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-		if (choice != 21) {
+		if (choice != 22) {
 			WaitForKey();
 		}
 	}

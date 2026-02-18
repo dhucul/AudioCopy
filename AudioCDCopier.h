@@ -51,6 +51,9 @@ public:
 
 	// Quality scanning
 	bool RunBlerScan(const DiscInfo& disc, BlerResult& result, int scanSpeed = 8);
+	bool RunQCheckScan(const DiscInfo& disc, QCheckResult& result);
+	void PrintQCheckReport(const QCheckResult& result);
+	bool SaveQCheckLog(const QCheckResult& result, const std::wstring& filename);
 	bool RunC2Scan(const DiscInfo& disc, BlerResult& result, int scanSpeed = 8);
 	void PrintC2ScanReport(const BlerResult& result, const DiscInfo& disc, int scanSpeed);
 	void PrintC2Chart(const BlerResult& result, int width = 60, int height = 10);

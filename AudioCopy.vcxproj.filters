@@ -148,6 +148,12 @@
     <ClCompile Include="AudioCDCopier_WriteDisc_CDText.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ScsiDrive.QCheck.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_QCheck.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DiscTypes.h">

@@ -77,10 +77,22 @@ bool ScsiDrive::SendSCSIWithSense(void* cdb, BYTE cdbLength, void* buffer, DWORD
 	sptd->Length = sizeof(SCSI_PASS_THROUGH_DIRECT);
 	sptd->CdbLength = cdbLength;
 	sptd->SenseInfoLength = SENSE_SIZE;
-	sptd->DataIn = dataIn ? SCSI_IOCTL_DATA_IN : SCSI_IOCTL_DATA_OUT;
-	sptd->DataTransferLength = bufferSize;
+
+	// FIX: When buffer is null or size is 0, use SCSI_IOCTL_DATA_UNSPECIFIED
+	// (no data transfer).  Using DATA_OUT with a null buffer causes some
+	// SCSI miniport drivers to silently fail or drop the command entirely.
+	if (buffer == nullptr || bufferSize == 0) {
+		sptd->DataIn = SCSI_IOCTL_DATA_UNSPECIFIED;
+		sptd->DataTransferLength = 0;
+		sptd->DataBuffer = nullptr;
+	}
+	else {
+		sptd->DataIn = dataIn ? SCSI_IOCTL_DATA_IN : SCSI_IOCTL_DATA_OUT;
+		sptd->DataTransferLength = bufferSize;
+		sptd->DataBuffer = buffer;
+	}
+
 	sptd->TimeOutValue = 60;
-	sptd->DataBuffer = buffer;
 	sptd->SenseInfoOffset = sizeof(SCSI_PASS_THROUGH_DIRECT);
 	memcpy(sptd->Cdb, cdb, cdbLength);
 

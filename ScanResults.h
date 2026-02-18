@@ -10,6 +10,46 @@
 #include <string>
 #include <utility>
 
+// ── Per-second sample from Plextor Q-Check hardware scan ────────────────────
+struct QCheckSample {
+	DWORD lba = 0;          // Approximate LBA at this time slice
+	int c1 = 0;             // C1 (BLER) error count for this second
+	int c2 = 0;             // C2 (E22) error count for this second
+	int cu = 0;             // CU (uncorrectable) count for this second
+};
+
+// ── Plextor Q-Check scan result ─────────────────────────────────────────────
+// Populated by the hardware-driven quality scan (0xE9/0xEB vendor commands).
+// This is the same measurement QPXTool performs — aggregate CIRC decoder
+// statistics per time slice, without transferring audio data.
+struct QCheckResult {
+	bool supported = false;                    // True if drive accepted 0xE9
+	DWORD totalSectors = 0;                    // Disc sectors covered
+	DWORD totalSeconds = 0;                    // Scan duration in time slices
+
+	// Aggregate C1 statistics
+	int totalC1 = 0;
+	double avgC1PerSecond = 0.0;
+	int maxC1PerSecond = 0;
+	int maxC1SecondIndex = -1;
+
+	// Aggregate C2 statistics
+	int totalC2 = 0;
+	double avgC2PerSecond = 0.0;
+	int maxC2PerSecond = 0;
+	int maxC2SecondIndex = -1;
+
+	// Aggregate CU statistics
+	int totalCU = 0;
+	int maxCUPerSecond = 0;
+
+	// Per-second time-series data
+	std::vector<QCheckSample> samples;
+
+	// Quality assessment
+	std::string qualityRating;                 // EXCELLENT / GOOD / FAIR / POOR / BAD
+};
+
 // ── BLER (Block Error Rate) scan result ─────────────────────────────────────
 // Captures the output of a detailed error-rate scan.  BLER measures raw error
 // frequency before ECC correction.  Red Book spec: < 220 errors/second avg.
@@ -21,7 +61,7 @@ struct BlerResult {
 	int totalReadFailures = 0;                 // Sectors that failed to read entirely
 	double avgC2PerSecond = 0.0;               // Mean C2 errors per second
 	int maxC2PerSecond = 0;                    // Peak C2 errors in any single second
-	int worstSecondLBA = 0;                    // LBA at start of the worst second
+	DWORD worstSecondLBA = 0;                  // LBA at start of the worst second
 	int maxC2InSingleSector = 0;               // Highest C2 count in a single sector
 	DWORD worstSectorLBA = 0;                  // LBA of that worst sector
 	int consecutiveErrorSectors = 0;           // Longest consecutive error run

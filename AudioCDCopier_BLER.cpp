@@ -246,10 +246,11 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 
 	if (result.totalReadFailures > 0) result.qualityRating = "BAD";
 	else if (result.totalC2Sectors == 0) result.qualityRating = "EXCELLENT";
-	else if (result.maxC2InSingleSector >= 100) result.qualityRating = "POOR";
 	else if (result.avgC2PerSecond < 1.0 && result.consecutiveErrorSectors < 3
 		&& result.maxC2InSingleSector < 50) result.qualityRating = "GOOD";
-	else if (result.avgC2PerSecond < 10.0 && result.consecutiveErrorSectors < 10) result.qualityRating = "ACCEPTABLE";
+	else if (result.avgC2PerSecond < 10.0 && result.consecutiveErrorSectors < 10
+		&& result.maxC2InSingleSector < 100) result.qualityRating = "ACCEPTABLE";
+	else if (result.avgC2PerSecond < 50.0) result.qualityRating = "FAIR";
 	else result.qualityRating = "POOR";
 
 	std::cout << "\n" << std::string(60, '=') << "\n";
@@ -294,10 +295,14 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 			std::cout << "  C1 Assessment:        POOR — exceeds Red Book BLER limit\n";
 	}
 
-	std::cout << "\n--- Red Book Compliance ---\n";
-	bool blerPass = result.avgC2PerSecond < 220.0;
+	std::cout << "\n--- C2 Error Statistics ---\n";
 	std::cout << "  Avg C2/sec:       " << std::fixed << std::setprecision(2) << result.avgC2PerSecond;
-	std::cout << (blerPass ? "  [PASS]" : "  [FAIL]") << "  (limit: 220/sec)\n";
+	if (result.avgC2PerSecond == 0.0)
+		std::cout << "  [PASS]  (no uncorrectable errors)\n";
+	else if (result.avgC2PerSecond < 1.0)
+		std::cout << "  [WARN]  (minor uncorrectable errors)\n";
+	else
+		std::cout << "  [FAIL]  (significant uncorrectable errors)\n";
 	std::cout << "  Max C2/sec:       " << result.maxC2PerSecond;
 	if (result.maxC2PerSecond > 0) {
 		int worstMin = (result.worstSecondLBA / 75) / 60;
@@ -363,7 +368,8 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 					trackC2 += result.perSecondC2[i].second;
 					trackC2Seconds++;
 				}
-				if (hasC1Support && i < result.perSecondC1.size()) {
+				if (hasC1Support && i < result.perSecondC1.size()
+					&& result.perSecondC1[i].second > 0) {
 					trackC1 += result.perSecondC1[i].second;
 				}
 			}
@@ -413,6 +419,9 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 	}
 	else if (result.qualityRating == "ACCEPTABLE") {
 		std::cout << "  Moderate error rate. Recommend secure rip mode.\n";
+	}
+	else if (result.qualityRating == "FAIR") {
+		std::cout << "  Elevated error rate. Use secure or paranoid rip mode.\n";
 	}
 	else if (result.qualityRating == "POOR") {
 		std::cout << "  High error rate. Use Paranoid rip mode. Consider cleaning disc.\n";
@@ -498,67 +507,75 @@ void AudioCDCopier::PrintBlerGraph(const BlerResult& result, int width, int heig
 	}
 
 	// ── C2 Error Distribution Graph (existing) ──
-	std::cout << "\n=== C2 Error Distribution ===\n";
-	std::cout << "  Each column = a time slice of the disc; height = C2 error count\n\n";
-
-	int maxC2 = 1;
-	for (const auto& p : result.perSecondC2) {
-		if (p.second > maxC2) maxC2 = p.second;
+	if (result.totalC2Errors == 0 && result.totalReadFailures == 0) {
+		std::cout << "\n=== C2 Error Distribution ===\n";
+		std::cout << "  No C2 errors — graph skipped.\n";
 	}
+	else {
+		std::cout << "\n=== C2 Error Distribution ===\n";
+		std::cout << "  Each column = a time slice of the disc; height = C2 error count\n\n";
 
-	std::vector<int> buckets(width, 0);
-	size_t dataSize = result.perSecondC2.size();
-	for (size_t i = 0; i < dataSize; i++) {
-		size_t bucket = (i * static_cast<size_t>(width)) / dataSize;
-		if (bucket >= static_cast<size_t>(width)) bucket = static_cast<size_t>(width) - 1;
-		buckets[bucket] = std::max(buckets[bucket], result.perSecondC2[i].second);
-	}
-
-	int labelWidth = std::max(4, static_cast<int>(std::to_string(maxC2).length()) + 1);
-
-	for (int row = height; row > 0; row--) {
-		int threshold = (maxC2 * row) / height;
-
-		// Y-axis labels at top, middle, and bottom rows
-		if (row == height)
-			std::cout << std::setw(labelWidth) << maxC2 << " |";
-		else if (row == (height + 1) / 2)
-			std::cout << std::setw(labelWidth) << (maxC2 / 2) << " |";
-		else if (row == 1)
-			std::cout << std::setw(labelWidth) << 0 << " |";
-		else
-			std::cout << std::string(labelWidth, ' ') << " |";
-
-		for (int col = 0; col < width; col++) {
-			if (buckets[col] >= threshold) {
-				double severity = static_cast<double>(buckets[col]) / maxC2;
-				if (severity > 0.66) std::cout << '#';
-				else if (severity > 0.33) std::cout << '+';
-				else std::cout << '.';
-			}
-			else {
-				std::cout << ' ';
-			}
+		int maxC2 = 1;
+		for (const auto& p : result.perSecondC2) {
+			if (p.second > maxC2) maxC2 = p.second;
 		}
-		std::cout << "\n";
+
+		std::vector<int> buckets(width, 0);
+		size_t dataSize = result.perSecondC2.size();
+		for (size_t i = 0; i < dataSize; i++) {
+			size_t bucket = (i * static_cast<size_t>(width)) / dataSize;
+			if (bucket >= static_cast<size_t>(width)) bucket = static_cast<size_t>(width) - 1;
+			buckets[bucket] = std::max(buckets[bucket], result.perSecondC2[i].second);
+		}
+
+		int labelWidth = std::max(4, static_cast<int>(std::to_string(maxC2).length()) + 1);
+
+		for (int row = height; row > 0; row--) {
+			// FIX: Floor threshold at 1 to prevent 0 >= 0 rendering empty
+			// buckets as dots.  This matches the C1 graph logic.
+			int threshold = std::max(1, (maxC2 * row) / height);
+
+			// Y-axis labels at top, middle, and bottom rows
+			if (row == height)
+				std::cout << std::setw(labelWidth) << maxC2 << " |";
+			else if (row == (height + 1) / 2)
+				std::cout << std::setw(labelWidth) << (maxC2 / 2) << " |";
+			else if (row == 1)
+				std::cout << std::setw(labelWidth) << 0 << " |";
+			else
+				std::cout << std::string(labelWidth, ' ') << " |";
+
+			for (int col = 0; col < width; col++) {
+				if (buckets[col] >= threshold) {
+					double severity = static_cast<double>(buckets[col]) / maxC2;
+					if (severity > 0.66) std::cout << '#';
+					else if (severity > 0.33) std::cout << '+';
+					else std::cout << '.';
+				}
+				else {
+					std::cout << ' ';
+				}
+			}
+			std::cout << "\n";
+		}
+
+		// X-axis line
+		std::cout << std::string(labelWidth, ' ') << " +" << std::string(width, '-') << "\n";
+
+		// Time labels along X-axis
+		int padding = labelWidth + 2;
+		int endMin = result.totalSeconds / 60;
+		int endSec = result.totalSeconds % 60;
+		std::string endStr = std::to_string(endMin) + ":"
+			+ (endSec < 10 ? "0" : "") + std::to_string(endSec);
+
+		std::cout << std::string(padding, ' ') << "0:00";
+		int gap = width - 4 - static_cast<int>(endStr.length());
+		if (gap > 0) std::cout << std::string(gap, ' ');
+		std::cout << endStr << "\n";
+
+		// Legend
+		std::cout << std::string(padding, ' ')
+			<< "# = high (>66%)  + = moderate (33-66%)  . = low (<33%)\n";
 	}
-
-	// X-axis line
-	std::cout << std::string(labelWidth, ' ') << " +" << std::string(width, '-') << "\n";
-
-	// Time labels along X-axis
-	int padding = labelWidth + 2;
-	int endMin = result.totalSeconds / 60;
-	int endSec = result.totalSeconds % 60;
-	std::string endStr = std::to_string(endMin) + ":"
-		+ (endSec < 10 ? "0" : "") + std::to_string(endSec);
-
-	std::cout << std::string(padding, ' ') << "0:00";
-	int gap = width - 4 - static_cast<int>(endStr.length());
-	if (gap > 0) std::cout << std::string(gap, ' ');
-	std::cout << endStr << "\n";
-
-	// Legend
-	std::cout << std::string(padding, ' ')
-		<< "# = high (>66%)  + = moderate (33-66%)  . = low (<33%)\n";
 }

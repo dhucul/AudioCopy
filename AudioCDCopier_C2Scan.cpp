@@ -627,6 +627,14 @@ void AudioCDCopier::PrintC2ScanReport(const BlerResult& result, const DiscInfo& 
 void AudioCDCopier::PrintC2Chart(const BlerResult& result, int width, int height) {
 	if (result.perSecondC2.empty()) return;
 
+	// Skip the chart entirely when there are no errors — avoids rendering
+	// a full grid of colored dashes due to threshold dropping to 0.
+	if (result.totalC2Errors == 0 && result.totalReadFailures == 0) {
+		std::cout << "\n--- C2 Error Distribution Chart ---\n";
+		std::cout << "  No C2 errors — chart skipped.\n";
+		return;
+	}
+
 	std::cout << "\n--- C2 Error Distribution Chart ---\n";
 	std::cout << "  Time progression -> (each column = time slice)\n\n";
 
@@ -649,7 +657,9 @@ void AudioCDCopier::PrintC2Chart(const BlerResult& result, int width, int height
 
 	// Print chart rows (top to bottom)
 	for (int row = height; row > 0; row--) {
-		int threshold = (maxC2 * row) / height;
+		// FIX: Floor threshold at 1 so empty buckets (value 0) never
+		// satisfy 0 >= 0 and render as colored dashes on every row.
+		int threshold = std::max(1, (maxC2 * row) / height);
 
 		// Y-axis labels
 		if (row == height)

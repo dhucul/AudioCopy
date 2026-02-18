@@ -68,6 +68,15 @@ public:
 	bool IsPlextor();
 	bool SupportsC1BlockErrors() const;
 
+	// ── Plextor Q-Check hardware quality scan ────────────────
+	// Uses vendor commands 0xE9 (start scan) and 0xEB (poll results) to
+	// perform the same C1/C2/CU measurement that QPXTool uses.  The drive
+	// scans at ~1x internally; no audio data is transferred.
+	bool PlextorQCheckStart(DWORD startLBA, DWORD endLBA);
+	bool PlextorQCheckPoll(int& c1, int& c2, int& cu, DWORD& currentLBA, bool& scanDone);
+	bool PlextorQCheckStop();
+	bool SupportsQCheck();
+
 	// ── Drive capabilities ───────────────────────────────────
 	bool CheckC2Support();
 	bool GetDriveInfo(std::string& vendor, std::string& model);

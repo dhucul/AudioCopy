@@ -264,22 +264,38 @@ void PrintHelpMenu() {
 		"   Tests seek latency at various positions from inner to outer edge.",
 		"Diagnosing drive performance or disc readability issues." });
 
+	PrintEntry({ "19. Plextor Q-Check Scan (Hardware C1/C2/CU)",
+		"Performs a hardware-driven CIRC error measurement using Plextor vendor\n"
+		"   commands (0xE9/0xEB). The drive enters a dedicated scan mode at ~1x,\n"
+		"   reporting C1, C2, and CU (uncorrectable) error counts per time slice\n"
+		"   without transferring audio data.\n"
+		"\n"
+		"   This is the same measurement QPXTool's Q-Check performs. It provides\n"
+		"   true C1 error rates that the standard BLER scan cannot measure.\n"
+		"\n"
+		"   Requires a classic Plextor drive:\n"
+		"     PX-708A, PX-712A/SA, PX-716A/SA/AL, PX-755A/SA, PX-760A/SA\n"
+		"\n"
+		"   Other Plextor/Lite-On drives (PX-891SAF, etc.) support D8 reads\n"
+		"   but not Q-Check. Use option 4 (BLER Scan) on those drives instead.",
+		"True C1/C2/CU error rate measurement on supported Plextor drives." });
+
 	// ═════════════════════════════════════════════════════════════════════
 	//  Utility
 	// ═════════════════════════════════════════════════════════════════════
 	PrintSection("Utility");
 
-	PrintEntry({ "19. Rescan Disc",
+	PrintEntry({ "20. Rescan Disc",
 		"Re-scans drives and reloads disc metadata (TOC, CD-TEXT, ISRC, AccurateRip).\n"
 		"   Automatically detects if the drive letter changed and re-opens the handle.\n"
 		"   Supports switching between multiple drives if more than one is present.",
 		"Use after swapping discs without restarting the program." });
 
-	PrintEntry({ "20. Help (test descriptions)",
+	PrintEntry({ "21. Help (test descriptions)",
 		"Displays this help screen with detailed descriptions of each operation.",
 		"Understanding the purpose and details of each operation." });
 
-	PrintEntry({ "21. Exit",
+	PrintEntry({ "22. Exit",
 		"Exits the program.",
 		"Closing the tool when done." });
 

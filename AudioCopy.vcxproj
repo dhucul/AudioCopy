@@ -137,6 +137,7 @@
     <ClCompile Include="AudioCDCopier_DiscRot.cpp" />
     <ClCompile Include="AudioCDCopier_DriveCapabilities.cpp" />
     <ClCompile Include="AudioCDCopier_Performance.cpp" />
+    <ClCompile Include="AudioCDCopier_QCheck.cpp" />
     <ClCompile Include="AudioCDCopier_SecureRead.cpp" />
     <ClCompile Include="AudioCDCopier_StandardRead.cpp" />
     <ClCompile Include="AudioCDCopier_Surface.cpp" />
@@ -162,6 +163,7 @@
     <ClCompile Include="ScsiDrive.Capabilities.cpp" />
     <ClCompile Include="ScsiDrive.Core.cpp" />
     <ClCompile Include="ScsiDrive.Offset.cpp" />
+    <ClCompile Include="ScsiDrive.QCheck.cpp" />
     <ClCompile Include="ScsiDrive.Read.cpp" />
     <ClCompile Include="ScsiDrive.Recommendations.cpp" />
     <ClCompile Include="• AudioCDCopier_FileOutput.cpp" />
