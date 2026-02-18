@@ -510,9 +510,14 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 			}
 		}
 
-		// Count read failures for this track from the bad sector list
-		for (const auto& p : result.topWorstC2Sectors) {
-			// topWorstC2Sectors won't have failures; skip this
+		// Count read failures for this track from the error cluster list
+		for (const auto& cluster : result.errorClusters) {
+			// Overlap between cluster [cluster.startLBA, cluster.endLBA] and track [tStart, tEnd]
+			if (cluster.endLBA >= tStart && cluster.startLBA <= tEnd) {
+				DWORD overlapStart = (cluster.startLBA > tStart) ? cluster.startLBA : tStart;
+				DWORD overlapEnd = (cluster.endLBA < tEnd) ? cluster.endLBA : tEnd;
+				trackReadFailures += static_cast<int>(overlapEnd - overlapStart + 1);
+			}
 		}
 
 		double trackAvgC2 = tSeconds > 0 ? static_cast<double>(trackC2) / tSeconds : 0;
@@ -521,7 +526,8 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 		int trackSec = tSeconds % 60;
 
 		const char* status = "Perfect";
-		if (trackC2 > 100) status = "Poor";
+		if (trackReadFailures > 0) status = "BAD";
+		else if (trackC2 > 100) status = "Poor";
 		else if (trackC2 > 20) status = "Fair";
 		else if (trackC2 > 0) status = "Good";
 		else if (hasC1Support && trackC1 > 1000) status = "Fair";
