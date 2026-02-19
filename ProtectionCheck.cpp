@@ -624,7 +624,7 @@ static void CheckSubchannelManipulation(AudioCDCopier& copier, DiscInfo& disc,
 	// Raise the threshold: many drives have ~30-40% subchannel CRC errors
 	// under normal conditions due to poor subchannel ECC.  True manipulation
 	// typically shows >50% corruption plus MSF jumps.
-	if (crcFailRate > 0.50 && msfJumps > 3) {
+	if (crcFailRate > 0.50 && msfJumps > 5) {
 		ind.detected = true;
 		ind.severity = 2;   // Strong — both CRC and MSF anomalies
 		ind.description = std::to_string(crcFails) + " of " +
@@ -640,7 +640,7 @@ static void CheckSubchannelManipulation(AudioCDCopier& copier, DiscInfo& disc,
 	// drives with poor subchannel reads (high CRC failures alone) or on
 	// discs with BCD rounding artefacts (MSF jumps alone).  Now both
 	// signals must be present for even a weak detection.
-	else if (crcFailRate > 0.50 && msfJumps > 5) {
+	else if (crcFailRate > 0.50 && msfJumps > 3) {
 		ind.detected = true;
 		ind.severity = 1;   // Weak — moderate evidence
 		ind.description = std::to_string(crcFails) + " of " +
