@@ -68,6 +68,10 @@ public:
 	bool GenerateCueSheet(const DiscInfo& disc, const std::wstring& audioFilePath,
 		const std::wstring& cueOutputPath);
 
+	// BLER Analysis and Reporting
+	void AnalyzeBlerResults(BlerResult& result, const std::vector<DWORD>& errorLBAs, int scanSpeed);
+	void PrintBlerReport(const DiscInfo& disc, const BlerResult& result);
+
 	// Offset handling
 	int DetectDriveOffset();
 	bool DetectDriveOffset(OffsetDetectionResult& result);
@@ -222,4 +226,13 @@ private:
 	int CDDBSum(int n);
 	std::string Base64Encode(const BYTE* data, size_t length);
 	void SHA1Hash(const BYTE* data, size_t length, BYTE* output);
+
+	// BLER Report Helpers
+	void PrintBlerZoneStats(const BlerResult& result);
+	void PrintBlerClusters(const BlerResult& result);
+	void PrintBlerWorstSectors(const BlerResult& result);
+	void PrintBlerDensityDistribution(const BlerResult& result);
+	void PrintBlerPerTrackSummary(const DiscInfo& disc, const BlerResult& result);
+	void PrintBlerMarginAnalysis(const BlerResult& result);
+	void PrintBlerQualitySummary(const BlerResult& result);
 };

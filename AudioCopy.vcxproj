@@ -130,7 +130,10 @@
   <ItemGroup>
     <ClCompile Include="AudioCDCopier_AudioAnalysis.cpp" />
     <ClCompile Include="AudioCDCopier_BasicReading.cpp" />
-    <ClCompile Include="AudioCDCopier_BLER.cpp" />
+    <ClCompile Include="AudioCDCopier_BlerAnalysis.cpp" />
+    <ClCompile Include="AudioCDCopier_BlerGraph.cpp" />
+    <ClCompile Include="AudioCDCopier_BlerReport.cpp" />
+    <ClCompile Include="AudioCDCopier_BlerScan.cpp" />
     <ClCompile Include="AudioCDCopier_BurstRead.cpp" />
     <ClCompile Include="AudioCDCopier_C2Scan.cpp" />
     <ClCompile Include="AudioCDCopier_Comprehensive.cpp" />
