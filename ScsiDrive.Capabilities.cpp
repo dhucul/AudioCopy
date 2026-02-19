@@ -517,6 +517,14 @@ bool ScsiDrive::DetectCapabilities(DriveCapabilities& caps) {
 		if (!caps.supportsCDText && caps.vendor.find("PLEXTOR") != std::string::npos) {
 			caps.supportsCDText = true;
 		}
+
+		// LiteOn vendor override — most LiteOn drives support CD-Text
+		// The iHAS series and many LiteOn CD/DVD drives support CD-Text reading
+		if (!caps.supportsCDText && 
+			(caps.vendor.find("LITE-ON") != std::string::npos || 
+			 caps.vendor.find("LITEON") != std::string::npos)) {
+			caps.supportsCDText = true;
+		}
 	}
 
 	// CD-Text write: supported when drive can write SAO/DAO (feature 0x002E)
