@@ -25,9 +25,6 @@
     <Filter Include="Source Files\Drive">
       <UniqueIdentifier>{guid-here}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\AudioCDCopier\BLER">
-      <UniqueIdentifier>{some-guid}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AccurateRip.cpp">
@@ -154,17 +151,20 @@
     <ClCompile Include="AudioCDCopier_QCheck.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="AudioCDCopier_BlerScan.cpp">
-      <Filter>Source Files\AudioCDCopier\BLER</Filter>
-    </ClCompile>
     <ClCompile Include="AudioCDCopier_BlerAnalysis.cpp">
-      <Filter>Source Files\AudioCDCopier\BLER</Filter>
-    </ClCompile>
-    <ClCompile Include="AudioCDCopier_BlerReport.cpp">
-      <Filter>Source Files\AudioCDCopier\BLER</Filter>
+      <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="AudioCDCopier_BlerGraph.cpp">
-      <Filter>Source Files\AudioCDCopier\BLER</Filter>
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_BlerReport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_BlerScan.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ScsiDrive.Chipset.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

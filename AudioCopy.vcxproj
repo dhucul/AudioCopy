@@ -164,6 +164,7 @@
     <ClCompile Include="OffsetCalibration.cpp" />
     <ClCompile Include="ProtectionCheck.cpp" />
     <ClCompile Include="ScsiDrive.Capabilities.cpp" />
+    <ClCompile Include="ScsiDrive.Chipset.cpp" />
     <ClCompile Include="ScsiDrive.Core.cpp" />
     <ClCompile Include="ScsiDrive.Offset.cpp" />
     <ClCompile Include="ScsiDrive.QCheck.cpp" />

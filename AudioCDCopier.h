@@ -144,6 +144,10 @@ public:
 		return m_drive.GetDriveRecommendationText();
 	}
 
+	// Chipset / controller identification
+	bool DetectChipset(ChipsetInfo& info);
+	void PrintChipsetInfo(const ChipsetInfo& info);
+
 	// ── Disk Writing Operations ─────────────────────────────────────
 	bool WriteDisc(const std::wstring& binFile,
 		const std::wstring& cueFile, const std::wstring& subFile,

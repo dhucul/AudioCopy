@@ -77,12 +77,15 @@ public:
 	bool PlextorQCheckStop();
 	bool SupportsQCheck();
 
-	// ── Drive capabilities ───────────────────────────────────
+	// ── Drive capabilities ───────────────────────────────────────
 	bool CheckC2Support();
 	bool GetDriveInfo(std::string& vendor, std::string& model);
 	bool DetectCapabilities(DriveCapabilities& caps);
 	bool GetModePage2A(std::vector<BYTE>& pageData);
 	bool TestOverread(bool leadIn);
+
+	// ── Chipset / controller identification ──────────────────────
+	bool DetectChipset(ChipsetInfo& info);
 
 	// ── Drive offset detection ───────────────────────────────
 	bool DetectDriveOffset(OffsetDetectionResult& result);

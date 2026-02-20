@@ -45,17 +45,18 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 		PrintMenuItem(17, "Speed comparison test");
 		PrintMenuItem(18, "Seek time analysis");
 		PrintMenuItem(19, "Plextor Q-Check scan (hardware C1/C2/CU)");
+		PrintMenuItem(20, "Chipset identification");
 
 		// ── Utility ─────────────────────────────────────────────────────
 		PrintMenuSection("Utility");
-		PrintMenuItem(20, "Rescan disc");
-		PrintMenuItem(21, "Help (test descriptions)");
-		PrintMenuItem(22, "Exit", true);
+		PrintMenuItem(21, "Rescan disc");
+		PrintMenuItem(22, "Help (test descriptions)");
+		PrintMenuItem(23, "Exit", true);
 
 		Console::BoxFooter();
 		std::cout << Console::Sym::Arrow << " Choice: ";
 
-		int choice = GetMenuChoice(1, 22, 1);
+		int choice = GetMenuChoice(1, 23, 1);
 		std::cin.clear();
 		if (std::cin.peek() == '\n') {
 			std::cin.ignore();
@@ -366,7 +367,6 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			QCheckResult qcheckResult;
 			if (copier.RunQCheckScan(disc, qcheckResult)) {
-				// Save Q-Check results to CSV (consistent with other scan types)
 				std::wstring logPath = workDir + L"\\qcheck_scan.csv";
 				if (copier.SaveQCheckLog(qcheckResult, logPath)) {
 					Console::Success("Q-Check scan log saved to: ");
@@ -389,12 +389,26 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
+			   // ── 20. Chipset identification ─────────────────────────────
+		case 20: {
+			Console::Info("\nIdentifying drive chipset / controller...\n");
+			ChipsetInfo chipsetInfo;
+			if (copier.DetectChipset(chipsetInfo)) {
+				copier.PrintChipsetInfo(chipsetInfo);
+			}
+			else {
+				Console::Error("Failed to identify drive chipset.\n");
+			}
+			WaitForKey("\nPress any key to continue...");
+			break;
+		}
+
 			   // ════════════════════════════════════════════════════════════
 			   //  Utility
 			   // ════════════════════════════════════════════════════════════
 
-				  // ── 20. Rescan disc ────────────────────────────────────────
-		case 20: {
+				  // ── 21. Rescan disc ────────────────────────────────────────
+		case 21: {
 			Console::Info("\nScanning drives...\n");
 			wchar_t newAudioDrive = 0;
 			std::vector<wchar_t> newAudioDrives;
@@ -454,13 +468,13 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 21. Help ───────────────────────────────────────────────
-		case 21:
+			   // ── 22. Help ───────────────────────────────────────────────
+		case 22:
 			PrintHelpMenu();
 			break;
 
-			// ── 22. Exit ───────────────────────────────────────────────
-		case 22:
+			// ── 23. Exit ───────────────────────────────────────────────
+		case 23:
 			copier.Close();
 			Console::Success("\nGoodbye!\n");
 			return 0;
@@ -470,7 +484,7 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-		if (choice != 22) {
+		if (choice != 23) {
 			WaitForKey();
 		}
 	}

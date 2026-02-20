@@ -20,6 +20,41 @@ struct DriveHealthCheck {
 	int firmwareErrors = 0;        // Firmware-reported error count
 };
 
+// ── CD-ROM chipset / controller identification ──────────────────────────────
+// Populated by probing SCSI INQUIRY data, vendor strings, firmware signatures,
+// and known model-to-chipset mappings.  Useful for understanding drive quirks
+// and setting optimal extraction parameters.
+enum class ChipsetFamily {
+	Unknown,
+	MediaTek,        // MediaTek (formerly MT1818/MT1898 etc.) - most modern slim drives
+	Renesas,         // Renesas (NEC) - used in many USB/laptop drives
+	Panasonic,       // Panasonic/Matsushita MN103 series
+	Sanyo,           // Sanyo LC897xx series - older CD/DVD
+	Philips,         // Philips SAA78xx / CDD series
+	Sony,            // Sony CXD series
+	Plextor,         // Plextor custom (Sanyo-derived) - premium audio drives
+	LiteOn,          // LiteOn (MediaTek-based) - common desktop drives
+	Pioneer,         // Pioneer custom chipsets
+	Realtek,         // Realtek USB bridge controllers
+	JMicron,         // JMicron JMS578/JMS567 USB-SATA bridges
+	ASMedia,         // ASMedia ASM1153/ASM1351 USB bridges
+	VIA,             // VIA VT6315 / VT1708 series
+	NEC,             // NEC/Renesas legacy controllers
+	Ricoh            // Ricoh controllers
+};
+
+struct ChipsetInfo {
+	ChipsetFamily family = ChipsetFamily::Unknown;
+	std::string chipsetName;           // e.g. "MediaTek MT1959"
+	std::string detectionMethod;       // How the chipset was identified
+	std::string interfaceType;         // "SATA", "USB", "IDE/ATAPI"
+	std::string usbBridge;             // USB bridge chip if detected (e.g. "JMicron JMS578")
+	bool isUSBAttached = false;        // Drive is behind a USB bridge
+	bool knownAudioQuirks = false;     // Chipset has known audio extraction issues
+	std::string quirkDescription;      // Description of known quirks
+	int confidencePercent = 0;         // 0-100 detection confidence
+};
+
 // ── Drive capabilities descriptor ───────────────────────────────────────────
 // Populated by querying the drive's SCSI MODE SENSE / GET CONFIGURATION pages.
 // Used to determine rip-quality suitability and available features.
