@@ -6,7 +6,7 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
-// ... other includes as needed
+#include <map>
 
 // ============================================================================
 // TOC Reading
@@ -304,6 +304,7 @@ bool AudioCDCopier::ReadFullTOC(DiscInfo& disc) {
 	bool hasFullToc = m_drive.SendSCSI(fullTocCdb, 10, fullToc.data(), 2048);
 
 	std::vector<int> trackSession(100, 1);
+	std::map<int, DWORD> sessionLeadOut;  // session number → lead-out LBA
 	if (hasFullToc) {
 		int fullTocLen = (fullToc[0] << 8) | fullToc[1];
 		int endOffset = (fullTocLen + 2 < 2048) ? fullTocLen + 2 : 2048;
@@ -313,6 +314,16 @@ bool AudioCDCopier::ReadFullTOC(DiscInfo& disc) {
 			int session = p[0];
 			int point = p[3];
 			if (point >= 1 && point <= 99) trackSession[point] = session;
+
+			// Point 0xA2 = lead-out start address for this session (MSF in PMIN/PSEC/PFRAME)
+			if (point == 0xA2) {
+				int pmin = p[8];
+				int psec = p[9];
+				int pframe = p[10];
+				DWORD leadOutLBA = static_cast<DWORD>((pmin * 60 + psec) * 75 + pframe) - 150;
+				sessionLeadOut[session] = leadOutLBA;
+			}
+
 			p += 11;
 		}
 	}
@@ -335,8 +346,18 @@ bool AudioCDCopier::ReadFullTOC(DiscInfo& disc) {
 			DWORD nextLBA = (static_cast<DWORD>(nextTd[4]) << 24) |
 				(static_cast<DWORD>(nextTd[5]) << 16) |
 				(static_cast<DWORD>(nextTd[6]) << 8) |
-				static_cast<DWORD>(nextTd[7]);  // ✅ FIXED
+				static_cast<DWORD>(nextTd[7]);
 			t.endLBA = nextLBA - 1;
+
+			// If next track is in a different session, cap endLBA at this
+			// session's lead-out to avoid scanning the inter-session gap.
+			int nextSession = trackSession[tocBuf[4 + (i + 1) * 8 + 2]]; // next track's session
+			if (nextSession != t.session) {
+				auto it = sessionLeadOut.find(t.session);
+				if (it != sessionLeadOut.end() && it->second - 1 < t.endLBA) {
+					t.endLBA = it->second - 1;
+				}
+			}
 		}
 		else {
 			BYTE* leadOut = tocBuf.data() + 4 + n * 8;

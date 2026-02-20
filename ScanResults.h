@@ -67,7 +67,7 @@ struct BlerResult {
 	int maxC2InSingleSector = 0;
 	DWORD worstSectorLBA = 0;
 	int consecutiveErrorSectors = 0;
-	std::vector<std::pair<int, int>> perSecondC2;
+	std::vector<std::pair<DWORD, int>> perSecondC2;
 	std::string qualityRating;
 
 	bool hasC1Data = false;
@@ -78,7 +78,7 @@ struct BlerResult {
 	DWORD worstC1SecondLBA = 0;                // LBA at start of the worst C1 second
 	int maxC1InSingleSector = 0;
 	DWORD worstC1SectorLBA = 0;
-	std::vector<std::pair<int, int>> perSecondC1;
+	std::vector<std::pair<DWORD, int>> perSecondC1;
 
 	// Top-N worst individual sectors by C2 error count (LBA, C2 count)
 	std::vector<std::pair<DWORD, int>> topWorstC2Sectors;

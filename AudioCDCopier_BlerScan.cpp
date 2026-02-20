@@ -84,6 +84,7 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 	for (const auto& t : disc.tracks) {
 		if (!t.isAudio) continue;
 		DWORD start = (t.trackNumber == 1) ? 0 : t.pregapLBA;
+		currentErrorRun = 0;  // reset at each track boundary
 
 		for (DWORD lba = start; lba <= t.endLBA; lba++) {
 			if (g_interrupt.IsInterrupted() || g_interrupt.CheckEscapeKey()) {
@@ -106,9 +107,9 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 
 			// Record the starting LBA for each time bucket
 			if (scannedSectors % 75 == 0) {
-				result.perSecondC2[secIdx].first = static_cast<int>(lba);
+				result.perSecondC2[secIdx].first = lba;
 				if (hasC1Support)
-					result.perSecondC1[secIdx].first = static_cast<int>(lba);
+					result.perSecondC1[secIdx].first = lba;
 			}
 
 			bool readSuccess = m_drive.ReadSectorWithC2Ex(

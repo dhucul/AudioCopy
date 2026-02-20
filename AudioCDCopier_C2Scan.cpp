@@ -149,6 +149,7 @@ bool AudioCDCopier::RunC2Scan(const DiscInfo& disc, BlerResult& result, int scan
 	for (const auto& t : disc.tracks) {
 		if (!t.isAudio) continue;
 		DWORD start = (t.trackNumber == 1) ? 0 : t.pregapLBA;
+		currentErrorRun = 0;  // reset at each track boundary
 
 		for (DWORD lba = start; lba <= t.endLBA; lba++) {
 			// Check for user interrupt
@@ -172,7 +173,7 @@ bool AudioCDCopier::RunC2Scan(const DiscInfo& disc, BlerResult& result, int scan
 
 			// Record starting LBA for each time bucket
 			if (scannedSectors % 75 == 0)
-				result.perSecondC2[secIdx].first = static_cast<int>(lba);
+				result.perSecondC2[secIdx].first = lba;
 
 			// Read sector with C2 error detection
 			bool readSuccess = m_drive.ReadSectorWithC2Ex(lba, buf.data(), nullptr, c2Errors,
@@ -312,28 +313,29 @@ bool AudioCDCopier::RunC2Scan(const DiscInfo& disc, BlerResult& result, int scan
 	double innerRate = result.zoneStats.InnerErrorRate();
 	double middleRate = result.zoneStats.MiddleErrorRate();
 	double outerRate = result.zoneStats.OuterErrorRate();
-	if (middleRate > 0.0) {
-		result.hasEdgeConcentration = (innerRate > middleRate * 3.0) || (outerRate > middleRate * 3.0);
-	}
-	else {
-		result.hasEdgeConcentration = (innerRate > 0.0) || (outerRate > 0.0);
-	}
+	result.hasEdgeConcentration =
+		(outerRate > innerRate * 2.0 && outerRate > 1.0) ||
+		(innerRate > outerRate * 2.0 && innerRate > 1.0);
 
-	// Detect progressive pattern: error rate increases from inner to outer
-	result.hasProgressivePattern = (outerRate > middleRate * 1.5) && (middleRate > innerRate * 1.5);
+	// Detect progressive pattern: error rate increases monotonically inner → outer
+	result.hasProgressivePattern =
+		innerRate < middleRate &&
+		middleRate < outerRate &&
+		outerRate > 0.5;
 
-	// Quality rating - be conservative to avoid false alarms
+	// Quality rating
 	if (result.totalReadFailures > 0)
 		result.qualityRating = "BAD";
 	else if (result.totalC2Sectors == 0)
 		result.qualityRating = "EXCELLENT";
-	else if (result.maxC2InSingleSector >= 100)
-		result.qualityRating = "POOR";
 	else if (result.avgC2PerSecond < 1.0 && result.consecutiveErrorSectors < 3
 		&& result.maxC2InSingleSector < 50)
 		result.qualityRating = "GOOD";
-	else if (result.avgC2PerSecond < 10.0 && result.consecutiveErrorSectors < 10)
+	else if (result.avgC2PerSecond < 10.0 && result.consecutiveErrorSectors < 10
+		&& result.maxC2InSingleSector < 100)
 		result.qualityRating = "ACCEPTABLE";
+	else if (result.avgC2PerSecond < 50.0)
+		result.qualityRating = "FAIR";
 	else
 		result.qualityRating = "POOR";
 
