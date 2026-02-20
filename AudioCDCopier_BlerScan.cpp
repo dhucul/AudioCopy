@@ -158,6 +158,8 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 					}
 					else {
 						currentErrorRun = 0;
+						result.recoveredC2Errors += effectiveC2;
+						result.recoveredC2Sectors++;
 					}
 				}
 				else {
@@ -166,6 +168,7 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 			}
 			else {
 				result.totalReadFailures++;
+				result.perSecondC2[secIdx].second++;   // register in per-second data
 				zoneError = 1;
 				errorLBAs.push_back(lba);
 

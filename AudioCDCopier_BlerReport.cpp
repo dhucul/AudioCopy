@@ -86,6 +86,8 @@ void AudioCDCopier::PrintBlerReport(const DiscInfo& disc, const BlerResult& resu
 		<< (result.totalC2Sectors * 100.0 / result.totalSectors) << "%)";
 	std::cout << "\n";
 	std::cout << "  Read failures:        " << result.totalReadFailures << "\n";
+	std::cout << "  Recovered errors:     " << result.recoveredC2Sectors << " sectors, "
+		<< result.recoveredC2Errors << " C2 errors (drive-corrected)\n";
 	std::cout << "  Max C2 in one sector: " << result.maxC2InSingleSector;
 	if (result.maxC2InSingleSector > 0) std::cout << "  (LBA " << result.worstSectorLBA << ")";
 	std::cout << "\n";
@@ -229,11 +231,17 @@ void AudioCDCopier::PrintBlerPerTrackSummary(const DiscInfo& disc, const BlerRes
 		int trackSec = tSeconds % 60;
 
 		const char* status = "Perfect";
-		if (result.totalReadFailures > 0) status = "BAD";
-		else if (trackC2 > 100) status = "Poor";
-		else if (trackC2 > 20) status = "Fair";
-		else if (trackC2 > 0) status = "Good";
-		else if (hasC1Support && trackC1 > 1000) status = "Fair";
+		double errorSecPct = tSeconds > 0 ? (trackC2Seconds * 100.0 / tSeconds) : 0;
+		if (errorSecPct > 20.0)
+			status = "BAD";
+		else if (trackC2 > 100 || trackC2Seconds > 10)
+			status = "Poor";
+		else if (trackC2 > 20 || trackC2Seconds > 3)
+			status = "Fair";
+		else if (trackC2 > 0)
+			status = "Good";
+		else if (hasC1Support && trackC1 > 1000)
+			status = "Fair";
 
 		if (hasC1Support) {
 			std::cout << "  " << std::setw(3) << t.trackNumber << "    "

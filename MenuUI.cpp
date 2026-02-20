@@ -280,22 +280,29 @@ void PrintHelpMenu() {
 		"   but not Q-Check. Use option 4 (BLER Scan) on those drives instead.",
 		"True C1/C2/CU error rate measurement on supported Plextor drives." });
 
+	PrintEntry({ "20. Chipset Identification",
+		"Identifies the internal chipset / controller used by your CD/DVD drive.\n"
+		"   Displays chipset vendor, model, and firmware-level details when available.\n"
+		"   Useful for determining hardware-level capabilities not exposed via standard\n"
+		"   MMC feature queries.",
+		"Identifying drive hardware for compatibility or capability research." });
+
 	// ═════════════════════════════════════════════════════════════════════
 	//  Utility
 	// ═════════════════════════════════════════════════════════════════════
 	PrintSection("Utility");
 
-	PrintEntry({ "20. Rescan Disc",
+	PrintEntry({ "21. Rescan Disc",
 		"Re-scans drives and reloads disc metadata (TOC, CD-TEXT, ISRC, AccurateRip).\n"
 		"   Automatically detects if the drive letter changed and re-opens the handle.\n"
 		"   Supports switching between multiple drives if more than one is present.",
 		"Use after swapping discs without restarting the program." });
 
-	PrintEntry({ "21. Help (test descriptions)",
+	PrintEntry({ "22. Help (test descriptions)",
 		"Displays this help screen with detailed descriptions of each operation.",
 		"Understanding the purpose and details of each operation." });
 
-	PrintEntry({ "22. Exit",
+	PrintEntry({ "23. Exit",
 		"Exits the program.",
 		"Closing the tool when done." });
 

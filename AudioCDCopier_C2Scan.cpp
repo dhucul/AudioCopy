@@ -114,7 +114,6 @@ bool AudioCDCopier::RunC2Scan(const DiscInfo& disc, BlerResult& result, int scan
 
 	// Track bad sectors with sense codes
 	std::vector<C2SectorError> badSectors;
-	int recoveredErrorCount = 0;   // Total recovered errors (including those past the display cap)
 	int totalBadSectorCount = 0;   // True total before capping
 
 	std::cout << "Scanning " << totalSectors << " sectors ("
@@ -224,7 +223,8 @@ bool AudioCDCopier::RunC2Scan(const DiscInfo& disc, BlerResult& result, int scan
 					else {
 						// Recovered error - reset consecutive error counter
 						currentErrorRun = 0;
-						recoveredErrorCount++;
+						result.recoveredC2Errors += c2Errors;
+						result.recoveredC2Sectors++;
 
 						// Record recovered errors in display list (capped)
 						totalBadSectorCount++;
@@ -251,9 +251,10 @@ bool AudioCDCopier::RunC2Scan(const DiscInfo& disc, BlerResult& result, int scan
 				}
 			}
 			else {
-				// SCSI command failed completely - this is a read failure
+				// SCSI command failed completely - this is a read failure.
+				// Not counted in totalC2Sectors — read failures are tracked separately
+				// via totalReadFailures so the two fields remain mutually exclusive.
 				result.totalReadFailures++;
-				result.totalC2Sectors++;                          // count as an error sector
 				result.perSecondC2[secIdx].second++;              // register in per-second data
 				currentErrorRun++;
 				if (currentErrorRun > result.consecutiveErrorSectors) {
@@ -339,28 +340,15 @@ bool AudioCDCopier::RunC2Scan(const DiscInfo& disc, BlerResult& result, int scan
 	// Print report
 	PrintC2ScanReport(result, disc, scanSpeed);
 
-	// Print recovered error count (not tracked in BlerResult)
-	if (recoveredErrorCount > 0) {
-		std::cout << "  Recovered errors:      " << recoveredErrorCount << " (drive-corrected)\n";
-	}
-
 	// Print sense code chart if there are bad sectors
 	if (!badSectors.empty()) {
-		PrintC2SenseCodeChart(badSectors, disc);
-
-		// Show truncation notice when output was capped
-		int omitted = totalBadSectorCount - static_cast<int>(badSectors.size());
-		if (omitted > 0) {
-			Console::Warning("  ... and ");
-			std::cout << omitted << " more bad sectors (display capped at "
-				<< MAX_BAD_SECTOR_ENTRIES << ")\n";
-		}
+		PrintC2SenseCodeChart(badSectors, disc, result);
 	}
 
 	return true;
 }
 
-void AudioCDCopier::PrintC2SenseCodeChart(const std::vector<C2SectorError>& badSectors, const DiscInfo& disc) {
+void AudioCDCopier::PrintC2SenseCodeChart(const std::vector<C2SectorError>& badSectors, const DiscInfo& disc, const BlerResult& result) {
 	if (badSectors.empty()) return;
 
 	std::cout << "\n" << std::string(80, '=') << "\n";
@@ -481,21 +469,30 @@ void AudioCDCopier::PrintC2SenseCodeChart(const std::vector<C2SectorError>& badS
 	}
 
 	std::cout << "\n  " << std::string(78, '-') << "\n";
-	std::cout << "  Total bad sectors: " << badSectors.size() << "\n";
+	// totalC2Sectors (unrecovered C2) + recoveredC2Sectors + totalReadFailures are
+	// mutually exclusive — sum gives the true bad-sector count with no double-counting.
+	std::cout << "  Total bad sectors: " << (result.totalReadFailures + result.totalC2Sectors + result.recoveredC2Sectors) << "\n";
 
-	// Summary by error type
-	int readFailures = 0, recovered = 0, unrecoverable = 0, dataCorruption = 0;
+	// Summary by error type (counted from display list for per-category breakdown)
+	int readFailures = 0, unrecoverable = 0, dataCorruption = 0;
 	for (const auto& err : badSectors) {
 		if (err.c2Errors < 0) readFailures++;
-		else if (err.IsRecovered()) recovered++;
 		else if (err.senseKey == 0x00 && err.c2Errors > 0) dataCorruption++;
 		else if (err.IsUnrecoverable()) unrecoverable++;
 	}
 
-	std::cout << "  Read failures:     " << readFailures << " (SCSI command failed)\n";
-	std::cout << "  Recovered errors:  " << recovered << " (drive fixed internally)\n";
-	std::cout << "  Data corruption:   " << dataCorruption << " (C2 errors, sense=0x00)\n";
-	std::cout << "  Unrecoverable:     " << unrecoverable << " (other SCSI errors)\n";
+	// true totals for read failures and recovered errors; display-list counts
+	// (with overflow marker) for the sub-categories derived from the capped list.
+	const size_t trueTotalBad = static_cast<size_t>(
+		result.totalReadFailures + result.totalC2Sectors + result.recoveredC2Sectors);
+	const bool capped = badSectors.size() < trueTotalBad;
+
+	std::cout << "  Read failures:     " << result.totalReadFailures << " (SCSI command failed)\n";
+	std::cout << "  Recovered errors:  " << result.recoveredC2Sectors << " (drive fixed internally)\n";
+	std::cout << "  Data corruption:   " << dataCorruption << (capped ? "+" : "")
+		<< " (C2 errors, sense=0x00)\n";
+	std::cout << "  Unrecoverable:     " << unrecoverable << (capped ? "+" : "")
+		<< " (other SCSI errors)\n";
 
 	std::cout << "\n  Note: Sense code 0x00/00/00 with C2 errors means:\n";
 	std::cout << "        - SCSI read command succeeded\n";
@@ -503,6 +500,14 @@ void AudioCDCopier::PrintC2SenseCodeChart(const std::vector<C2SectorError>& badS
 	std::cout << "        - This is the most common error type on degraded discs\n";
 
 	std::cout << "\n  Legend:\n";
+	Console::SetColor(Console::Color::Green);
+	std::cout << "    GREEN";
+	Console::Reset();
+	std::cout << "  - Minor errors (1-10 C2)\n";
+	Console::SetColor(Console::Color::Yellow);
+	std::cout << "    YELLOW";
+	Console::Reset();
+	std::cout << " - Recovered or moderate errors\n";
 	Console::SetColor(Console::Color::Red);
 	std::cout << "    RED";
 	Console::Reset();
@@ -518,9 +523,9 @@ void AudioCDCopier::PrintC2ScanReport(const BlerResult& result, const DiscInfo& 
 	std::cout << "\n--- Scan Summary ---\n";
 	std::cout << "  Sectors scanned:   " << result.totalSectors << "\n";
 	std::cout << "  Disc length:       "
-		<< (result.totalSeconds / 60) << ":"
-		<< std::setfill('0') << std::setw(2) << (result.totalSeconds % 60)
-		<< std::setfill(' ') << " (mm:ss)\n";
+		<< (result.totalSeconds / 60) << ":";
+	std::cout << std::setfill('0') << std::setw(2) << (result.totalSeconds % 60);
+	std::cout << std::setfill(' ') << " (mm:ss)\n";
 	std::cout << "  Scan speed:        "
 		<< (scanSpeed == 0 ? "Max" : std::to_string(scanSpeed) + "x") << "\n";
 
@@ -535,6 +540,8 @@ void AudioCDCopier::PrintC2ScanReport(const BlerResult& result, const DiscInfo& 
 	std::cout << "\n";
 
 	std::cout << "  Read failures:         " << result.totalReadFailures << "\n";
+	std::cout << "  Recovered errors:      " << result.recoveredC2Sectors << " sectors, "
+		<< result.recoveredC2Errors << " C2 errors (drive-corrected)\n";
 	std::cout << "  Avg C2 errors/second:  " << std::fixed << std::setprecision(2)
 		<< result.avgC2PerSecond << "\n";
 	std::cout << "  Max C2 errors/second:  " << result.maxC2PerSecond;

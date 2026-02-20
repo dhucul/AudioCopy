@@ -59,6 +59,8 @@ struct BlerResult {
 	int totalC2Errors = 0;
 	int totalC2Sectors = 0;
 	int totalReadFailures = 0;
+	int recoveredC2Errors = 0;             // C2 errors the drive corrected internally (sense 0x01)
+	int recoveredC2Sectors = 0;            // Sectors with recovered C2 errors
 	double avgC2PerSecond = 0.0;
 	int maxC2PerSecond = 0;
 	DWORD worstSecondLBA = 0;

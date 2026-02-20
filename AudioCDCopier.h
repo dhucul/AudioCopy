@@ -57,7 +57,7 @@ public:
 	bool RunC2Scan(const DiscInfo& disc, BlerResult& result, int scanSpeed = 8);
 	void PrintC2ScanReport(const BlerResult& result, const DiscInfo& disc, int scanSpeed);
 	void PrintC2Chart(const BlerResult& result, int width = 60, int height = 10);
-	void PrintC2SenseCodeChart(const std::vector<C2SectorError>& badSectors, const DiscInfo& disc);
+	void PrintC2SenseCodeChart(const std::vector<C2SectorError>& badSectors, const DiscInfo& disc, const BlerResult& result);
 
 	// Output
 	bool SaveToFile(const DiscInfo& disc, const std::wstring& basePath);
