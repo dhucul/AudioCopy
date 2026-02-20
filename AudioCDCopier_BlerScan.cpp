@@ -73,7 +73,7 @@ bool AudioCDCopier::RunBlerScan(const DiscInfo& disc, BlerResult& result, int sc
 
 	ScsiDrive::C2ReadOptions c2Opts;
 	c2Opts.multiPass = false;
-	c2Opts.countBytes = false;  // Bit counting — standard C2 error pointer interpretation
+	c2Opts.countBytes = true;   // Byte counting — PlexTools-style C2 error interpretation
 	c2Opts.defeatCache = true;
 
 	std::vector<BYTE> c2Buffer(C2_ERROR_SIZE, 0);

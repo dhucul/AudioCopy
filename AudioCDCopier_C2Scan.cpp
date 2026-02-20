@@ -136,7 +136,7 @@ bool AudioCDCopier::RunC2Scan(const DiscInfo& disc, BlerResult& result, int scan
 	// Configure C2 reading options
 	ScsiDrive::C2ReadOptions c2Opts;
 	c2Opts.multiPass = false;
-	c2Opts.countBytes = true;   // Count error bytes like PlexTools
+	c2Opts.countBytes = true;   // Byte counting — PlexTools-style C2 error interpretation
 	c2Opts.defeatCache = true;  // Defeat drive cache for accurate reads
 
 	// Allocate C2 buffer ONCE, outside the loop
@@ -503,15 +503,18 @@ void AudioCDCopier::PrintC2SenseCodeChart(const std::vector<C2SectorError>& badS
 	Console::SetColor(Console::Color::Green);
 	std::cout << "    GREEN";
 	Console::Reset();
-	std::cout << "  - Minor errors (1-10 C2)\n";
+	std::cout << "  - Minor C2 error count (1-10)\n";
 	Console::SetColor(Console::Color::Yellow);
 	std::cout << "    YELLOW";
 	Console::Reset();
-	std::cout << " - Recovered or moderate errors\n";
+	std::cout << " - Moderate C2 error count (11-100)";
+	if (result.recoveredC2Sectors > 0)
+		std::cout << " or drive-recovered error";
+	std::cout << "\n";
 	Console::SetColor(Console::Color::Red);
 	std::cout << "    RED";
 	Console::Reset();
-	std::cout << "    - Critical/Unrecoverable errors or data corruption\n";
+	std::cout << "    - Critical C2 count (>100), data corruption, or unrecoverable error\n";
 }
 
 void AudioCDCopier::PrintC2ScanReport(const BlerResult& result, const DiscInfo& disc, int scanSpeed) {
