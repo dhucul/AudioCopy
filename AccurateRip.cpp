@@ -8,6 +8,21 @@
 
 #pragma comment(lib, "winhttp.lib")
 
+// Helper: get the lead-out LBA for AccurateRip purposes.
+// For enhanced/multisession CDs, use the audio session's lead-out.
+static DWORD GetAudioLeadOut(const DiscInfo& disc) {
+	return (disc.audioLeadOutLBA != 0) ? disc.audioLeadOutLBA : disc.leadOutLBA;
+}
+
+// Helper: count audio tracks only.
+static int CountAudioTracks(const DiscInfo& disc) {
+	int count = 0;
+	for (const auto& t : disc.tracks) {
+		if (t.isAudio) count++;
+	}
+	return count;
+}
+
 uint32_t AccurateRip::CalculateCRC(const std::vector<std::vector<BYTE>>& sectors,
 	int trackNum, int totalTracks, DWORD trackStartLBA) {
 	uint32_t crc = 0;
@@ -43,18 +58,23 @@ uint32_t AccurateRip::CalculateCRC(const std::vector<std::vector<BYTE>>& sectors
 
 uint32_t AccurateRip::CalculateDiscID1(const DiscInfo& disc) {
 	uint32_t id = 0;
-	for (const auto& t : disc.tracks) id += t.startLBA;
-	id += disc.leadOutLBA;
+	for (const auto& t : disc.tracks) {
+		if (t.isAudio) id += t.startLBA;
+	}
+	id += GetAudioLeadOut(disc);
 	return id;
 }
 
 uint32_t AccurateRip::CalculateDiscID2(const DiscInfo& disc) {
 	uint32_t id = 0;
+	int audioTrackNum = 0;
 	for (const auto& t : disc.tracks) {
+		if (!t.isAudio) continue;
+		audioTrackNum++;
 		uint32_t frameNum = (t.startLBA == 0) ? 1 : t.startLBA;
-		id += frameNum * t.trackNumber;
+		id += frameNum * static_cast<uint32_t>(audioTrackNum);
 	}
-	id += disc.leadOutLBA * (static_cast<uint32_t>(disc.tracks.size()) + 1);
+	id += GetAudioLeadOut(disc) * static_cast<uint32_t>(audioTrackNum + 1);
 	return id;
 }
 
@@ -66,16 +86,24 @@ uint32_t AccurateRip::CalculateCDDBID(const DiscInfo& disc) {
 		};
 
 	uint32_t n = 0;
+	DWORD firstAudioLBA = 0;
+	bool firstFound = false;
+	int audioTrackCount = 0;
+
 	for (const auto& t : disc.tracks) {
+		if (!t.isAudio) continue;
 		int seconds = (t.startLBA + 150) / 75;
 		n += sumDigits(seconds);
+		audioTrackCount++;
+		if (!firstFound) { firstAudioLBA = t.startLBA; firstFound = true; }
 	}
 
-	int leadOutSec = (disc.leadOutLBA + 150) / 75;
-	int firstTrackSec = (disc.tracks.front().startLBA + 150) / 75;
+	DWORD leadOut = GetAudioLeadOut(disc);
+	int leadOutSec = (leadOut + 150) / 75;
+	int firstTrackSec = (firstAudioLBA + 150) / 75;
 	int totalSec = leadOutSec - firstTrackSec;
 
-	return ((n % 0xFF) << 24) | (totalSec << 8) | static_cast<uint32_t>(disc.tracks.size());
+	return ((n % 0xFF) << 24) | (totalSec << 8) | static_cast<uint32_t>(audioTrackCount);
 }
 
 // Add this helper function before Lookup()
@@ -105,7 +133,7 @@ bool AccurateRip::Lookup(DiscInfo& disc, std::vector<std::vector<uint32_t>>& pre
 	uint32_t discId1 = CalculateDiscID1(disc);
 	uint32_t discId2 = CalculateDiscID2(disc);
 	uint32_t cddbId = CalculateCDDBID(disc);
-	int trackCount = static_cast<int>(disc.tracks.size());
+	int trackCount = CountAudioTracks(disc);
 
 	char url[256];
 	snprintf(url, sizeof(url),
@@ -231,6 +259,7 @@ bool AccurateRip::VerifyCRCs(const DiscInfo& disc, const std::vector<std::vector
 	std::cout << "\n=== AccurateRip CRC Verification ===\n";
 	bool allMatch = true;
 	int audioTrackIdx = 0;
+	int totalAudioTracks = CountAudioTracks(disc);
 
 	// Build a flat-offset table: for each track, compute where its startLBA
 	// data begins inside the rawSectors array.  This avoids fragile sequential
@@ -246,17 +275,25 @@ bool AccurateRip::VerifyCRCs(const DiscInfo& disc, const std::vector<std::vector
 		cumulative += disc.tracks[i].endLBA - readStart + 1;
 	}
 
+	DWORD audioLeadOut = GetAudioLeadOut(disc);
+
 	for (size_t i = 0; i < disc.tracks.size(); i++) {
 		const auto& t = disc.tracks[i];
 		if (!t.isAudio) continue;
 
 		// AccurateRip defines track boundaries by the original TOC:
-		//   startLBA  →  next track's startLBA - 1   (or leadOut - 1 for last track)
+		//   startLBA  →  next audio track's startLBA - 1   (or audio lead-out - 1 for last audio track)
 		// The stored endLBA may have been trimmed by pregap scanning, so we
 		// reconstruct the original boundary here.
-		DWORD originalEndLBA = (i + 1 < disc.tracks.size())
-			? disc.tracks[i + 1].startLBA - 1
-			: disc.leadOutLBA - 1;
+		// For enhanced CDs, use the audio session lead-out instead of the
+		// data track's startLBA.
+		DWORD originalEndLBA = audioLeadOut - 1;  // default: last audio track
+		for (size_t j = i + 1; j < disc.tracks.size(); j++) {
+			if (disc.tracks[j].isAudio) {
+				originalEndLBA = disc.tracks[j].startLBA - 1;
+				break;
+			}
+		}
 		DWORD arSectorCount = originalEndLBA - t.startLBA + 1;
 
 		// Use absolute offset — sectors are contiguous in rawSectors because
@@ -269,8 +306,8 @@ bool AccurateRip::VerifyCRCs(const DiscInfo& disc, const std::vector<std::vector
 			trackSectors.push_back(std::move(audioOnly));
 		}
 
-		uint32_t crc = CalculateCRC(trackSectors, t.trackNumber,
-			static_cast<int>(disc.tracks.size()), t.startLBA);
+		uint32_t crc = CalculateCRC(trackSectors, audioTrackIdx + 1,
+			totalAudioTracks, t.startLBA);
 
 		// Check calculated CRC against ALL pressings
 		bool match = false;

@@ -67,5 +67,6 @@ struct DiscInfo {
 	bool hasHiddenTrack = false;                        // HTOA detected before Track 1 INDEX 01
 	CDText cdText;                                      // Embedded CD-TEXT metadata
 	DWORD leadOutLBA = 0;                               // LBA of the lead-out area
+	DWORD audioLeadOutLBA = 0;                          // Session-1 lead-out (for enhanced/multisession CDs)
 	bool enableCacheDefeat = false;                     // Defeat drive read cache between reads
 };

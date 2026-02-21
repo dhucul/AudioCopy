@@ -377,6 +377,16 @@ bool AudioCDCopier::ReadFullTOC(DiscInfo& disc) {
 		(static_cast<DWORD>(leadOut[6]) << 8) |
 		static_cast<DWORD>(leadOut[7]);
 
+	// For enhanced/multisession CDs, store the session-1 lead-out separately.
+	// AccurateRip disc IDs must use the audio session's lead-out, not the
+	// overall disc lead-out (which points past the data session).
+	auto it = sessionLeadOut.find(1);
+	if (it != sessionLeadOut.end() && disc.sessionCount > 1) {
+		disc.audioLeadOutLBA = it->second;
+	} else {
+		disc.audioLeadOutLBA = disc.leadOutLBA;
+	}
+
 	for (auto& t : disc.tracks) {
 		t.pregapLBA = t.startLBA;  // safe default until pregap scan runs
 		t.index01LBA = t.startLBA; // default: INDEX 01 matches TOC start
