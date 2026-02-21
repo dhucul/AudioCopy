@@ -46,17 +46,18 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 		PrintMenuItem(18, "Seek time analysis");
 		PrintMenuItem(19, "Plextor Q-Check scan (hardware C1/C2/CU)");
 		PrintMenuItem(20, "Chipset identification");
+		PrintMenuItem(21, "Disc balance check");
 
 		// ── Utility ─────────────────────────────────────────────────────
 		PrintMenuSection("Utility");
-		PrintMenuItem(21, "Rescan disc");
-		PrintMenuItem(22, "Help (test descriptions)");
-		PrintMenuItem(23, "Exit", true);
+		PrintMenuItem(22, "Rescan disc");
+		PrintMenuItem(23, "Help (test descriptions)");
+		PrintMenuItem(24, "Exit", true);
 
 		Console::BoxFooter();
 		std::cout << Console::Sym::Arrow << " Choice: ";
 
-		int choice = GetMenuChoice(1, 23, 1);
+		int choice = GetMenuChoice(1, 24, 1);
 		std::cin.clear();
 		if (std::cin.peek() == '\n') {
 			std::cin.ignore();
@@ -403,12 +404,26 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
+			   // ── 21. Disc balance check ────────────────────────────────
+		case 21: {
+			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
+			int balanceScore = 0;
+			Console::Info("\nRunning disc balance check...\n");
+			if (copier.CheckDiscBalance(disc, balanceScore)) {
+				Console::Success("Disc balance check complete.\n");
+			}
+			else {
+				Console::Error("Disc balance check failed.\n");
+			}
+			break;
+		}
+
 			   // ════════════════════════════════════════════════════════════
 			   //  Utility
 			   // ════════════════════════════════════════════════════════════
 
-				  // ── 21. Rescan disc ────────────────────────────────────────
-		case 21: {
+				  // ── 22. Rescan disc ────────────────────────────────────────
+		case 22: {
 			Console::Info("\nScanning drives...\n");
 			wchar_t newAudioDrive = 0;
 			std::vector<wchar_t> newAudioDrives;
@@ -468,13 +483,13 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 22. Help ───────────────────────────────────────────────
-		case 22:
+			   // ── 23. Help ───────────────────────────────────────────────
+		case 23:
 			PrintHelpMenu();
 			break;
 
-			// ── 23. Exit ───────────────────────────────────────────────
-		case 23:
+			// ── 24. Exit ───────────────────────────────────────────────
+		case 24:
 			copier.Close();
 			Console::Success("\nGoodbye!\n");
 			return 0;
@@ -484,7 +499,7 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-		if (choice != 23) {
+		if (choice != 24) {
 			WaitForKey();
 		}
 	}

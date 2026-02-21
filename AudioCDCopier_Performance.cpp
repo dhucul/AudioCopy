@@ -14,9 +14,9 @@
 
 bool AudioCDCopier::RunSpeedComparisonTest(DiscInfo& disc, std::vector<SpeedComparisonResult>& results) {
 	std::cout << "\n=== Speed Comparison Test ===\n";
-	if (!m_drive.CheckC2Support()) { 
-		std::cout << "ERROR: C2 support required.\n"; 
-		return false; 
+	if (!m_drive.CheckC2Support()) {
+		std::cout << "ERROR: C2 support required.\n";
+		return false;
 	}
 
 	DWORD totalSectors = CalculateTotalAudioSectors(disc);
@@ -324,5 +324,124 @@ bool AudioCDCopier::RunSeekTimeAnalysis(DiscInfo& disc, std::vector<SeekTimeResu
 	}
 	std::cout << std::string(60, '=') << "\n";
 
+	return true;
+}
+
+// ── Disc Balance Check ──────────────────────────────────────────────────────
+// Reads a fixed set of sample sectors at increasing speeds (4x to 40x).
+// An unbalanced disc shows a sharp C2 error increase at higher RPMs.
+bool AudioCDCopier::CheckDiscBalance(DiscInfo& disc, int& balanceScore) {
+	if (!m_drive.CheckC2Support()) {
+		std::cout << "ERROR: C2 support required for disc balance check.\n";
+		return false;
+	}
+
+	const int speeds[] = { 4, 8, 16, 24, 32, 40 };
+	const int NUM_SPEEDS = sizeof(speeds) / sizeof(speeds[0]);
+	const int SAMPLE_COUNT = 50;
+
+	DWORD totalSectors = CalculateTotalAudioSectors(disc);
+	if (totalSectors == 0) return false;
+
+	int sampleInterval = std::max(1, static_cast<int>(totalSectors / SAMPLE_COUNT));
+
+	// Build a list of valid audio LBAs to sample (respecting track boundaries)
+	std::vector<DWORD> sampleLBAs;
+	DWORD maxLBA = 0;
+	for (const auto& t : disc.tracks) {
+		if (!t.isAudio) continue;
+		DWORD start = (t.trackNumber == 1) ? 0 : t.pregapLBA;
+		for (DWORD lba = start; lba <= t.endLBA; lba += sampleInterval) {
+			sampleLBAs.push_back(lba);
+		}
+		if (t.endLBA > maxLBA) maxLBA = t.endLBA;
+	}
+	if (sampleLBAs.empty()) return false;
+
+	int totalTests = NUM_SPEEDS * static_cast<int>(sampleLBAs.size());
+	int completed = 0;
+
+	std::cout << "\nSweeping " << sampleLBAs.size() << " sample sectors across "
+		<< NUM_SPEEDS << " speeds...\n";
+	std::cout << "  (Press ESC or Ctrl+C to cancel)\n\n";
+
+	ProgressIndicator progress(40);
+	progress.SetLabel("  Balance");
+	progress.Start();
+
+	std::vector<BYTE> buf(AUDIO_SECTOR_SIZE);
+	std::vector<double> avgC2PerSpeed(NUM_SPEEDS, 0.0);
+
+	for (int s = 0; s < NUM_SPEEDS; s++) {
+		m_drive.SetSpeed(speeds[s]);
+		Sleep(200); // Let the drive stabilize at new speed
+
+		int totalC2 = 0, tested = 0;
+		for (DWORD lba : sampleLBAs) {
+			if (g_interrupt.IsInterrupted() || g_interrupt.CheckEscapeKey()) {
+				std::cout << "\n\n*** Balance check cancelled by user ***\n";
+				m_drive.SetSpeed(0);
+				progress.Finish(false);
+				return false;
+			}
+
+			int c2 = 0;
+			DefeatDriveCache(lba, maxLBA);
+			if (m_drive.ReadSectorWithC2(lba, buf.data(), nullptr, c2)) {
+				totalC2 += c2;
+			}
+			else {
+				totalC2 += 100; // Penalize read failures
+			}
+			tested++;
+			completed++;
+			progress.Update(completed, totalTests);
+		}
+		avgC2PerSpeed[s] = (tested > 0) ? (double)totalC2 / tested : 0.0;
+	}
+
+	progress.Finish(true);
+	m_drive.SetSpeed(0);
+
+	// Detect balance problem: compare low-speed baseline to high-speed errors
+	double baseline = avgC2PerSpeed[0]; // 4x is the baseline
+	double peakRatio = 0.0;
+	for (int s = 1; s < NUM_SPEEDS; s++) {
+		double ratio;
+		if (baseline > 0.01) {
+			ratio = avgC2PerSpeed[s] / baseline;
+		}
+		else {
+			// Baseline is ~0: treat any high-speed errors as an absolute penalty
+			ratio = 1.0 + avgC2PerSpeed[s];
+		}
+		if (ratio > peakRatio) peakRatio = ratio;
+	}
+
+	// Score: 100 = perfectly balanced, 0 = severe wobble
+	if (peakRatio <= 1.5)       balanceScore = 100;
+	else if (peakRatio <= 3.0)  balanceScore = 75;
+	else if (peakRatio <= 8.0)  balanceScore = 50;
+	else if (peakRatio <= 20.0) balanceScore = 25;
+	else                        balanceScore = 0;
+
+	// Report
+	std::cout << "\n" << std::string(60, '=') << "\n";
+	std::cout << "              DISC BALANCE CHECK\n";
+	std::cout << std::string(60, '=') << "\n";
+	std::cout << "  (Detects vibration / wobble by sweeping read speed)\n\n";
+
+	std::cout << "--- C2 Errors by Speed ---\n";
+	for (int s = 0; s < NUM_SPEEDS; s++) {
+		std::cout << "  " << std::setw(3) << speeds[s] << "x:  "
+			<< std::fixed << std::setprecision(2) << avgC2PerSpeed[s]
+			<< " avg C2/sector\n";
+	}
+	std::cout << "\n  Balance Score: " << balanceScore << " / 100";
+	if (balanceScore >= 75)      std::cout << "  (GOOD - disc is well balanced)\n";
+	else if (balanceScore >= 50) std::cout << "  (FAIR - some wobble detected, reduce rip speed)\n";
+	else                         std::cout << "  (POOR - significant balance problem, use 4x-8x max)\n";
+
+	std::cout << std::string(60, '=') << "\n";
 	return true;
 }

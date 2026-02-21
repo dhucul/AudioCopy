@@ -190,6 +190,9 @@ public:
 
 	bool VerifyWrittenDisc(const std::vector<TrackWriteInfo>& tracks);
 
+	// Disc balance / wobble detection
+	bool CheckDiscBalance(DiscInfo& disc, int& balanceScore);
+
 private:
 	ScsiDrive m_drive;
 	bool m_hasAccurateStream = false;            // Cached from DetectDriveCapabilities

@@ -287,22 +287,33 @@ void PrintHelpMenu() {
 		"   MMC feature queries.",
 		"Identifying drive hardware for compatibility or capability research." });
 
+	PrintEntry({ "21. Disc Balance Check",
+		"Detects disc wobble or eccentricity by reading sample sectors at increasing\n"
+		"   speeds (4x through 40x) and measuring how C2 errors change.\n"
+		"\n"
+		"   A well-balanced disc maintains low error rates across all speeds.\n"
+		"   An unbalanced disc vibrates at high RPM, causing a sharp spike in\n"
+		"   C2 errors and read failures above a certain speed threshold.\n"
+		"\n"
+		"   Reports a 0-100 balance score and recommends a safe rip speed.",
+		"Diagnosing vibration/wobble issues or choosing optimal rip speed for warped/unbalanced discs." });
+
 	// ═════════════════════════════════════════════════════════════════════
 	//  Utility
 	// ═════════════════════════════════════════════════════════════════════
 	PrintSection("Utility");
 
-	PrintEntry({ "21. Rescan Disc",
+	PrintEntry({ "22. Rescan Disc",
 		"Re-scans drives and reloads disc metadata (TOC, CD-TEXT, ISRC, AccurateRip).\n"
 		"   Automatically detects if the drive letter changed and re-opens the handle.\n"
 		"   Supports switching between multiple drives if more than one is present.",
 		"Use after swapping discs without restarting the program." });
 
-	PrintEntry({ "22. Help (test descriptions)",
+	PrintEntry({ "23. Help (test descriptions)",
 		"Displays this help screen with detailed descriptions of each operation.",
 		"Understanding the purpose and details of each operation." });
 
-	PrintEntry({ "23. Exit",
+	PrintEntry({ "24. Exit",
 		"Exits the program.",
 		"Closing the tool when done." });
 
