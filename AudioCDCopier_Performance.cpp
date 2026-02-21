@@ -190,7 +190,7 @@ bool AudioCDCopier::RunSeekTimeAnalysis(DiscInfo& disc, std::vector<SeekTimeResu
 		};
 
 	constexpr int NUM_POSITIONS = 11;
-	constexpr int REPEATS_PER_PAIR = 3;
+	constexpr int REPEATS_PER_PAIR = 5;
 
 	std::vector<DWORD> testPositions;
 	for (int i = 0; i < NUM_POSITIONS; i++) {
@@ -238,12 +238,13 @@ bool AudioCDCopier::RunSeekTimeAnalysis(DiscInfo& disc, std::vector<SeekTimeResu
 			bool anyReadFailed = false;
 
 			for (int rep = 0; rep < REPEATS_PER_PAIR; rep++) {
-				// Defeat cache before each repeat to avoid read-ahead hits
-				DefeatDriveCache(toLBA, audioRanges.back().second);
+				// Defeat cache around both source and destination
+				DefeatDriveCache(fromLBA, audioRanges.back().second);
 				m_drive.ReadSectorAudioOnly(fromLBA, buf.data());
+				DefeatDriveCache(toLBA, audioRanges.back().second);
 
 				auto startTime = std::chrono::high_resolution_clock::now();
-				bool readOk = m_drive.ReadSectorAudioOnly(toLBA, buf.data());
+				bool readOk = m_drive.SeekToLBA(toLBA);
 				auto endTime = std::chrono::high_resolution_clock::now();
 
 				double seekMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
@@ -286,7 +287,7 @@ bool AudioCDCopier::RunSeekTimeAnalysis(DiscInfo& disc, std::vector<SeekTimeResu
 		double diff = r.seekTimeMs - avgSeek;
 		varianceSum += diff * diff;
 	}
-	double stddev = std::sqrt(varianceSum / results.size());
+	double stddev = std::sqrt(varianceSum / (results.size() - 1));
 
 	double abnormalThreshold = avgSeek + 3.0 * stddev;
 	int abnormalCount = 0;
@@ -305,8 +306,8 @@ bool AudioCDCopier::RunSeekTimeAnalysis(DiscInfo& disc, std::vector<SeekTimeResu
 	std::cout << "--- Timing Statistics ---\n";
 	std::cout << "  Tests performed:  " << results.size() << "\n";
 	std::cout << "  Average seek:     " << std::fixed << std::setprecision(1) << avgSeek << " ms";
-	if (avgSeek < 100) std::cout << "  (normal)";
-	else if (avgSeek < 200) std::cout << "  (slow - may indicate surface issues)";
+	if (avgSeek < 80) std::cout << "  (normal)";
+	else if (avgSeek < 150) std::cout << "  (slow - may indicate surface issues)";
 	else std::cout << "  (very slow - possible mechanical problem)";
 	std::cout << "\n";
 	std::cout << "  Std deviation:    " << std::setprecision(1) << stddev << " ms";
