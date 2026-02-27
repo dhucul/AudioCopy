@@ -1,0 +1,219 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{333b7655-96ae-4806-bc09-4734e7fc914c}</ProjectGuid>
+    <RootNamespace>AudioCopy</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="AudioCDCopier_AudioAnalysis.cpp" />
+    <ClCompile Include="AudioCDCopier_BasicReading.cpp" />
+    <ClCompile Include="AudioCDCopier_BlerAnalysis.cpp" />
+    <ClCompile Include="AudioCDCopier_BlerGraph.cpp" />
+    <ClCompile Include="AudioCDCopier_BlerReport.cpp" />
+    <ClCompile Include="AudioCDCopier_BlerScan.cpp" />
+    <ClCompile Include="AudioCDCopier_BurstRead.cpp" />
+    <ClCompile Include="AudioCDCopier_C2Scan.cpp" />
+    <ClCompile Include="AudioCDCopier_Comprehensive.cpp" />
+    <ClCompile Include="AudioCDCopier_DiscRot.cpp" />
+    <ClCompile Include="AudioCDCopier_DriveCapabilities.cpp" />
+    <ClCompile Include="AudioCDCopier_HiddenTracks.cpp" />
+    <ClCompile Include="AudioCDCopier_Metadata.cpp" />
+    <ClCompile Include="AudioCDCopier_Performance.cpp" />
+    <ClCompile Include="AudioCDCopier_QCheck.cpp" />
+    <ClCompile Include="AudioCDCopier_SecureRead.cpp" />
+    <ClCompile Include="AudioCDCopier_StandardRead.cpp" />
+    <ClCompile Include="AudioCDCopier_Surface.cpp" />
+    <ClCompile Include="AudioCDCopier_TOC.cpp" />
+    <ClCompile Include="AudioCDCopier_TOCScan.cpp" />
+    <ClCompile Include="AudioCDCopier_Utilities.cpp" />
+    <ClCompile Include="AudioCDCopier_Verification.cpp" />
+    <ClCompile Include="AudioCDCopier_WriteDisc.cpp" />
+    <ClCompile Include="AudioCDCopier_WriteDisc_CDText.cpp" />
+    <ClCompile Include="AudioCDCopier_WriteDisc_Cue.cpp" />
+    <ClCompile Include="AudioCDCopier_WriteDisc_Media.cpp" />
+    <ClCompile Include="CopyWorkflow.cpp" />
+    <ClCompile Include="Drive.cpp" />
+    <ClCompile Include="DriveSelection.cpp" />
+    <ClCompile Include="FileUtils.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="AccurateRip.cpp" />
+    <ClCompile Include="AudioCDCopier.cpp" />
+    <ClCompile Include="AudioCDCopier_MenuSelection.cpp" />
+    <ClCompile Include="MainMenu.cpp" />
+    <ClCompile Include="MenuUI.cpp" />
+    <ClCompile Include="OffsetCalibration.cpp" />
+    <ClCompile Include="ProtectionCheck.cpp" />
+    <ClCompile Include="ScsiDrive.Capabilities.cpp" />
+    <ClCompile Include="ScsiDrive.Chipset.cpp" />
+    <ClCompile Include="ScsiDrive.Core.cpp" />
+    <ClCompile Include="ScsiDrive.LiteOnScan.cpp" />
+    <ClCompile Include="ScsiDrive.Offset.cpp" />
+    <ClCompile Include="ScsiDrive.QCheck.cpp" />
+    <ClCompile Include="ScsiDrive.Read.cpp" />
+    <ClCompile Include="ScsiDrive.Recommendations.cpp" />
+    <ClCompile Include="• AudioCDCopier_FileOutput.cpp" />
+    <ClCompile Include="• AudioCDCopier_Fingerprinting.cpp" />
+    <ClCompile Include="• AudioCDCopier_Verification.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="AccurateRip.h" />
+    <ClInclude Include="AnalysisTypes.h" />
+    <ClInclude Include="AudioCDCopier.h" />
+    <ClInclude Include="BlerResult.h" />
+    <ClInclude Include="CDStructures.h" />
+    <ClInclude Include="ConsoleBox.h" />
+    <ClInclude Include="ConsoleColor.h" />
+    <ClInclude Include="ConsoleColors.h" />
+    <ClInclude Include="ConsoleFormat.h" />
+    <ClInclude Include="ConsoleGraph.h" />
+    <ClInclude Include="ConsoleSymbols.h" />
+    <ClInclude Include="Constants.h" />
+    <ClInclude Include="CopyWorkflow.h" />
+    <ClInclude Include="DiscTypes.h" />
+    <ClInclude Include="Drive.h" />
+    <ClInclude Include="DriveOffsets.h" />
+    <ClInclude Include="DriveSelection.h" />
+    <ClInclude Include="DriveTypes.h" />
+    <ClInclude Include="ErrorTypes.h" />
+    <ClInclude Include="FileUtils.h" />
+    <ClInclude Include="FingerprintTypes.h" />
+    <ClInclude Include="InterruptHandler.h" />
+    <ClInclude Include="MainMenu.h" />
+    <ClInclude Include="MenuHelpers.h" />
+    <ClInclude Include="MenuUI.h" />
+    <ClInclude Include="OffsetCalibration.h" />
+    <ClInclude Include="Progress.h" />
+    <ClInclude Include="ProtectionCheck.h" />
+    <ClInclude Include="ScanResults.h" />
+    <ClInclude Include="ScsiDrive.h" />
+    <ClInclude Include="ScsiTypes.h" />
+    <ClInclude Include="SecureRipTypes.h" />
+    <ClInclude Include="WriteDiscInternal.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
