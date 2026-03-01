@@ -4,6 +4,7 @@
 #include "ConsoleGraph.h"
 #include <iostream>
 #include <iomanip>
+#include <sstream>
 #include <thread>
 #include <chrono>
 #include <algorithm>
@@ -78,7 +79,7 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 		if (scanSpeed == 0)
 			std::cout << "Scan speed: Max\n";
 		else
-			std::cout << "Scan speed: " << scanSpeed << "x (~" << ((result.totalSeconds / std::max(scanSpeed, 1) / 60) + 1) << " min)\n";
+			std::cout << "Scan speed: " << scanSpeed << "x\n";
 	}
 
 	bool started = usePlextor
@@ -94,6 +95,11 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 	bool scanDone = false;
 	int sampleIndex = 0;
 	DWORD lastReportedLBA = DWORD(-1);
+
+	// ── Timer state for elapsed / ETA display ────────────────
+	auto scanStartTime = std::chrono::steady_clock::now();
+	int lastLineLength = 0;
+	constexpr int BAR_WIDTH = 25;
 
 	while (!scanDone) {
 		if (InterruptHandler::Instance().IsInterrupted() || InterruptHandler::Instance().CheckEscapeKey()) {
@@ -177,18 +183,80 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 
 		sampleIndex++;
 
+		// ── Compute progress, elapsed, and ETA ───────────────
 		double pct = 0.0;
 		if (currentLBA >= firstLBA && result.totalSectors > 0) {
 			pct = static_cast<double>(currentLBA - firstLBA) * 100.0 / result.totalSectors;
 			if (pct > 100.0) pct = 100.0;
 		}
-		std::cout << "\r  Scanning... " << std::fixed << std::setprecision(1)
-			<< pct << "%  LBA " << currentLBA
-			<< "  C1=" << c1 << " C2=" << c2 << " CU=" << cu
-			<< "        " << std::flush;
+
+		auto now = std::chrono::steady_clock::now();
+		int elapsedSec = static_cast<int>(
+			std::chrono::duration_cast<std::chrono::seconds>(now - scanStartTime).count());
+
+		// ETA: extrapolate from elapsed time and progress fraction
+		int etaSec = -1;
+		if (pct > 1.0 && pct < 100.0) {
+			double remaining = (100.0 - pct) / pct;
+			etaSec = static_cast<int>(elapsedSec * remaining);
+		}
+
+		// ── Format progress bar ──────────────────────────────
+		int filled = static_cast<int>(pct * BAR_WIDTH / 100.0);
+		std::ostringstream line;
+		line << "\r  [";
+		for (int i = 0; i < BAR_WIDTH; i++)
+			line << (i < filled ? "\xe2\x96\x88" : "\xe2\x96\x91"); // █ or ░
+		line << "] " << std::fixed << std::setprecision(1) << pct << "%";
+
+		// Elapsed time
+		line << "  " << (elapsedSec / 60) << ":"
+			<< std::setfill('0') << std::setw(2) << (elapsedSec % 60);
+
+		// ETA
+		if (etaSec >= 0) {
+			line << " ETA:";
+			if (etaSec >= 3600)
+				line << (etaSec / 3600) << "h"
+				<< std::setfill('0') << std::setw(2) << ((etaSec % 3600) / 60) << "m"
+				<< std::setfill('0') << std::setw(2) << (etaSec % 60) << "s";
+			else if (etaSec >= 60)
+				line << (etaSec / 60) << "m"
+				<< std::setfill('0') << std::setw(2) << (etaSec % 60) << "s";
+			else
+				line << etaSec << "s";
+		}
+
+		// Current error counts
+		line << "  C1=" << c1 << " C2=" << c2 << " CU=" << cu;
+
+		// Pad to clear previous line remnants
+		std::string output = line.str();
+		if (static_cast<int>(output.size()) < lastLineLength)
+			output.append(lastLineLength - output.size(), ' ');
+		lastLineLength = static_cast<int>(output.size());
+
+		std::cout << output << std::flush;
 	}
 
-	std::cout << "\n";
+	// ── Print final elapsed time ─────────────────────────────
+	auto scanEndTime = std::chrono::steady_clock::now();
+	int totalElapsed = static_cast<int>(
+		std::chrono::duration_cast<std::chrono::seconds>(scanEndTime - scanStartTime).count());
+
+	std::ostringstream elapsed;
+	if (totalElapsed >= 3600)
+		elapsed << (totalElapsed / 3600) << "h "
+		<< std::setfill('0') << std::setw(2) << ((totalElapsed % 3600) / 60) << "m "
+		<< std::setfill('0') << std::setw(2) << (totalElapsed % 60) << "s";
+	else if (totalElapsed >= 60)
+		elapsed << (totalElapsed / 60) << "m "
+		<< std::setfill('0') << std::setw(2) << (totalElapsed % 60) << "s";
+	else
+		elapsed << totalElapsed << "s";
+
+	std::cout << "\n  Done in " << elapsed.str()
+		<< " (" << result.samples.size() << " samples)\n";
 
 	// ── Compute averages ─────────────────────────────────────
 	result.totalSeconds = static_cast<DWORD>(result.samples.size());
