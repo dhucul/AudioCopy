@@ -13,7 +13,7 @@
 
 // Current application version — update this with each release.
 // Used by MainMenu.cpp via CheckForUpdates(APP_VERSION).
-const VersionInfo APP_VERSION = { 7, 31, 0 };
+const VersionInfo APP_VERSION = { 7, 4, 1 };
 
 static const wchar_t* GITHUB_HOST = L"api.github.com";
 static const wchar_t* RELEASE_PATH = L"/repos/dhucul/AudioCopy/releases/latest";
@@ -50,11 +50,12 @@ static std::string WideToNarrow(const std::wstring& wide)
     return narrow;
 }
 
-// Extracts a JSON string value for a given key (simple, no nested objects).
-static std::wstring ExtractJsonString(const std::wstring& json, const std::wstring& key)
+// Extracts a JSON string value for a given key, searching from a starting position.
+// Handles simple flat JSON; does not support nested objects or escaped quotes.
+static std::wstring ExtractJsonString(const std::wstring& json, const std::wstring& key, size_t startPos = 0)
 {
     std::wstring search = L"\"" + key + L"\"";
-    size_t pos = json.find(search);
+    size_t pos = json.find(search, startPos);
     if (pos == std::wstring::npos)
         return L"";
 
@@ -92,12 +93,27 @@ static const char* GetConnectionErrorMessage(DWORD error)
     }
 }
 
+// RAII wrapper for HINTERNET handles — prevents resource leaks on early returns.
+struct WinHttpHandle
+{
+    HINTERNET h = nullptr;
+    WinHttpHandle(HINTERNET handle) : h(handle) {}
+    ~WinHttpHandle() { if (h) WinHttpCloseHandle(h); }
+    operator HINTERNET() const { return h; }
+    explicit operator bool() const { return h != nullptr; }
+
+    WinHttpHandle(const WinHttpHandle&) = delete;
+    WinHttpHandle& operator=(const WinHttpHandle&) = delete;
+};
+
 bool CheckForUpdates(const VersionInfo& currentVersion)
 {
     Console::Info("\nChecking for updates...\n");
 
     // Quick connectivity pre-check — avoids a long WinHTTP timeout
     // when the system has no internet at all.
+    // Note: InternetGetConnectedState is deprecated but still functional;
+    // used here only as a fast-fail hint, not as an authoritative check.
     DWORD connectFlags = 0;
     if (!InternetGetConnectedState(&connectFlags, 0))
     {
@@ -106,12 +122,12 @@ bool CheckForUpdates(const VersionInfo& currentVersion)
         return false;
     }
 
-    HINTERNET hSession = WinHttpOpen(
+    WinHttpHandle hSession(WinHttpOpen(
         USER_AGENT,
         WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
         WINHTTP_NO_PROXY_NAME,
         WINHTTP_NO_PROXY_BYPASS,
-        0);
+        0));
 
     if (!hSession)
     {
@@ -126,28 +142,25 @@ bool CheckForUpdates(const VersionInfo& currentVersion)
         TIMEOUT_MS,   // send timeout
         TIMEOUT_MS);  // receive timeout
 
-    HINTERNET hConnect = WinHttpConnect(hSession, GITHUB_HOST, INTERNET_DEFAULT_HTTPS_PORT, 0);
+    WinHttpHandle hConnect(WinHttpConnect(hSession, GITHUB_HOST, INTERNET_DEFAULT_HTTPS_PORT, 0));
     if (!hConnect)
     {
         Console::Error("Unable to create connection handle.\n");
-        WinHttpCloseHandle(hSession);
         return false;
     }
 
-    HINTERNET hRequest = WinHttpOpenRequest(
+    WinHttpHandle hRequest(WinHttpOpenRequest(
         hConnect,
         L"GET",
         RELEASE_PATH,
         nullptr,
         WINHTTP_NO_REFERER,
         WINHTTP_DEFAULT_ACCEPT_TYPES,
-        WINHTTP_FLAG_SECURE);
+        WINHTTP_FLAG_SECURE));
 
     if (!hRequest)
     {
         Console::Error("Unable to create HTTP request.\n");
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
         return false;
     }
 
@@ -161,9 +174,6 @@ bool CheckForUpdates(const VersionInfo& currentVersion)
     {
         DWORD err = GetLastError();
         Console::Error(GetConnectionErrorMessage(err));
-        WinHttpCloseHandle(hRequest);
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
         return false;
     }
 
@@ -171,9 +181,6 @@ bool CheckForUpdates(const VersionInfo& currentVersion)
     {
         DWORD err = GetLastError();
         Console::Error(GetConnectionErrorMessage(err));
-        WinHttpCloseHandle(hRequest);
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
         return false;
     }
 
@@ -188,18 +195,12 @@ bool CheckForUpdates(const VersionInfo& currentVersion)
     if (statusCode == 404)
     {
         Console::Warning("No releases found on GitHub.\n");
-        WinHttpCloseHandle(hRequest);
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
         return false;
     }
 
     if (statusCode == 403)
     {
         Console::Warning("GitHub API rate limit exceeded. Try again later.\n");
-        WinHttpCloseHandle(hRequest);
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
         return false;
     }
 
@@ -207,9 +208,6 @@ bool CheckForUpdates(const VersionInfo& currentVersion)
     {
         std::string msg = "GitHub returned HTTP " + std::to_string(statusCode) + ".\n";
         Console::Error(msg.c_str());
-        WinHttpCloseHandle(hRequest);
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
         return false;
     }
 
@@ -225,10 +223,6 @@ bool CheckForUpdates(const VersionInfo& currentVersion)
             responseBody.insert(responseBody.end(), buffer.begin(), buffer.begin() + bytesRead);
     }
 
-    WinHttpCloseHandle(hRequest);
-    WinHttpCloseHandle(hConnect);
-    WinHttpCloseHandle(hSession);
-
     if (responseBody.empty())
     {
         Console::Error("Empty response from GitHub.\n");
@@ -240,9 +234,11 @@ bool CheckForUpdates(const VersionInfo& currentVersion)
     std::wstring json(wideLen, L'\0');
     MultiByteToWideChar(CP_UTF8, 0, responseBody.data(), (int)responseBody.size(), &json[0], wideLen);
 
-    // Parse tag_name and html_url from the JSON response
+    // Parse tag_name first, then search for html_url *after* tag_name's position
+    // to avoid matching the author object's html_url which appears earlier in the JSON.
     std::wstring tagName = ExtractJsonString(json, L"tag_name");
-    std::wstring htmlUrl = ExtractJsonString(json, L"html_url");
+    size_t tagPos = json.find(L"\"tag_name\"");
+    std::wstring htmlUrl = ExtractJsonString(json, L"html_url", tagPos);
 
     if (tagName.empty())
     {
@@ -280,9 +276,9 @@ bool CheckForUpdates(const VersionInfo& currentVersion)
 
             if (input.empty() || input[0] == 'Y' || input[0] == 'y')
             {
-                INT_PTR result = (INT_PTR)ShellExecuteW(
+                INT_PTR shellResult = (INT_PTR)ShellExecuteW(
                     nullptr, L"open", htmlUrl.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-                if (result > 32)
+                if (shellResult > 32)
                     Console::Success("Opened in browser.\n");
                 else
                     Console::Warning("Could not open browser. Visit the URL above to download.\n");
