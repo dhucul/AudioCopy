@@ -23,29 +23,29 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 
 		// ── Disc Quality ────────────────────────────────────────────────
 		PrintMenuSection("Disc Quality");
-		PrintMenuItem(3, "C2 error scan");
-		PrintMenuItem(4, "BLER scan (detailed)");
-		PrintMenuItem(5, "Disc rot detection");
-		PrintMenuItem(6, "Generate surface map");
-		PrintMenuItem(7, "Multi-pass verification");
+		PrintMenuItem(3, "Quality scan (C1/C2/CU graphs)");
+		PrintMenuItem(4, "C2 error scan");
+		PrintMenuItem(5, "BLER scan (detailed)");
+		PrintMenuItem(6, "Disc rot detection");
+		PrintMenuItem(7, "Generate surface map");
+		PrintMenuItem(8, "Multi-pass verification");
 
 		// ── Disc Information ────────────────────────────────────────────
 		PrintMenuSection("Disc Info");
-		PrintMenuItem(8, "Audio content analysis");
-		PrintMenuItem(9, "Disc fingerprint (CDDB/MusicBrainz/AccurateRip IDs)");
-		PrintMenuItem(10, "Lead area check");
-		PrintMenuItem(11, "Subchannel integrity check");
-		PrintMenuItem(12, "Verify subchannel burn status");
-		PrintMenuItem(13, "Copy-protection check");
+		PrintMenuItem(9, "Audio content analysis");
+		PrintMenuItem(10, "Disc fingerprint (CDDB/MusicBrainz/AccurateRip IDs)");
+		PrintMenuItem(11, "Lead area check");
+		PrintMenuItem(12, "Subchannel integrity check");
+		PrintMenuItem(13, "Verify subchannel burn status");
+		PrintMenuItem(14, "Copy-protection check");
 
 		// ── Drive Diagnostics ───────────────────────────────────────────
 		PrintMenuSection("Drive");
-		PrintMenuItem(14, "Drive capabilities");
-		PrintMenuItem(15, "Drive offset detection");
-		PrintMenuItem(16, "C2 validation test");
-		PrintMenuItem(17, "Speed comparison test");
-		PrintMenuItem(18, "Seek time analysis");
-		PrintMenuItem(19, "Quality scan (C1/C2/CU graphs)");
+		PrintMenuItem(15, "Drive capabilities");
+		PrintMenuItem(16, "Drive offset detection");
+		PrintMenuItem(17, "C2 validation test");
+		PrintMenuItem(18, "Speed comparison test");
+		PrintMenuItem(19, "Seek time analysis");
 		PrintMenuItem(20, "Chipset identification");
 		PrintMenuItem(21, "Disc balance check");
 
@@ -85,8 +85,37 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			//  Disc Quality
 			// ════════════════════════════════════════════════════════════
 
-			// ── 3. C2 error scan ────────────────────────────────────────
+			// ── 3. Plextor Q-Check scan ─────────────────────────────────
 		case 3: {
+			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
+			int speed = copier.SelectScanSpeed();
+			if (speed == -1) break;
+			QCheckResult qcheckResult;
+			if (copier.RunQCheckScan(disc, qcheckResult, speed)) {
+				std::wstring logPath = workDir + L"\\qcheck_scan.csv";
+				if (copier.SaveQCheckLog(qcheckResult, logPath)) {
+					Console::Success("Q-Check scan log saved to: ");
+					std::wcout << logPath << L"\n";
+				}
+			}
+			else {
+				if (!qcheckResult.supported) {
+					Console::Warning("Q-Check is not available on this drive.\n");
+					Console::Info("Q-Check requires a classic Plextor drive:\n");
+					Console::Info("  PX-708A, PX-712A/SA, PX-716A/SA/AL, PX-755A/SA, PX-760A/SA\n");
+					Console::Info("\nIf your drive supports D8 reads, use option 5 (BLER Scan) for\n");
+					Console::Info("C2 error analysis. C1 block error rates are not measurable\n");
+					Console::Info("without a Q-Check-capable drive.\n");
+				}
+				else {
+					Console::Error("Q-Check scan failed.\n");
+				}
+			}
+			break;
+		}
+
+			  // ── 4. C2 error scan ──────────────────────────────────────
+		case 4: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -104,8 +133,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			  // ── 4. BLER scan (detailed) ─────────────────────────────────
-		case 4: {
+			  // ── 5. BLER scan (detailed) ─────────────────────────────────
+		case 5: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -123,8 +152,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			  // ── 5. Disc rot detection ───────────────────────────────────
-		case 5: {
+			  // ── 6. Disc rot detection ───────────────────────────────────
+		case 6: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -142,8 +171,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			  // ── 6. Generate surface map ─────────────────────────────────
-		case 6: {
+			  // ── 7. Generate surface map ─────────────────────────────────
+		case 7: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -152,8 +181,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			  // ── 7. Multi-pass verification ──────────────────────────────
-		case 7: {
+			  // ── 8. Multi-pass verification ──────────────────────────────
+		case 8: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -169,8 +198,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			  //  Disc Information
 			  // ════════════════════════════════════════════════════════════
 
-				// ── 8. Audio content analysis ───────────────────────────────
-		case 8: {
+				// ── 9. Audio content analysis ───────────────────────────────
+		case 9: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -179,8 +208,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			  // ── 9. Disc fingerprint ────────────────────────────────────
-		case 9: {
+			  // ── 10. Disc fingerprint ────────────────────────────────────
+		case 10: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			DiscFingerprint fingerprint;
 			if (copier.GenerateDiscFingerprint(disc, fingerprint)) {
@@ -197,8 +226,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			  // ── 10. Lead area check ────────────────────────────────────
-		case 10: {
+			  // ── 11. Lead area check ────────────────────────────────────
+		case 11: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -206,8 +235,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 11. Subchannel integrity check ─────────────────────────
-		case 11: {
+			   // ── 12. Subchannel integrity check ─────────────────────────
+		case 12: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -228,8 +257,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 12. Verify subchannel burn status ──────────────────────
-		case 12: {
+			   // ── 13. Verify subchannel burn status ──────────────────────
+		case 13: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -241,8 +270,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 13. Copy-protection check ─────────────────────────────
-		case 13: {
+			   // ── 14. Copy-protection check ─────────────────────────────
+		case 14: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -254,8 +283,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			   //  Drive Diagnostics
 			   // ════════════════════════════════════════════════════════════
 
-				  // ── 14. Drive capabilities ─────────────────────────────────
-		case 14: {
+				  // ── 15. Drive capabilities ─────────────────────────────────
+		case 15: {
 			DriveCapabilities caps;
 			if (copier.DetectDriveCapabilities(caps)) {
 				copier.PrintDriveCapabilities(caps);
@@ -268,8 +297,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 15. Drive offset detection ─────────────────────────────
-		case 15: {
+			   // ── 16. Drive offset detection ─────────────────────────────
+		case 16: {
 			OffsetDetectionResult offsetResult;
 			Console::Info("\nDetecting drive read offset...\n");
 
@@ -302,8 +331,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 16. C2 validation test ─────────────────────────────────
-		case 16: {
+			   // ── 17. C2 validation test ─────────────────────────────────
+		case 17: {
 			Console::Info("\n=== C2 Validation Test ===\n");
 			Console::Info("This test reads sectors at different speeds to verify C2 accuracy.\n");
 			Console::Info("Inconsistent C2 results may indicate unreliable C2 reporting.\n\n");
@@ -360,15 +389,15 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 17. Speed comparison test ──────────────────────────────
-		case 17: {
+			   // ── 18. Speed comparison test ──────────────────────────────
+		case 18: {
 			std::vector<SpeedComparisonResult> results;
 			copier.RunSpeedComparisonTest(disc, results);
 			break;
 		}
 
-			   // ── 18. Seek time analysis ─────────────────────────────────
-		case 18: {
+			   // ── 19. Seek time analysis ─────────────────────────────────
+		case 19: {
 			std::vector<SeekTimeResult> results;
 			Console::Info("\nRunning seek time analysis...\n");
 			if (copier.RunSeekTimeAnalysis(disc, results)) {
@@ -376,35 +405,6 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			}
 			else {
 				Console::Error("Seek time analysis failed.\n");
-			}
-			break;
-		}
-
-			   // ── 19. Plextor Q-Check scan ───────────────────────────────
-		case 19: {
-			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
-			int speed = copier.SelectScanSpeed();
-			if (speed == -1) break;
-			QCheckResult qcheckResult;
-			if (copier.RunQCheckScan(disc, qcheckResult, speed)) {
-				std::wstring logPath = workDir + L"\\qcheck_scan.csv";
-				if (copier.SaveQCheckLog(qcheckResult, logPath)) {
-					Console::Success("Q-Check scan log saved to: ");
-					std::wcout << logPath << L"\n";
-				}
-			}
-			else {
-				if (!qcheckResult.supported) {
-					Console::Warning("Q-Check is not available on this drive.\n");
-					Console::Info("Q-Check requires a classic Plextor drive:\n");
-					Console::Info("  PX-708A, PX-712A/SA, PX-716A/SA/AL, PX-755A/SA, PX-760A/SA\n");
-					Console::Info("\nIf your drive supports D8 reads, use option 4 (BLER Scan) for\n");
-					Console::Info("C2 error analysis. C1 block error rates are not measurable\n");
-					Console::Info("without a Q-Check-capable drive.\n");
-				}
-				else {
-					Console::Error("Q-Check scan failed.\n");
-				}
 			}
 			break;
 		}
