@@ -183,9 +183,61 @@ bool ScsiDrive::DetectCapabilities(DriveCapabilities& caps) {
 			int len = vpd80Buffer[3];
 			if (len > 0 && len < 60) {
 				caps.serialNumber = std::string(reinterpret_cast<char*>(&vpd80Buffer[4]), len);
-				while (!caps.serialNumber.empty() && caps.serialNumber.back() == ' ')
-					caps.serialNumber.pop_back();
+				trimBack(caps.serialNumber);
 			}
+		}
+	}
+
+	// Fallback 1: query serial number via Windows storage descriptor
+	// Many optical drives don't support VPD 0x80 but Windows can still
+	// retrieve the serial through the storage stack (IDENTIFY/INQUIRY).
+	if (caps.serialNumber.empty() && m_handle != INVALID_HANDLE_VALUE) {
+		STORAGE_PROPERTY_QUERY query = {};
+		query.PropertyId = StorageDeviceProperty;
+		query.QueryType = PropertyStandardQuery;
+
+		BYTE descBuf[1024] = {};
+		DWORD ret = 0;
+		if (DeviceIoControl(m_handle, IOCTL_STORAGE_QUERY_PROPERTY,
+			&query, sizeof(query), descBuf, sizeof(descBuf), &ret, nullptr)) {
+			auto* desc = reinterpret_cast<STORAGE_DEVICE_DESCRIPTOR*>(descBuf);
+			if (desc->SerialNumberOffset && desc->SerialNumberOffset < ret
+				&& descBuf[desc->SerialNumberOffset]) {
+				caps.serialNumber = reinterpret_cast<char*>(descBuf + desc->SerialNumberOffset);
+				trimBack(caps.serialNumber);
+			}
+		}
+	}
+
+	// Fallback 2: ATA IDENTIFY PACKET DEVICE (0xA1)
+	// SATA/ATAPI optical drives store the serial number at words 10-19
+	// (bytes 20-39) of the identify response, byte-swapped per ATA spec.
+	if (caps.serialNumber.empty() && m_handle != INVALID_HANDLE_VALUE) {
+		struct {
+			ATA_PASS_THROUGH_EX header;
+			BYTE data[512];
+		} ataCmd = {};
+
+		ataCmd.header.Length = sizeof(ATA_PASS_THROUGH_EX);
+		ataCmd.header.AtaFlags = ATA_FLAGS_DATA_IN | ATA_FLAGS_DRDY_REQUIRED;
+		ataCmd.header.DataTransferLength = 512;
+		ataCmd.header.DataBufferOffset = offsetof(decltype(ataCmd), data);
+		ataCmd.header.TimeOutValue = 5;
+		ataCmd.header.CurrentTaskFile[6] = 0xA1; // IDENTIFY PACKET DEVICE
+
+		DWORD ret = 0;
+		if (DeviceIoControl(m_handle, IOCTL_ATA_PASS_THROUGH,
+			&ataCmd, sizeof(ataCmd), &ataCmd, sizeof(ataCmd), &ret, nullptr)
+			&& ret >= ataCmd.header.DataBufferOffset + 40) {
+			// Words 10-19 (bytes 20-39): serial number, byte-swapped pairs
+			char serial[21] = {};
+			for (int i = 0; i < 20; i += 2) {
+				serial[i]     = static_cast<char>(ataCmd.data[20 + i + 1]);
+				serial[i + 1] = static_cast<char>(ataCmd.data[20 + i]);
+			}
+			serial[20] = '\0';
+			caps.serialNumber = serial;
+			trimBack(caps.serialNumber);
 		}
 	}
 
