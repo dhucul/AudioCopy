@@ -2,6 +2,7 @@
 #include "AccurateRip.h"
 #include "CopyWorkflow.h"
 #include "Drive.h"
+#include "DriveOffsetDatabase.h"
 #include "DriveSelection.h"
 #include "InterruptHandler.h"
 #include "MenuHelpers.h"
@@ -271,6 +272,23 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 		case 15: {
 			OffsetDetectionResult offsetResult;
 			Console::Info("\nDetecting drive read offset...\n");
+
+			// Always ensure the full database is loaded
+			auto& db = DriveOffsetDatabase::Instance();
+			if (!db.IsLoaded() || db.Count() < 100) {
+				Console::Info("Loading full drive offset database...\n");
+				db.Refresh();
+			}
+
+			// Generate compiled header from downloaded data
+			if (db.Count() > 100) {
+				std::string headerPath = "C:\\Users\\dhucu\\source\\repos\\AudioCopy\\DriveOffsets.h";
+				if (db.GenerateHeader(headerPath)) {
+					Console::Success("DriveOffsets.h updated with ");
+					std::cout << db.Count() << " drives. Rebuild to compile in.\n";
+				}
+			}
+
 			if (copier.DetectDriveOffset(offsetResult)) {
 				Console::Success("Offset detected: ");
 				std::cout << offsetResult.offset << " samples";

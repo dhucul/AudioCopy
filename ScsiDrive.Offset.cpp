@@ -3,6 +3,7 @@
 // ============================================================================
 #include "ScsiDrive.h"
 #include "DriveOffsets.h"
+#include "DriveOffsetDatabase.h"
 #include "OffsetCalibration.h"
 #include <cctype>
 #include <cmath>
@@ -58,6 +59,14 @@ bool ScsiDrive::LookupAccurateRipOffset(DriveOffsetInfo& info) {
 	std::string vendor, model;
 	if (!GetDriveInfo(vendor, model)) return false;
 
+	// Try the full downloaded database first
+	auto& db = DriveOffsetDatabase::Instance();
+	db.Load();
+	if (db.Lookup(vendor, model, info)) {
+		return true;
+	}
+
+	// Fall back to hardcoded entries
 	for (int i = 0; knownOffsets[i].vendor != nullptr; i++) {
 		std::string upperVendor = vendor;
 		std::string upperDbVendor = knownOffsets[i].vendor;
@@ -68,7 +77,7 @@ bool ScsiDrive::LookupAccurateRipOffset(DriveOffsetInfo& info) {
 			model.find(knownOffsets[i].model) != std::string::npos) {
 			info.readOffset = knownOffsets[i].offset;
 			info.fromDatabase = true;
-			info.source = "AccurateRip Database";
+			info.source = "AccurateRip Database (built-in)";
 			return true;
 		}
 	}

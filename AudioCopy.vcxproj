@@ -156,6 +156,7 @@
     <ClCompile Include="AudioCDCopier_WriteDisc_Media.cpp" />
     <ClCompile Include="CopyWorkflow.cpp" />
     <ClCompile Include="Drive.cpp" />
+    <ClCompile Include="DriveOffsetDatabase.cpp" />
     <ClCompile Include="DriveSelection.cpp" />
     <ClCompile Include="FileUtils.cpp" />
     <ClCompile Include="main.cpp" />
@@ -194,6 +195,7 @@
     <ClInclude Include="CopyWorkflow.h" />
     <ClInclude Include="DiscTypes.h" />
     <ClInclude Include="Drive.h" />
+    <ClInclude Include="DriveOffsetDatabase.h" />
     <ClInclude Include="DriveOffsets.h" />
     <ClInclude Include="DriveSelection.h" />
     <ClInclude Include="DriveTypes.h" />
