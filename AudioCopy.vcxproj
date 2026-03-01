@@ -175,6 +175,7 @@
     <ClCompile Include="ScsiDrive.QCheck.cpp" />
     <ClCompile Include="ScsiDrive.Read.cpp" />
     <ClCompile Include="ScsiDrive.Recommendations.cpp" />
+    <ClCompile Include="UpdateChecker.cpp" />
     <ClCompile Include="• AudioCDCopier_FileOutput.cpp" />
     <ClCompile Include="• AudioCDCopier_Fingerprinting.cpp" />
     <ClCompile Include="• AudioCDCopier_Verification.cpp" />
@@ -213,6 +214,7 @@
     <ClInclude Include="ScsiDrive.h" />
     <ClInclude Include="ScsiTypes.h" />
     <ClInclude Include="SecureRipTypes.h" />
+    <ClInclude Include="UpdateChecker.h" />
     <ClInclude Include="WriteDiscInternal.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -181,6 +181,9 @@
     <ClCompile Include="DriveOffsetDatabase.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="UpdateChecker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DiscTypes.h">
@@ -283,6 +286,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DriveOffsetDatabase.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="UpdateChecker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

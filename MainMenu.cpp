@@ -9,6 +9,7 @@
 #include "MenuUI.h"
 #include "Progress.h"
 #include "ProtectionCheck.h"
+#include "UpdateChecker.h"
 #include <iostream>
 #include <vector>
 
@@ -52,13 +53,14 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 		// ── Utility ─────────────────────────────────────────────────────
 		PrintMenuSection("Utility");
 		PrintMenuItem(22, "Rescan disc");
-		PrintMenuItem(23, "Help (test descriptions)");
-		PrintMenuItem(24, "Exit", true);
+		PrintMenuItem(23, "Check for updates");
+		PrintMenuItem(24, "Help (test descriptions)");
+		PrintMenuItem(25, "Exit", true);
 
 		Console::BoxFooter();
 		std::cout << Console::Sym::Arrow << " Choice: ";
 
-		int choice = GetMenuChoice(1, 24, 1);
+		int choice = GetMenuChoice(1, 25, 1);
 		std::cin.clear();
 		if (std::cin.peek() == '\n') {
 			std::cin.ignore();
@@ -525,13 +527,19 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 23. Help ───────────────────────────────────────────────
-		case 23:
+			   // ── 23. Check for updates ──────────────────────────────────
+		case 23: {
+			CheckForUpdates(APP_VERSION);
+			break;
+		}
+
+			   // ── 24. Help ───────────────────────────────────────────────
+		case 24:
 			PrintHelpMenu();
 			break;
 
-			// ── 24. Exit ───────────────────────────────────────────────
-		case 24:
+			// ── 25. Exit ───────────────────────────────────────────────
+		case 25:
 			copier.Close();
 			Console::Success("\nGoodbye!\n");
 			return 0;
@@ -541,7 +549,7 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-		if (choice != 24) {
+		if (choice != 25) {
 			WaitForKey();
 		}
 	}
