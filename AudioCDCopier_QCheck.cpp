@@ -19,7 +19,7 @@
 // transferring any audio data.  This matches QPXTool's C1/C2 scan.
 // ============================================================================
 
-bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result) {
+bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, int scanSpeed) {
 	std::cout << "\n=== CD Quality Scan (C1/C2/CU) ===\n";
 
 	// ── Check Plextor Q-Check first, then LiteOn scan ────────
@@ -73,9 +73,12 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result) {
 
 	// ── Start the hardware scan ──────────────────────────────
 	if (useLiteOn) {
-		// LiteOn scans at current drive speed — set to 8x for ~9 min scan
-		m_drive.SetSpeed(8);
-		std::cout << "Scan speed: 8x (~" << (result.totalSeconds / 8 / 60) + 1 << " min)\n";
+		// LiteOn scans at current drive speed — use selected scan speed
+		m_drive.SetSpeed(scanSpeed);
+		if (scanSpeed == 0)
+			std::cout << "Scan speed: Max\n";
+		else
+			std::cout << "Scan speed: " << scanSpeed << "x (~" << ((result.totalSeconds / std::max(scanSpeed, 1) / 60) + 1) << " min)\n";
 	}
 
 	bool started = usePlextor

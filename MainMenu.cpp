@@ -383,8 +383,10 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			   // ── 19. Plextor Q-Check scan ───────────────────────────────
 		case 19: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
+			int speed = copier.SelectScanSpeed();
+			if (speed == -1) break;
 			QCheckResult qcheckResult;
-			if (copier.RunQCheckScan(disc, qcheckResult)) {
+			if (copier.RunQCheckScan(disc, qcheckResult, speed)) {
 				std::wstring logPath = workDir + L"\\qcheck_scan.csv";
 				if (copier.SaveQCheckLog(qcheckResult, logPath)) {
 					Console::Success("Q-Check scan log saved to: ");
