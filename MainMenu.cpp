@@ -19,25 +19,25 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 
 		// ── Ripping ─────────────────────────────────────────────────────
 		PrintMenuSection("Ripping");
-		PrintMenuItem(1, "Copy disc");
-		PrintMenuItem(2, "Write disc (.bin/.cue/.sub files)");
+		PrintMenuItem(1, "Copy disc *");
+		PrintMenuItem(2, "Write disc (.bin/.cue/.sub files) *");
 
 		// ── Disc Quality ────────────────────────────────────────────────
 		PrintMenuSection("Disc Quality");
-		PrintMenuItem(3, "Quality scan (C1/C2/CU graphs)");
-		PrintMenuItem(4, "C2 error scan");
-		PrintMenuItem(5, "BLER scan (detailed)");
-		PrintMenuItem(6, "Disc rot detection");
-		PrintMenuItem(7, "Generate surface map");
-		PrintMenuItem(8, "Multi-pass verification");
+		PrintMenuItem(3, "Quality scan (C1/C2/CU graphs) *");
+		PrintMenuItem(4, "C2 error scan *");
+		PrintMenuItem(5, "BLER scan (detailed) *");
+		PrintMenuItem(6, "Disc rot detection *");
+		PrintMenuItem(7, "Generate surface map *");
+		PrintMenuItem(8, "Multi-pass verification *");
 
 		// ── Disc Information ────────────────────────────────────────────
 		PrintMenuSection("Disc Info");
-		PrintMenuItem(9, "Audio content analysis");
+		PrintMenuItem(9, "Audio content analysis *");
 		PrintMenuItem(10, "Disc fingerprint (CDDB/MusicBrainz/AccurateRip IDs)");
 		PrintMenuItem(11, "Lead area check");
-		PrintMenuItem(12, "Subchannel integrity check");
-		PrintMenuItem(13, "Verify subchannel burn status");
+		PrintMenuItem(12, "Subchannel integrity check *");
+		PrintMenuItem(13, "Verify subchannel burn status *");
 		PrintMenuItem(14, "Copy-protection check");
 
 		// ── Drive Diagnostics ───────────────────────────────────────────
@@ -48,7 +48,7 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 		PrintMenuItem(18, "Speed comparison test");
 		PrintMenuItem(19, "Seek time analysis");
 		PrintMenuItem(20, "Chipset identification");
-		PrintMenuItem(21, "Disc balance check");
+		PrintMenuItem(21, "Disc balance check *");
 
 		// ── Utility ─────────────────────────────────────────────────────
 		PrintMenuSection("Utility");
@@ -56,6 +56,10 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 		PrintMenuItem(23, "Check for updates");
 		PrintMenuItem(24, "Help (test descriptions)");
 		PrintMenuItem(25, "Exit", true);
+
+		Console::SetColor(Console::Color::DarkGray);
+		std::cout << "  * Uses pre-gap analysis (scan range includes pregap sectors)\n";
+		Console::Reset();
 
 		Console::BoxFooter();
 		std::cout << Console::Sym::Arrow << " Choice: ";
@@ -212,7 +216,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 
 			  // ── 10. Disc fingerprint ────────────────────────────────────
 		case 10: {
-			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
+			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break;
+			}
 			DiscFingerprint fingerprint;
 			if (copier.GenerateDiscFingerprint(disc, fingerprint)) {
 				copier.PrintDiscFingerprint(fingerprint);

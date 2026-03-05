@@ -278,6 +278,52 @@ bool AudioCDCopier::CheckDiscBalance(DiscInfo& disc, int& balanceScore) {
 		}
 	}
 
+	// Audio-relevant speed ceiling for error scoring.
+	// Professional CD players run at 1x; quality rippers at 4x-8x.
+	// ECC errors that only appear at 24x+ are likely drive/mechanical
+	// artifacts, not disc balance problems.  Cap error scoring at 16x
+	// (index 2) so high-speed errors are reported but don't tank the score.
+	constexpr int MAX_AUDIO_RELEVANT_SPEED = 16;
+	int errorCeilingIdx = NUM_SPEEDS - 1;
+	for (int s = 0; s < NUM_SPEEDS; s++) {
+		if (speeds[s] >= MAX_AUDIO_RELEVANT_SPEED) {
+			errorCeilingIdx = s;
+			break;
+		}
+	}
+
+	// Detect speed fallback: if a higher speed step has read times that
+	// match or exceed a much lower speed, the drive silently fell back.
+	// Mark those steps so they don't confuse error or scaling analysis.
+	std::vector<bool> speedFellBack(NUM_SPEEDS, false);
+	for (int s = 2; s < NUM_SPEEDS; s++) {
+		if (avgReadTimeMs[s] > 0.001 && avgReadTimeMs[s - 2] > 0.001) {
+			// If read time at speed[s] is >= speed[s-2], it fell back
+			if (avgReadTimeMs[s] >= avgReadTimeMs[s - 2] * 0.95 &&
+				avgReadTimeMs[s - 1] < avgReadTimeMs[s - 2] * 0.85) {
+				speedFellBack[s] = true;
+			}
+		}
+	}
+
+	// ECC-specific fallback: if HW errors spike at speed[s-1] but drop to
+	// near-zero at speed[s], the drive likely couldn't sustain that speed
+	// during the ECC scan and silently fell back to a lower speed.
+	// This complements timing-based detection — the two sweeps use
+	// different disc regions and the drive may behave differently.
+	std::vector<bool> eccFellBack(NUM_SPEEDS, false);
+	if (hasHwC1 && !hwEccFlat) {
+		for (int s = 1; s < NUM_SPEEDS; s++) {
+			double prevErrors = hwC1PerSpeed[s - 1] + hwC2PerSpeed[s - 1];
+			double curErrors  = hwC1PerSpeed[s]     + hwC2PerSpeed[s];
+			// Previous speed had significant errors but this speed dropped
+			// to near-zero — strong sign the drive fell back for the scan
+			if (prevErrors > 20.0 && curErrors < 1.0) {
+				eccFellBack[s] = true;
+			}
+		}
+	}
+
 	// Error score: compare low-speed baseline to high-speed errors.
 	// Prefer hardware C1 data (ECC decoder) over READ CD C2 bitmap —
 	// the bitmap is non-functional on many MediaTek-based drives.
@@ -290,10 +336,12 @@ bool AudioCDCopier::CheckDiscBalance(DiscInfo& disc, int& balanceScore) {
 		// Hardware C2 score: direct uncorrectable error rate from ECC decoder.
 		// Any non-zero C2 at high speed that wasn't present at low speed is a
 		// strong wobble signal — the drive's error correction is failing.
+		// Only consider speeds up to errorCeilingIdx for scoring.
 		double hwC2Baseline = std::max(hwC2PerSpeed[baselineIdx], 0.1);
 		double peakHwC2Ratio = 0.0;
 		bool anyHwC2 = false;
-		for (int s = baselineIdx + 1; s < NUM_SPEEDS; s++) {
+		for (int s = baselineIdx + 1; s <= errorCeilingIdx; s++) {
+			if (speedFellBack[s]) continue;
 			if (hwC2PerSpeed[s] > 0.0) anyHwC2 = true;
 			double ratio = hwC2PerSpeed[s] / hwC2Baseline;
 			if (ratio > peakHwC2Ratio) peakHwC2Ratio = ratio;
@@ -311,7 +359,8 @@ bool AudioCDCopier::CheckDiscBalance(DiscInfo& disc, int& balanceScore) {
 			// No hardware C2 — fall back to C1 ratio analysis
 			double hwBaseline = std::max(hwC1PerSpeed[baselineIdx], 1.0);
 			double peakHwRatio = 0.0;
-			for (int s = baselineIdx + 1; s < NUM_SPEEDS; s++) {
+			for (int s = baselineIdx + 1; s <= errorCeilingIdx; s++) {
+				if (speedFellBack[s]) continue;
 				double ratio = hwC1PerSpeed[s] / hwBaseline;
 				if (ratio > peakHwRatio) peakHwRatio = ratio;
 			}
@@ -322,8 +371,8 @@ bool AudioCDCopier::CheckDiscBalance(DiscInfo& disc, int& balanceScore) {
 			else if (peakHwRatio <= 16.0) errorScore = 25;
 			else                          errorScore = 0;
 
-			// C1 trend detection
-			int numActive = NUM_SPEEDS - baselineIdx;
+			// C1 trend detection (only within audio-relevant range)
+			int numActive = (errorCeilingIdx + 1) - baselineIdx;
 			if (numActive >= 4) {
 				int half = numActive / 2;
 				double lowSum = 0.0, highSum = 0.0;
@@ -347,7 +396,8 @@ bool AudioCDCopier::CheckDiscBalance(DiscInfo& disc, int& balanceScore) {
 	else {
 		double baseline = std::max(avgC2PerSpeed[baselineIdx], 1.0);
 		double peakC2Ratio = 0.0;
-		for (int s = baselineIdx + 1; s < NUM_SPEEDS; s++) {
+		for (int s = baselineIdx + 1; s <= errorCeilingIdx; s++) {
+			if (speedFellBack[s]) continue;
 			double ratio = avgC2PerSpeed[s] / baseline;
 			if (ratio > peakC2Ratio) peakC2Ratio = ratio;
 		}
@@ -483,13 +533,28 @@ bool AudioCDCopier::CheckDiscBalance(DiscInfo& disc, int& balanceScore) {
 			std::cout << "  " << std::setw(3) << speeds[s] << "x:  C1 "
 				<< std::fixed << std::setprecision(1) << hwC1PerSpeed[s]
 				<< "/sec   C2 " << std::setprecision(1) << hwC2PerSpeed[s]
-				<< "/sec\n";
+				<< "/sec";
+			if (speedFellBack[s] || eccFellBack[s])
+				std::cout << "  ** FALLBACK (drive can't sustain this speed) **";
+			else if (speeds[s] > MAX_AUDIO_RELEVANT_SPEED)
+				std::cout << "  (informational — above audio-relevant range)";
+			std::cout << "\n";
 		}
 		if (hwEccFlat) {
 			std::cout << "  ** NOTE: C1/C2 rates are flat across all speed settings.\n"
 				<< "     The 0xF3 scan firmware likely ignores SetSpeed — per-speed\n"
 				<< "     comparison is not meaningful. Relying on timing-based\n"
 				<< "     scoring (Jitter/Scaling) instead of ECC for wobble. **\n";
+		}
+		// Note which speeds contributed to scoring
+		bool anyAboveCeiling = false;
+		for (int s = errorCeilingIdx + 1; s < NUM_SPEEDS; s++) {
+			if (hwC1PerSpeed[s] > 0.0 || hwC2PerSpeed[s] > 0.0)
+				anyAboveCeiling = true;
+		}
+		if (anyAboveCeiling) {
+			std::cout << "  Note: Errors above " << MAX_AUDIO_RELEVANT_SPEED
+				<< "x are not scored — no audio player operates at those speeds.\n";
 		}
 	}
 	else {
