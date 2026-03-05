@@ -201,7 +201,7 @@ static void LBAtoMSF(int lba, BYTE& m, BYTE& s, BYTE& f) {
 // ============================================================================
 // Helper: Set Write Parameters Mode Page 0x05
 // ============================================================================
-static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode) {
+static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode, bool quiet = false) {
 	BYTE modeData[60] = { 0 };
 
 	BYTE* page = modeData + 8;
@@ -236,6 +236,12 @@ static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode) {
 		expectedWriteType = 0x02;
 		expectedBlockType = 0x02;
 		break;
+	case 5:  // Raw without subchannel
+		page[2] = 0x43;
+		page[4] = 0x00;
+		expectedWriteType = 0x03;
+		expectedBlockType = 0x00;
+		break;
 	default:
 		page[2] = 0x42;
 		page[4] = 0x00;
@@ -256,8 +262,10 @@ static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode) {
 	BYTE senseKey = 0, asc = 0, ascq = 0;
 	if (!drive.SendSCSIWithSense(selectCdb, sizeof(selectCdb), modeData, totalLen,
 		&senseKey, &asc, &ascq, false)) {
-		Console::Error("MODE SELECT for Write Parameters failed (");
-		std::cout << drive.GetSenseDescription(senseKey, asc, ascq) << ")\n";
+		if (!quiet) {
+			Console::Error("MODE SELECT for Write Parameters failed (");
+			std::cout << drive.GetSenseDescription(senseKey, asc, ascq) << ")\n";
+		}
 		return false;
 	}
 
@@ -268,21 +276,26 @@ static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode) {
 		BYTE* vPage = verifyBuf + 8 + bdLen;
 		BYTE writeType = vPage[2] & 0x0F;
 		BYTE blockType = vPage[4];
-		const char* modeName = (writeType == 0x03) ? "Raw DAO" : "SAO";
+		const char* modeName = (writeType == 0x03) ? "Raw" : "DAO";
 		const char* subName = (blockType == 0x03) ? "raw P-W" :
 			(blockType == 0x02) ? "packed P-W" : "none";
 		int blockSize = (blockType >= 0x02) ? 2448 : (blockType == 0x01) ? 2368 : 2352;
-		Console::Success("Write parameters verified (");
-		std::cout << modeName << ", Audio, " << blockSize << "-byte blocks, sub: " << subName << ")\n";
+
+		if (!quiet) {
+			Console::Success("Write parameters verified (");
+			std::cout << modeName << ", Audio, " << blockSize << "-byte blocks, sub: " << subName << ")\n";
+		}
 
 		if (writeType != expectedWriteType || blockType != expectedBlockType) {
-			Console::Warning("Drive silently changed write parameters (requested write type 0x");
-			std::cout << std::hex << std::setfill('0') << std::setw(2)
-				<< static_cast<int>(expectedWriteType) << "/block 0x"
-				<< std::setw(2) << static_cast<int>(expectedBlockType)
-				<< ", got 0x" << std::setw(2) << static_cast<int>(writeType)
-				<< "/0x" << std::setw(2) << static_cast<int>(blockType)
-				<< std::dec << std::setfill(' ') << ")\n";
+			if (!quiet) {
+				Console::Warning("Drive silently changed write parameters (requested write type 0x");
+				std::cout << std::hex << std::setfill('0') << std::setw(2)
+					<< static_cast<int>(expectedWriteType) << "/block 0x"
+					<< std::setw(2) << static_cast<int>(expectedBlockType)
+					<< ", got 0x" << std::setw(2) << static_cast<int>(writeType)
+					<< "/0x" << std::setw(2) << static_cast<int>(blockType)
+					<< std::dec << std::setfill(' ') << ")\n";
+			}
 			return false;
 		}
 	}
@@ -321,13 +334,8 @@ bool WriteDiscInternal::BuildAndSendCueSheet(ScsiDrive& drive,
 	std::vector<BYTE> cueSheet(cueSheetSize, 0);
 	size_t ei = 0;
 
-	BYTE leadInDataForm;
-	if (subchannelMode == 1 || subchannelMode == 2) {
-		leadInDataForm = trackDataForm;
-	}
-	else {
-		leadInDataForm = trackDataForm;   // must match track data form — 0x01 is not a valid audio data form
-	}
+	// Lead-in data form must match track data form
+	BYTE leadInDataForm = trackDataForm;
 
 	cueSheet[ei * 8 + 0] = 0x01;
 	cueSheet[ei * 8 + 1] = 0x00;
@@ -336,7 +344,7 @@ bool WriteDiscInternal::BuildAndSendCueSheet(ScsiDrive& drive,
 	ei++;
 
 	cueSheet[ei * 8 + 0] = 0x01;
-	cueSheet[ei * 8 + 1] = static_cast<BYTE>(tracks[0].trackNumber);  // use actual track number, not hardcoded 0x01
+	cueSheet[ei * 8 + 1] = static_cast<BYTE>(tracks[0].trackNumber);
 	cueSheet[ei * 8 + 2] = 0x00;
 	cueSheet[ei * 8 + 3] = trackDataForm;
 	cueSheet[ei * 8 + 5] = 0x00;
@@ -432,17 +440,17 @@ bool WriteDiscInternal::BuildAndSendCueSheet(ScsiDrive& drive,
 // ============================================================================
 // Helper: Prepare drive for writing
 // ============================================================================
-bool WriteDiscInternal::PrepareDriveForWrite(ScsiDrive& drive, int subchannelMode) {
-	Console::Info("Checking drive readiness...\n");
+bool WriteDiscInternal::PrepareDriveForWrite(ScsiDrive& drive, int subchannelMode, bool quiet) {
+	if (!quiet) Console::Info("Checking drive readiness...\n");
 	if (!WaitForDriveReady(drive, 15)) {
-		Console::Error("Drive did not become ready\n");
+		if (!quiet) Console::Error("Drive did not become ready\n");
 		return false;
 	}
-	Console::Success("Drive is ready\n");
+	if (!quiet) Console::Success("Drive is ready\n");
 
-	Console::Info("Configuring write parameters...\n");
-	if (!SetWriteParametersPage(drive, subchannelMode)) {
-		Console::Error("Failed to configure write parameters\n");
+	if (!quiet) Console::Info("Configuring write parameters...\n");
+	if (!SetWriteParametersPage(drive, subchannelMode, quiet)) {
+		if (!quiet) Console::Error("Failed to configure write parameters\n");
 		return false;
 	}
 

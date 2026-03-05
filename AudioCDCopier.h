@@ -193,7 +193,8 @@ public:
 		const std::vector<TrackWriteInfo>& tracks,
 		DWORD totalSectors,
 		bool hasSubchannel,
-		bool needsDeinterleave = false);
+		bool needsDeinterleave = false,
+		int subchannelMode = 0);
 
 	bool VerifyWrittenDisc(const std::vector<TrackWriteInfo>& tracks);
 

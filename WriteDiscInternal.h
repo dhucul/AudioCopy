@@ -5,7 +5,7 @@
 #include <windows.h>
 
 namespace WriteDiscInternal {
-	bool PrepareDriveForWrite(ScsiDrive& drive, int subchannelMode);
+	bool PrepareDriveForWrite(ScsiDrive& drive, int subchannelMode, bool quiet = false);
 	bool BuildAndSendCueSheet(ScsiDrive& drive,
 		const std::vector<AudioCDCopier::TrackWriteInfo>& tracks,
 		DWORD totalSectors, int subchannelMode, bool verbose = true);

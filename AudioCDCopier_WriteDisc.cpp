@@ -82,7 +82,7 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 
 	DWORD totalSectors = static_cast<DWORD>(fileSize / AUDIO_SECTOR_SIZE);
 
-	// Determine if we can use Raw DAO mode with subchannel data
+	// Determine if we can use Raw mode with subchannel data
 	bool hasSubchannel = false;
 	bool needsDeinterleave = false;
 	if (!subFile.empty()) {
@@ -101,15 +101,15 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 			else {
 				Console::Warning("Subchannel file size mismatch (expected ");
 				std::cout << expectedSubSize << " bytes, got " << subSize
-					<< ") — writing without subchannel\n";
+					<< ") -- writing without subchannel\n";
 			}
 		}
 		else {
-			Console::Warning("Cannot open .sub file — writing without subchannel data\n");
+			Console::Warning("Cannot open .sub file -- writing without subchannel data\n");
 		}
 	}
 
-	// Parse CUE sheet — also extracts TITLE/PERFORMER for CD-Text
+	// Parse CUE sheet -- also extracts TITLE/PERFORMER for CD-Text
 	std::vector<TrackWriteInfo> tracks;
 	std::string discTitle, discPerformer;
 	if (!ParseCueSheet(cueFile, tracks, discTitle, discPerformer)) {
@@ -144,10 +144,10 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 		};
 
 		const WriteMode candidates[] = {
-			{ 1, true,  "Raw DAO + packed P-W subchannel" },
-			{ 2, false, "Raw DAO + raw P-W subchannel"    },
-			{ 3, true,  "SAO + packed P-W subchannel"     },
-			{ 4, false, "SAO + raw P-W subchannel"        },
+			{ 1, true,  "Raw + packed P-W subchannel" },
+			{ 2, false, "Raw + raw P-W subchannel"    },
+			{ 3, true,  "DAO + packed P-W subchannel" },
+			{ 4, false, "DAO + raw P-W subchannel"    },
 		};
 
 		bool modeFound = false;
@@ -156,12 +156,12 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 			std::cout << wm.description << "...\n";
 
 			if (!WriteDiscInternal::PrepareDriveForWrite(m_drive, wm.mode)) {
-				Console::Info("  MODE SELECT rejected — skipping\n");
+				Console::Info("  MODE SELECT rejected -- skipping\n");
 				continue;
 			}
 
 			if (!WriteDiscInternal::BuildAndSendCueSheet(m_drive, tracks, totalSectors, wm.mode, false)) {
-				Console::Info("  CUE sheet rejected — skipping\n");
+				Console::Info("  CUE sheet rejected -- skipping\n");
 				continue;
 			}
 
@@ -181,14 +181,26 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 	}
 
 	if (!hasSubchannel) {
-		if (!WriteDiscInternal::PrepareDriveForWrite(m_drive, 0)) {
-			return false;
+		// Try Raw without subchannel first, fall back to DAO
+		bool rawOk = false;
+		if (WriteDiscInternal::PrepareDriveForWrite(m_drive, 5, true)) {
+			if (WriteDiscInternal::BuildAndSendCueSheet(m_drive, tracks, totalSectors, 5, false)) {
+				subchannelMode = 5;
+				rawOk = true;
+				Console::Success("Using Raw mode (no subchannel)\n");
+			}
 		}
 
-		Console::Info("\nSending disc layout to drive...\n");
-		if (!WriteDiscInternal::BuildAndSendCueSheet(m_drive, tracks, totalSectors, 0)) {
-			Console::Error("Drive rejected disc layout\n");
-			return false;
+		if (!rawOk) {
+			if (!WriteDiscInternal::PrepareDriveForWrite(m_drive, 0)) {
+				return false;
+			}
+
+			Console::Info("\nSending disc layout to drive...\n");
+			if (!WriteDiscInternal::BuildAndSendCueSheet(m_drive, tracks, totalSectors, 0)) {
+				Console::Error("Drive rejected disc layout\n");
+				return false;
+			}
 		}
 	}
 
@@ -213,7 +225,7 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 
 	Console::Info("\nWriting audio sectors...\n");
 	if (!WriteAudioSectors(binFile, subFile, tracks, totalSectors,
-		hasSubchannel, needsDeinterleave)) {
+		hasSubchannel, needsDeinterleave, subchannelMode)) {
 		Console::Error("Failed to write audio sectors\n");
 		return false;
 	}
@@ -229,7 +241,8 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 	const std::vector<TrackWriteInfo>& tracks,
 	DWORD totalSectors,
 	bool hasSubchannel,
-	bool needsDeinterleave) {
+	bool needsDeinterleave,
+	int subchannelMode) {
 
 	std::ifstream binInput(binFile, std::ios::binary);
 	if (!binInput.is_open()) {
@@ -264,7 +277,9 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 		std::cout << ")\n";
 	}
 	else {
-		Console::Info("Write mode: SAO (2352 bytes/sector, drive-generated subchannel)\n");
+		const char* modeName = (subchannelMode == 5) ? "Raw" : "DAO";
+		Console::Info("Write mode: ");
+		std::cout << modeName << " (2352 bytes/sector, drive-generated subchannel)\n";
 	}
 
 	if (!WaitForDriveReady(m_drive, 10)) {
@@ -453,7 +468,7 @@ bool AudioCDCopier::VerifyWriteCompletion(const std::wstring& /*binFile*/) {
 	}
 
 	std::cout << "\n";
-	Console::Warning("Finalization timeout — disc may still be usable\n");
+	Console::Warning("Finalization timeout -- disc may still be usable\n");
 	return true;
 }
 
