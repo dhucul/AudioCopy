@@ -295,7 +295,7 @@ static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode) {
 // ============================================================================
 bool WriteDiscInternal::BuildAndSendCueSheet(ScsiDrive& drive,
 	const std::vector<AudioCDCopier::TrackWriteInfo>& tracks,
-	DWORD totalSectors, int subchannelMode) {
+	DWORD totalSectors, int subchannelMode, bool verbose) {
 
 	BYTE trackDataForm;
 	switch (subchannelMode) {
@@ -386,19 +386,28 @@ bool WriteDiscInternal::BuildAndSendCueSheet(ScsiDrive& drive,
 		cueSheet[ei * 8 + 7] = f;
 	}
 
-	Console::Info("SCSI CUE sheet layout:\n");
-	for (size_t i = 0; i < entryCount; i++) {
-		BYTE* e = &cueSheet[i * 8];
-		if (e[1] == 0x00)       std::cout << "  Lead-in ";
-		else if (e[1] == 0xAA)  std::cout << "  Lead-out";
-		else                    std::cout << "  Track " << std::setw(2) << static_cast<int>(e[1]);
-		std::cout << "  Index " << static_cast<int>(e[2])
-			<< "  DataForm 0x" << std::hex << std::setfill('0') << std::setw(2)
-			<< static_cast<int>(e[3]) << std::dec
-			<< "  MSF " << std::setfill('0') << std::setw(2) << static_cast<int>(e[5])
-			<< ":" << std::setw(2) << static_cast<int>(e[6])
-			<< ":" << std::setw(2) << static_cast<int>(e[7])
-			<< std::setfill(' ') << "\n";
+	if (verbose) {
+		Console::Info("SCSI CUE sheet layout:\n");
+		for (size_t i = 0; i < entryCount; i++) {
+			BYTE* e = &cueSheet[i * 8];
+			if (e[1] == 0x00)       std::cout << "  Lead-in ";
+			else if (e[1] == 0xAA)  std::cout << "  Lead-out";
+			else                    std::cout << "  Track " << std::setw(2) << static_cast<int>(e[1]);
+			std::cout << "  Index " << static_cast<int>(e[2])
+				<< "  DataForm 0x" << std::hex << std::setfill('0') << std::setw(2)
+				<< static_cast<int>(e[3]) << std::dec
+				<< "  MSF " << std::setfill('0') << std::setw(2) << static_cast<int>(e[5])
+				<< ":" << std::setw(2) << static_cast<int>(e[6])
+				<< ":" << std::setw(2) << static_cast<int>(e[7])
+				<< std::setfill(' ') << "\n";
+		}
+	}
+	else {
+		Console::Info("Sending CUE sheet (");
+		std::cout << entryCount << " entries, DataForm 0x"
+			<< std::hex << std::setfill('0') << std::setw(2)
+			<< static_cast<int>(trackDataForm) << std::dec
+			<< std::setfill(' ') << ")...\n";
 	}
 
 	BYTE cdb[10] = { 0x5D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };

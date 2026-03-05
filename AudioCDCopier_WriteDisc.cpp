@@ -160,7 +160,7 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 				continue;
 			}
 
-			if (!WriteDiscInternal::BuildAndSendCueSheet(m_drive, tracks, totalSectors, wm.mode)) {
+			if (!WriteDiscInternal::BuildAndSendCueSheet(m_drive, tracks, totalSectors, wm.mode, false)) {
 				Console::Info("  CUE sheet rejected — skipping\n");
 				continue;
 			}
