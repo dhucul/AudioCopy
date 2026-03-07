@@ -494,14 +494,29 @@ bool AudioCDCopier::CheckDiscBalance(DiscInfo& disc, int& balanceScore) {
 	// After collecting avgReadTimeMs[], detect if the drive throttled.
 	// If the requested speed doubled but read time barely changed, the drive
 	// refused to go faster — a strong wobble indicator.
+
+	// Estimate the drive's actual speed at the baseline index.
+	// If the drive ignored lower requested speeds and ran at its own minimum,
+	// use the first differentiated speed step to back-calculate from read
+	// times (time is inversely proportional to speed).
+	double actualBaselineSpeed = static_cast<double>(speeds[baselineIdx]);
+	if (baselineIdx + 1 < NUM_SPEEDS
+		&& avgReadTimeMs[baselineIdx] > 0.001
+		&& avgReadTimeMs[baselineIdx + 1] > 0.001) {
+		double estimated = speeds[baselineIdx + 1]
+			* avgReadTimeMs[baselineIdx + 1] / avgReadTimeMs[baselineIdx];
+		// Clamp: actual speed can't exceed the next step (noise guard)
+		actualBaselineSpeed = std::min(estimated,
+			static_cast<double>(speeds[baselineIdx + 1]));
+	}
+
 	int throttlePenalties = 0;
 	for (int s = baselineIdx + 1; s <= ceilingIdx; s++) {
 		if (avgReadTimeMs[s] < 0.001 || avgReadTimeMs[baselineIdx] < 0.001)
 			continue;
 
 		// Expected time ratio if speed scaling were perfect
-		double expectedRatio = static_cast<double>(speeds[baselineIdx])
-			/ speeds[s];
+		double expectedRatio = actualBaselineSpeed / speeds[s];
 		// Actual time ratio
 		double actualRatio = avgReadTimeMs[s] / avgReadTimeMs[baselineIdx];
 
