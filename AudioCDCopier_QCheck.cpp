@@ -326,6 +326,28 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 	else
 		result.qualityRating = "EXCELLENT";
 
+	// ── Total C1 quality interpretation ──────────────────────
+	if (result.totalC1 <= 500)
+		result.totalC1Quality = "Exceptional";
+	else if (result.totalC1 <= 5000)
+		result.totalC1Quality = "Very good";
+	else if (result.totalC1 <= 20000)
+		result.totalC1Quality = "Normal";
+	else if (result.totalC1 <= 50000)
+		result.totalC1Quality = "Marginal";
+	else
+		result.totalC1Quality = "Poor";
+
+	// ── Archival audio peak C1 assessment ────────────────────
+	if (result.maxC1PerSecond < 50)
+		result.archivalC1Rating = "Ideal";
+	else if (result.maxC1PerSecond < 100)
+		result.archivalC1Rating = "Good";
+	else if (result.maxC1PerSecond <= 220)
+		result.archivalC1Rating = "Acceptable";
+	else
+		result.archivalC1Rating = "Poor";
+
 	PrintQCheckReport(result);
 	return true;
 }
@@ -363,6 +385,48 @@ void AudioCDCopier::PrintQCheckReport(const QCheckResult& result) {
 		std::cout << "  C1 Assessment: FAIR — elevated but within Red Book limits\n";
 	else
 		std::cout << "  C1 Assessment: POOR — exceeds Red Book BLER limit\n";
+
+	// ── Total C1 Quality ─────────────────────────────────────
+	std::cout << "\n--- Total C1 Quality ---\n";
+	std::cout << "  Total C1:      " << result.totalC1 << "\n";
+	std::cout << "  Interpretation: ";
+	if (result.totalC1Quality == "Exceptional" || result.totalC1Quality == "Very good")
+		Console::SetColorRGB(Console::Theme::GreenR, Console::Theme::GreenG, Console::Theme::GreenB);
+	else if (result.totalC1Quality == "Normal" || result.totalC1Quality == "Marginal")
+		Console::SetColorRGB(Console::Theme::YellowR, Console::Theme::YellowG, Console::Theme::YellowB);
+	else
+		Console::SetColorRGB(Console::Theme::RedR, Console::Theme::RedG, Console::Theme::RedB);
+	std::cout << result.totalC1Quality;
+	Console::Reset();
+	if (result.totalC1Quality == "Exceptional")
+		std::cout << " (rare, usually high-quality pressings)";
+	else if (result.totalC1Quality == "Marginal")
+		std::cout << " (still within spec)";
+	else if (result.totalC1Quality == "Poor")
+		std::cout << " (poor burn or aging disc)";
+	std::cout << "\n";
+
+	// ── Archival Audio Peak C1 ───────────────────────────────
+	std::cout << "\n--- Archival Audio (Peak C1) ---\n";
+	std::cout << "  Peak C1/sec: " << result.maxC1PerSecond << "\n";
+	std::cout << "  Rating:      ";
+	if (result.archivalC1Rating == "Ideal" || result.archivalC1Rating == "Good")
+		Console::SetColorRGB(Console::Theme::GreenR, Console::Theme::GreenG, Console::Theme::GreenB);
+	else if (result.archivalC1Rating == "Acceptable")
+		Console::SetColorRGB(Console::Theme::YellowR, Console::Theme::YellowG, Console::Theme::YellowB);
+	else
+		Console::SetColorRGB(Console::Theme::RedR, Console::Theme::RedG, Console::Theme::RedB);
+	std::cout << result.archivalC1Rating;
+	Console::Reset();
+	if (result.archivalC1Rating == "Ideal")
+		std::cout << " (< 50/sec)";
+	else if (result.archivalC1Rating == "Good")
+		std::cout << " (< 100/sec)";
+	else if (result.archivalC1Rating == "Acceptable")
+		std::cout << " (100-220/sec, not ideal for archival)";
+	else
+		std::cout << " (exceeds Red Book limit)";
+	std::cout << "\n";
 
 	// ── C2 (E22) ─────────────────────────────────────────────
 	std::cout << "\n--- C2 Errors ---\n";
@@ -549,6 +613,7 @@ void AudioCDCopier::PrintQCheckReport(const QCheckResult& result) {
 	Console::SetColorRGB(Console::Theme::DimR, Console::Theme::DimG, Console::Theme::DimB);
 	std::cout << "\n" << std::string(60, '-') << "\n";
 
+	// ── Primary quality rating ───────────────────────────────
 	std::string qr = result.qualityRating;
 	if (qr == "EXCELLENT" || qr == "GOOD")
 		Console::SetColorRGB(Console::Theme::GreenR, Console::Theme::GreenG, Console::Theme::GreenB);
@@ -557,7 +622,35 @@ void AudioCDCopier::PrintQCheckReport(const QCheckResult& result) {
 	else
 		Console::SetColorRGB(Console::Theme::RedR, Console::Theme::RedG, Console::Theme::RedB);
 
-	std::cout << "  QUALITY: " << qr << "\n";
+	std::cout << "  QUALITY:        " << qr << "\n";
+	Console::Reset();
+
+	// ── Total C1 quality tier ────────────────────────────────
+	std::cout << "  Total C1:       ";
+	if (result.totalC1Quality == "Exceptional" || result.totalC1Quality == "Very good")
+		Console::SetColorRGB(Console::Theme::GreenR, Console::Theme::GreenG, Console::Theme::GreenB);
+	else if (result.totalC1Quality == "Normal" || result.totalC1Quality == "Marginal")
+		Console::SetColorRGB(Console::Theme::YellowR, Console::Theme::YellowG, Console::Theme::YellowB);
+	else
+		Console::SetColorRGB(Console::Theme::RedR, Console::Theme::RedG, Console::Theme::RedB);
+	std::cout << result.totalC1Quality;
+	Console::Reset();
+	std::cout << " (" << result.totalC1 << " total)\n";
+
+	// ── Archival peak C1 tier ────────────────────────────────
+	std::cout << "  Archival Peak:  ";
+	if (result.archivalC1Rating == "Ideal" || result.archivalC1Rating == "Good")
+		Console::SetColorRGB(Console::Theme::GreenR, Console::Theme::GreenG, Console::Theme::GreenB);
+	else if (result.archivalC1Rating == "Acceptable")
+		Console::SetColorRGB(Console::Theme::YellowR, Console::Theme::YellowG, Console::Theme::YellowB);
+	else
+		Console::SetColorRGB(Console::Theme::RedR, Console::Theme::RedG, Console::Theme::RedB);
+	std::cout << result.archivalC1Rating;
+	Console::Reset();
+	std::cout << " (peak " << result.maxC1PerSecond << "/sec)\n";
+
+	Console::SetColorRGB(Console::Theme::DimR, Console::Theme::DimG, Console::Theme::DimB);
+	std::cout << std::string(60, '-') << "\n";
 	Console::Reset();
 
 	if (qr == "EXCELLENT")
@@ -616,6 +709,12 @@ bool AudioCDCopier::SaveQCheckLog(const QCheckResult& result, const std::wstring
 	log << "# --- CU Statistics ---\n";
 	log << "# Total CU:              " << result.totalCU << "\n";
 	log << "# Max CU/sec:            " << result.maxCUPerSecond << "\n";
+	log << "#\n";
+	log << "# --- Total C1 Quality ---\n";
+	log << "# Total C1 Quality:      " << result.totalC1Quality << "\n";
+	log << "#\n";
+	log << "# --- Archival Audio ---\n";
+	log << "# Peak C1 Rating:        " << result.archivalC1Rating << "\n";
 	log << "#\n";
 
 	// --- Per-second CSV data ---

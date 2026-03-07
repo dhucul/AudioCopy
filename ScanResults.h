@@ -48,6 +48,12 @@ struct QCheckResult {
 
 	// Quality assessment
 	std::string qualityRating;                 // EXCELLENT / GOOD / FAIR / POOR / BAD
+
+	// Total C1 quality interpretation
+	std::string totalC1Quality;                // Exceptional / Very good / Normal / Marginal / Poor
+
+	// Archival audio peak C1 assessment
+	std::string archivalC1Rating;              // Ideal / Good / Acceptable / Poor
 };
 
 // ── BLER (Block Error Rate) scan result ─────────────────────────────────────
