@@ -4,6 +4,7 @@
 #include "Progress.h"
 #include "InterruptHandler.h"
 #include "WriteDiscInternal.h"
+#include <conio.h>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -69,6 +70,108 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 
 	Console::BoxHeading("Write Disc from Files");
 
+	// ── Check disc is empty and writable ────────────────────────────
+	{
+		Console::Info("Checking disc media status...\n");
+
+		WaitForDriveReady(m_drive, 10);
+
+		BYTE discInfoCmd[10] = { 0x51, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFC, 0x00 };
+		BYTE discInfoResp[252] = { 0 };
+		BYTE sk = 0, asc = 0, ascq = 0;
+
+		if (m_drive.SendSCSIWithSense(discInfoCmd, sizeof(discInfoCmd),
+			discInfoResp, sizeof(discInfoResp), &sk, &asc, &ascq, true)) {
+
+			BYTE discStatus = discInfoResp[2] & 0x03;
+			bool isErasable = (discInfoResp[2] & 0x10) != 0;
+
+			switch (discStatus) {
+			case 0x00:
+				Console::Success("Disc is empty and ready for writing\n");
+				break;
+
+			case 0x01: // Appendable -- has an open/incomplete session
+				if (isErasable) {
+					Console::Warning("CD-RW disc has an incomplete session\n");
+					Console::Info("The disc must be blanked before DAO writing\n");
+					if (!BlankRewritableDisk(speed, true)) {
+						Console::Error("Failed to blank disc -- write cancelled\n");
+						return false;
+					}
+				}
+				else {
+					Console::Error("CD-R already has data and cannot be erased\n");
+					Console::Info("Insert a blank CD-R disc and try again\n");
+					return false;
+				}
+				break;
+
+			case 0x02: // Complete -- fully written
+				if (isErasable) {
+					Console::Warning("CD-RW disc is not empty (fully written)\n");
+					Console::Info("The disc must be blanked before writing. Blank now? (y/n): ");
+					char c = static_cast<char>(_getch());
+					std::cout << c << "\n";
+					if (tolower(c) != 'y') {
+						Console::Info("Write operation cancelled\n");
+						return false;
+					}
+					if (!BlankRewritableDisk(speed, true)) {
+						Console::Error("Failed to blank disc\n");
+						return false;
+					}
+				}
+				else {
+					Console::Error("CD-R is fully written and cannot be erased\n");
+					Console::Info("Insert a blank CD-R disc and try again\n");
+					return false;
+				}
+				break;
+
+			default:
+				Console::Warning("Unknown disc status (0x");
+				std::cout << std::hex << static_cast<int>(discStatus)
+					<< std::dec << ") -- attempting to write\n";
+				break;
+			}
+		}
+		else {
+			// READ DISC INFORMATION failed -- try GET CONFIGURATION profile fallback
+			BYTE profileCmd[10] = { 0x46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00 };
+			BYTE profileResp[8] = { 0 };
+
+			if (m_drive.SendSCSI(profileCmd, sizeof(profileCmd),
+				profileResp, sizeof(profileResp), true)) {
+				WORD profile = (static_cast<WORD>(profileResp[6]) << 8) | profileResp[7];
+
+				switch (profile) {
+				case 0x08:
+					Console::Error("Drive reports CD-ROM media (read-only)\n");
+					return false;
+				case 0x09:
+					Console::Warning("CD-R detected but could not verify empty status\n");
+					Console::Info("Proceeding -- write will fail if disc is not blank\n");
+					break;
+				case 0x0A:
+					Console::Warning("CD-RW detected but could not verify empty status\n");
+					Console::Info("Proceeding -- write will fail if disc is not blank\n");
+					break;
+				default:
+					Console::Warning("Unknown media profile (0x");
+					std::cout << std::hex << profile << std::dec
+						<< ") -- attempting to write\n";
+					break;
+				}
+			}
+			else {
+				Console::Warning("Could not determine disc status (");
+				std::cout << m_drive.GetSenseDescription(sk, asc, ascq)
+					<< ") -- attempting to write\n";
+			}
+		}
+	}
+
 	// Verify input files exist
 	std::ifstream binStream(binFile, std::ios::binary);
 	if (!binStream.is_open()) {
@@ -130,7 +233,7 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 	}
 
 	// Set drive write speed
-	m_drive.SetSpeed(speed);
+	m_drive.SetSpeed(speed, speed);
 	Console::Success("Drive speed set to ");
 	std::cout << speed << "x\n";
 
@@ -317,6 +420,37 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 
 			if (globalSector < PREGAP_SECTORS) {
 				memset(dest, 0x00, sectorSize);
+
+				// Generate valid Q-channel for pregap when writing subchannel
+				if (hasSubchannel) {
+					BYTE* subDest = dest + AUDIO_SECTOR_SIZE;
+					// Q-channel is bytes 12..23 in packed subchannel
+					int pregapLBA = static_cast<int>(globalSector) - PREGAP_SECTORS;
+					int absFrame = static_cast<int>(globalSector);
+
+					// Relative time (counts down to 00:00:00 at INDEX 01)
+					int relFrame = PREGAP_SECTORS - 1 - globalSector;
+					BYTE relM = static_cast<BYTE>(relFrame / (75 * 60));
+					BYTE relS = static_cast<BYTE>((relFrame / 75) % 60);
+					BYTE relF = static_cast<BYTE>(relFrame % 75);
+
+					// Absolute time (MSF from 00:00:00)
+					BYTE absM = static_cast<BYTE>(absFrame / (75 * 60));
+					BYTE absS = static_cast<BYTE>((absFrame / 75) % 60);
+					BYTE absF = static_cast<BYTE>(absFrame % 75);
+
+					// Q-channel: CTL/ADR=0x01, TNO=1, INDEX=0, REL MSF, zero, ABS MSF
+					subDest[12] = 0x01; // ADR=1, CTL=0 (audio)
+					subDest[13] = 0x01; // Track 1
+					subDest[14] = 0x00; // Index 0 (pregap)
+					subDest[15] = relM;
+					subDest[16] = relS;
+					subDest[17] = relF;
+					subDest[18] = 0x00; // zero
+					subDest[19] = absM;
+					subDest[20] = absS;
+					subDest[21] = absF;
+				}
 			}
 			else {
 				binInput.read(reinterpret_cast<char*>(dest), AUDIO_SECTOR_SIZE);
@@ -489,7 +623,12 @@ bool AudioCDCopier::VerifyWrittenDisc(const std::vector<TrackWriteInfo>& tracks)
 
 	int verifyCount = 0;
 	int successCount = 0;
-	DWORD totalChecks = static_cast<DWORD>(tracks.size() * 2);
+	DWORD totalChecks = 0;
+	for (const auto& track : tracks) {
+		totalChecks++; // start sector
+		if (track.endLBA > track.startLBA)
+			totalChecks++; // end sector
+	}
 
 	for (const auto& track : tracks) {
 		BYTE audio[AUDIO_SECTOR_SIZE] = { 0 };
@@ -505,12 +644,8 @@ bool AudioCDCopier::VerifyWrittenDisc(const std::vector<TrackWriteInfo>& tracks)
 			if (m_drive.ReadSector(track.endLBA, audio, subchannel)) {
 				successCount++;
 			}
+			verifyCount++;
 		}
-		else {
-			successCount++;
-		}
-		verifyCount++;
-		progress.Update(verifyCount, totalChecks);
 	}
 
 	progress.Finish(successCount == verifyCount);

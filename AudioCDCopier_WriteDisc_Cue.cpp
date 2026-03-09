@@ -22,6 +22,17 @@ static std::string WideToUTF8(const std::wstring& wide) {
 }
 
 // ============================================================================
+// Helper: Trim trailing whitespace and carriage returns from a wide string
+// ============================================================================
+static void TrimTrailing(std::wstring& s) {
+	size_t end = s.find_last_not_of(L" \t\r\n");
+	if (end != std::wstring::npos)
+		s.erase(end + 1);
+	else
+		s.clear();
+}
+
+// ============================================================================
 // Helper: Wait for drive to become ready (poll TEST UNIT READY)
 // ============================================================================
 static bool WaitForDriveReady(ScsiDrive& drive, int timeoutSeconds) {
@@ -63,11 +74,13 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 
 	discTitle.clear();
 	discPerformer.clear();
+	tracks.clear();
 
 	std::wstring line;
 	TrackWriteInfo currentTrack = {};
 	currentTrack.hasPregap = false;
 	bool inTrack = false;
+	int fileCount = 0;
 
 	auto extractQuoted = [](const std::wstring& ln, const std::wstring& keyword) -> std::string {
 		size_t pos = ln.find(keyword);
@@ -81,11 +94,25 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 		};
 
 	while (std::getline(file, line)) {
+		// Trim leading whitespace
 		size_t start = line.find_first_not_of(L" \t");
 		if (start == std::wstring::npos) continue;
 		line = line.substr(start);
 
-		if (line.find(L"TRACK") == 0) {
+		// Trim trailing whitespace and stray CR (handles mixed line endings)
+		TrimTrailing(line);
+		if (line.empty()) continue;
+
+		if (line.find(L"FILE") == 0) {
+			fileCount++;
+			if (fileCount > 1) {
+				Console::Error("Multi-file CUE sheets are not supported\n");
+				file.close();
+				tracks.clear();
+				return false;
+			}
+		}
+		else if (line.find(L"TRACK") == 0) {
 			if (inTrack && currentTrack.trackNumber > 0) {
 				tracks.push_back(currentTrack);
 			}
@@ -144,6 +171,21 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 			iss >> cmd >> isrc;
 			currentTrack.isrcCode = WideToUTF8(isrc);
 		}
+		else if (line.find(L"PREGAP") == 0 && inTrack) {
+			// PREGAP generates silence not present in the BIN file.
+			// This is different from INDEX 00, which marks an existing region.
+			Console::Warning("PREGAP command detected but not supported (track ");
+			std::cout << currentTrack.trackNumber
+				<< ") -- only INDEX 00 pregaps are handled\n";
+		}
+		else if (line.find(L"POSTGAP") == 0 && inTrack) {
+			Console::Warning("POSTGAP command detected but not supported (track ");
+			std::cout << currentTrack.trackNumber << ")\n";
+		}
+		else if (line.find(L"FLAGS") == 0 && inTrack) {
+			Console::Warning("FLAGS command detected but not written (track ");
+			std::cout << currentTrack.trackNumber << ")\n";
+		}
 	}
 
 	if (inTrack && currentTrack.trackNumber > 0) {
@@ -152,6 +194,46 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 
 	file.close();
 
+	if (fileCount == 0) {
+		Console::Error("No FILE directive found in CUE sheet\n");
+		tracks.clear();
+		return false;
+	}
+
+	// Validate parsed tracks
+	if (tracks.empty()) {
+		Console::Error("No tracks found in CUE sheet\n");
+		return false;
+	}
+
+	for (size_t i = 0; i < tracks.size(); i++) {
+		if (!tracks[i].isAudio) {
+			Console::Error("Track ");
+			std::cout << tracks[i].trackNumber << " is not an audio track\n";
+			tracks.clear();
+			return false;
+		}
+		if (i > 0 && tracks[i].startLBA <= tracks[i - 1].startLBA) {
+			Console::Error("Track ");
+			std::cout << tracks[i].trackNumber
+				<< " has non-increasing start LBA (expected > "
+				<< tracks[i - 1].startLBA << ", got "
+				<< tracks[i].startLBA << ")\n";
+			tracks.clear();
+			return false;
+		}
+		if (tracks[i].hasPregap && tracks[i].pregapLBA > tracks[i].startLBA) {
+			Console::Warning("Track ");
+			std::cout << tracks[i].trackNumber
+				<< " has pregap LBA (" << tracks[i].pregapLBA
+				<< ") after start LBA (" << tracks[i].startLBA
+				<< ") -- ignoring pregap\n";
+			tracks[i].hasPregap = false;
+		}
+	}
+
+	// Compute endLBA for all tracks except the last.
+	// The last track's endLBA must be set by the caller from the BIN file size.
 	for (size_t i = 0; i < tracks.size(); i++) {
 		if (i + 1 < tracks.size()) {
 			tracks[i].endLBA = tracks[i + 1].hasPregap
@@ -175,7 +257,7 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 		Console::Info("  Track ");
 		std::cout << t.trackNumber << ": LBA " << t.startLBA
 			<< " - " << t.endLBA;
-		if (t.hasPregap) {
+		if (t.hasPregap && t.startLBA >= t.pregapLBA) {
 			std::cout << " (pregap at " << t.pregapLBA
 				<< ", " << (t.startLBA - t.pregapLBA) << " frames)";
 		}
@@ -185,7 +267,7 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 		std::cout << "\n";
 	}
 
-	return !tracks.empty();
+	return true;
 }
 
 // ============================================================================
@@ -309,6 +391,11 @@ static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode, bool qu
 bool WriteDiscInternal::BuildAndSendCueSheet(ScsiDrive& drive,
 	const std::vector<AudioCDCopier::TrackWriteInfo>& tracks,
 	DWORD totalSectors, int subchannelMode, bool verbose) {
+
+	if (tracks.empty()) {
+		Console::Error("Cannot build CUE sheet: no tracks\n");
+		return false;
+	}
 
 	BYTE trackDataForm;
 	switch (subchannelMode) {
