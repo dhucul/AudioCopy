@@ -21,8 +21,20 @@ static bool WaitForDriveReady(ScsiDrive& drive, int timeoutSeconds) {
 			&sk, &asc, &ascq, true)) {
 			return true;
 		}
+		// NOT READY (0x02) with "becoming ready" (ASC 0x04) — keep polling
 		if (sk == 0x02 && asc == 0x04) {
 			Sleep(250);
+			continue;
+		}
+		// UNIT ATTENTION (0x06) — transient after blank/OPC/media change, retry
+		if (sk == 0x06) {
+			Sleep(250);
+			continue;
+		}
+		// NOT READY with "medium not present" (0x3A) — may be transient during
+		// post-blank media re-detection on some drives
+		if (sk == 0x02 && asc == 0x3A) {
+			Sleep(500);
 			continue;
 		}
 		return false;
@@ -37,7 +49,8 @@ static bool SynchronizeCache(ScsiDrive& drive) {
 	BYTE cdb[10] = { 0x35, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 	BYTE sk = 0, asc = 0, ascq = 0;
 	if (!drive.SendSCSIWithSense(cdb, sizeof(cdb), nullptr, 0, &sk, &asc, &ascq, false)) {
-		if (sk == 0x02 && asc == 0x04) {
+		// Drive not ready or unit attention — wait and let finalization continue
+		if ((sk == 0x02 && asc == 0x04) || sk == 0x06) {
 			return WaitForDriveReady(drive, 60);
 		}
 		return false;
@@ -201,6 +214,36 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 	binStream.close();
 
 	DWORD totalSectors = static_cast<DWORD>(fileSize / AUDIO_SECTOR_SIZE);
+
+	// ── Verify disc has enough capacity for the image ───────────────
+	{
+		// READ TRACK INFORMATION on the invisible track (0xFF) to get
+		// writable capacity on blank media.  READ CAPACITY (0x25) only
+		// works on already-written discs.
+		BYTE trackInfoCmd[10] = { 0x52, 0x00, 0x01, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x24, 0x00 };
+		BYTE trackInfoResp[36] = { 0 };
+		if (m_drive.SendSCSI(trackInfoCmd, sizeof(trackInfoCmd),
+			trackInfoResp, sizeof(trackInfoResp), true)) {
+			// Bytes 24-27: Free Blocks (number of writable sectors remaining)
+			DWORD freeBlocks = (static_cast<DWORD>(trackInfoResp[24]) << 24) |
+				(static_cast<DWORD>(trackInfoResp[25]) << 16) |
+				(static_cast<DWORD>(trackInfoResp[26]) << 8) |
+				static_cast<DWORD>(trackInfoResp[27]);
+
+			// Total sectors needed: 150 pregap + audio data + ~6750 lead-out
+			constexpr DWORD LEADOUT_OVERHEAD = 6750;
+			constexpr DWORD PREGAP_OVERHEAD = 150;
+			DWORD sectorsNeeded = totalSectors + PREGAP_OVERHEAD + LEADOUT_OVERHEAD;
+
+			if (freeBlocks > 0 && sectorsNeeded > freeBlocks) {
+				Console::Error("Image too large for disc (need ");
+				std::cout << sectorsNeeded << " sectors, disc has "
+					<< freeBlocks << " free)\n";
+				Console::Info("Use a higher-capacity disc (e.g., 80-min or 90-min CD-R)\n");
+				return false;
+			}
+		}
+	}
 
 	// Determine if we can use Raw mode with subchannel data
 	bool hasSubchannel = false;
