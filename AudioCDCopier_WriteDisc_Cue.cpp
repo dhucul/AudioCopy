@@ -57,13 +57,14 @@ static bool WaitForDriveReady(ScsiDrive& drive, int timeoutSeconds) {
 // ============================================================================
 bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 	std::vector<TrackWriteInfo>& tracks) {
-	std::string discTitle, discPerformer;
-	return ParseCueSheet(cueFile, tracks, discTitle, discPerformer);
+	std::string discTitle, discPerformer, discMCN;
+	return ParseCueSheet(cueFile, tracks, discTitle, discPerformer, discMCN);
 }
 
 bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 	std::vector<TrackWriteInfo>& tracks,
-	std::string& discTitle, std::string& discPerformer) {
+	std::string& discTitle, std::string& discPerformer,
+	std::string& discMCN) {
 
 	std::wifstream file(cueFile);
 	if (!file.is_open()) {
@@ -74,6 +75,7 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 
 	discTitle.clear();
 	discPerformer.clear();
+	discMCN.clear();
 	tracks.clear();
 
 	std::wstring line;
@@ -111,6 +113,13 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 				tracks.clear();
 				return false;
 			}
+		}
+		else if (line.find(L"CATALOG") == 0 && !inTrack) {
+			// CATALOG specifies the disc's 13-digit Media Catalog Number (EAN/UPC)
+			std::wistringstream iss(line);
+			std::wstring cmd, catalog;
+			iss >> cmd >> catalog;
+			discMCN = WideToUTF8(catalog);
 		}
 		else if (line.find(L"TRACK") == 0) {
 			if (inTrack && currentTrack.trackNumber > 0) {

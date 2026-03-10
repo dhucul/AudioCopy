@@ -13,7 +13,7 @@
 
 // Current application version — update this with each release.
 // Used by MainMenu.cpp via CheckForUpdates(APP_VERSION).
-const VersionInfo APP_VERSION = { 8, 6, 0 };
+const VersionInfo APP_VERSION = { 8, 6, 1 };
 
 static const wchar_t* GITHUB_HOST = L"api.github.com";
 static const wchar_t* RELEASE_PATH = L"/repos/dhucul/AudioCopy/releases/latest";

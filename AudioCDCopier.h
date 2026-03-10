@@ -183,10 +183,11 @@ public:
 
 	bool ParseCueSheet(const std::wstring& cueFile,
 		std::vector<TrackWriteInfo>& tracks);
-	// Overload that also extracts disc-level CD-Text metadata
+	// Overload that also extracts disc-level CD-Text metadata and MCN
 	bool ParseCueSheet(const std::wstring& cueFile,
 		std::vector<TrackWriteInfo>& tracks,
-		std::string& discTitle, std::string& discPerformer);
+		std::string& discTitle, std::string& discPerformer,
+		std::string& discMCN);
 
 	bool WriteAudioSectors(const std::wstring& binFile,
 		const std::wstring& subFile,
@@ -194,7 +195,8 @@ public:
 		DWORD totalSectors,
 		bool hasSubchannel,
 		bool needsDeinterleave = false,
-		int subchannelMode = 0);
+		int subchannelMode = 0,
+		const std::string& discMCN = "");
 
 	bool VerifyWrittenDisc(const std::vector<TrackWriteInfo>& tracks);
 

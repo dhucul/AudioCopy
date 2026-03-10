@@ -62,6 +62,23 @@ static void DeinterleaveSubchannel(const BYTE* raw, BYTE* packed) {
 }
 
 // ============================================================================
+// Helper: Find which track owns a given bin-file sector position
+// ============================================================================
+static size_t FindTrackForSector(const std::vector<AudioCDCopier::TrackWriteInfo>& tracks,
+	DWORD binSector, bool& isInPregap) {
+	isInPregap = false;
+	for (size_t i = tracks.size(); i > 0; i--) {
+		size_t idx = i - 1;
+		if (binSector >= tracks[idx].startLBA) return idx;
+		if (tracks[idx].hasPregap && binSector >= tracks[idx].pregapLBA) {
+			isInPregap = true;
+			return idx;
+		}
+	}
+	return 0;
+}
+
+// ============================================================================
 // WriteDisc - Write disc from .bin/.cue/.sub files
 // ============================================================================
 bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
@@ -212,10 +229,10 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 		}
 	}
 
-	// Parse CUE sheet -- also extracts TITLE/PERFORMER for CD-Text
+	// Parse CUE sheet -- also extracts TITLE/PERFORMER/CATALOG for CD-Text and MCN
 	std::vector<TrackWriteInfo> tracks;
-	std::string discTitle, discPerformer;
-	if (!ParseCueSheet(cueFile, tracks, discTitle, discPerformer)) {
+	std::string discTitle, discPerformer, discMCN;
+	if (!ParseCueSheet(cueFile, tracks, discTitle, discPerformer, discMCN)) {
 		Console::Error("Failed to parse CUE sheet\n");
 		return false;
 	}
@@ -328,7 +345,7 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 
 	Console::Info("\nWriting audio sectors...\n");
 	if (!WriteAudioSectors(binFile, subFile, tracks, totalSectors,
-		hasSubchannel, needsDeinterleave, subchannelMode)) {
+		hasSubchannel, needsDeinterleave, subchannelMode, discMCN)) {
 		Console::Error("Failed to write audio sectors\n");
 		return false;
 	}
@@ -338,6 +355,11 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 
 // ============================================================================
 // WriteAudioSectors - Write pregap silence + audio data (+ optional subchannel)
+//
+// When a .sub file is provided, subchannel data is read from it.  Otherwise,
+// if the write mode includes subchannel, Q-channel data is synthesized from
+// the CUE sheet track list, injecting MCN and ISRC at the Red Book intervals
+// (every 100 sectors at positions 99 and 49 respectively).
 // ============================================================================
 bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 	const std::wstring& subFile,
@@ -345,7 +367,8 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 	DWORD totalSectors,
 	bool hasSubchannel,
 	bool needsDeinterleave,
-	int subchannelMode) {
+	int subchannelMode,
+	const std::string& discMCN) {
 
 	std::ifstream binInput(binFile, std::ios::binary);
 	if (!binInput.is_open()) {
@@ -353,15 +376,20 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 		return false;
 	}
 
+	// Open .sub file if provided; otherwise synthesize Q-channel from CUE data
+	bool hasSubFile = false;
 	std::ifstream subInput;
-	if (hasSubchannel) {
+	if (hasSubchannel && !subFile.empty()) {
 		subInput.open(subFile, std::ios::binary);
-		if (!subInput.is_open()) {
-			Console::Error("Cannot open subchannel file\n");
-			binInput.close();
-			return false;
+		if (subInput.is_open()) {
+			hasSubFile = true;
+		} else {
+			Console::Warning("Cannot open .sub file -- synthesizing Q-channel from CUE metadata\n");
 		}
 	}
+
+	// Drive expects raw interleaved P-W (modes 2 and 4) vs packed (modes 1 and 3)
+	bool driveWantsRaw = (subchannelMode == 2 || subchannelMode == 4);
 
 	const DWORD sectorSize = hasSubchannel ? RAW_SECTOR_SIZE : AUDIO_SECTOR_SIZE;
 
@@ -376,7 +404,9 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 
 	if (hasSubchannel) {
 		Console::Info("Write mode: 2448 bytes/sector (2352 audio + 96 subchannel");
-		if (needsDeinterleave) std::cout << ", deinterleaving";
+		if (hasSubFile && needsDeinterleave) std::cout << ", deinterleaving";
+		if (!hasSubFile) std::cout << ", synthesized Q-channel";
+		if (!discMCN.empty()) std::cout << ", MCN: " << discMCN;
 		std::cout << ")\n";
 	}
 	else {
@@ -407,7 +437,7 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 			Console::Error("\nWrite operation cancelled by user\n");
 			progress.Finish(false);
 			binInput.close();
-			if (hasSubchannel) subInput.close();
+			if (hasSubFile) subInput.close();
 			return false;
 		}
 
@@ -419,40 +449,35 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 			DWORD globalSector = sectorsWritten + s;
 
 			if (globalSector < PREGAP_SECTORS) {
+				// ── Pregap sector (LBA -150 to -1) ──────────────────────
 				memset(dest, 0x00, sectorSize);
 
-				// Generate valid Q-channel for pregap when writing subchannel
 				if (hasSubchannel) {
 					BYTE* subDest = dest + AUDIO_SECTOR_SIZE;
-					// Q-channel is bytes 12..23 in packed subchannel
-					int pregapLBA = static_cast<int>(globalSector) - PREGAP_SECTORS;
+
+					int relFrame = static_cast<int>(PREGAP_SECTORS) - 1 - static_cast<int>(globalSector);
 					int absFrame = static_cast<int>(globalSector);
 
-					// Relative time (counts down to 00:00:00 at INDEX 01)
-					int relFrame = PREGAP_SECTORS - 1 - globalSector;
-					BYTE relM = static_cast<BYTE>(relFrame / (75 * 60));
-					BYTE relS = static_cast<BYTE>((relFrame / 75) % 60);
-					BYTE relF = static_cast<BYTE>(relFrame % 75);
+					BYTE q12[12];
+					BuildPositionQ(q12, 0x00, 1, 0,
+						static_cast<BYTE>(relFrame / (75 * 60)),
+						static_cast<BYTE>((relFrame / 75) % 60),
+						static_cast<BYTE>(relFrame % 75),
+						static_cast<BYTE>(absFrame / (75 * 60)),
+						static_cast<BYTE>((absFrame / 75) % 60),
+						static_cast<BYTE>(absFrame % 75));
 
-					// Absolute time (MSF from 00:00:00)
-					BYTE absM = static_cast<BYTE>(absFrame / (75 * 60));
-					BYTE absS = static_cast<BYTE>((absFrame / 75) % 60);
-					BYTE absF = static_cast<BYTE>(absFrame % 75);
+					BuildPackedSubchannel(subDest, q12, true);  // P=1 for pregap
 
-					// Q-channel: CTL/ADR=0x01, TNO=1, INDEX=0, REL MSF, zero, ABS MSF
-					subDest[12] = 0x01; // ADR=1, CTL=0 (audio)
-					subDest[13] = 0x01; // Track 1
-					subDest[14] = 0x00; // Index 0 (pregap)
-					subDest[15] = relM;
-					subDest[16] = relS;
-					subDest[17] = relF;
-					subDest[18] = 0x00; // zero
-					subDest[19] = absM;
-					subDest[20] = absS;
-					subDest[21] = absF;
+					if (driveWantsRaw) {
+						BYTE raw96[SUBCHANNEL_SIZE];
+						InterleaveSubchannel(subDest, raw96);
+						memcpy(subDest, raw96, SUBCHANNEL_SIZE);
+					}
 				}
 			}
 			else {
+				// ── Data sector (LBA 0+) ────────────────────────────────
 				binInput.read(reinterpret_cast<char*>(dest), AUDIO_SECTOR_SIZE);
 				size_t audioRead = binInput.gcount();
 				if (audioRead < AUDIO_SECTOR_SIZE) {
@@ -462,19 +487,83 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 				if (hasSubchannel) {
 					BYTE* subDest = dest + AUDIO_SECTOR_SIZE;
 
-					if (needsDeinterleave) {
-						subInput.read(reinterpret_cast<char*>(rawSub), SUBCHANNEL_SIZE);
-						size_t subRead = subInput.gcount();
-						if (subRead < SUBCHANNEL_SIZE) {
-							std::fill(rawSub + subRead, rawSub + SUBCHANNEL_SIZE, 0x00);
+					if (hasSubFile) {
+						// ── Read subchannel from .sub file ──────────────
+						if (needsDeinterleave) {
+							subInput.read(reinterpret_cast<char*>(rawSub), SUBCHANNEL_SIZE);
+							size_t subRead = subInput.gcount();
+							if (subRead < SUBCHANNEL_SIZE) {
+								std::fill(rawSub + subRead, rawSub + SUBCHANNEL_SIZE, 0x00);
+							}
+							DeinterleaveSubchannel(rawSub, subDest);
 						}
-						DeinterleaveSubchannel(rawSub, subDest);
+						else {
+							subInput.read(reinterpret_cast<char*>(subDest), SUBCHANNEL_SIZE);
+							size_t subRead = subInput.gcount();
+							if (subRead < SUBCHANNEL_SIZE) {
+								std::fill(subDest + subRead, subDest + SUBCHANNEL_SIZE, 0x00);
+							}
+						}
 					}
 					else {
-						subInput.read(reinterpret_cast<char*>(subDest), SUBCHANNEL_SIZE);
-						size_t subRead = subInput.gcount();
-						if (subRead < SUBCHANNEL_SIZE) {
-							std::fill(subDest + subRead, subDest + SUBCHANNEL_SIZE, 0x00);
+						// ── Synthesize Q-channel from CUE metadata ──────
+						DWORD binSector = globalSector - PREGAP_SECTORS;
+
+						bool isInPregap = false;
+						size_t trkIdx = FindTrackForSector(tracks, binSector, isInPregap);
+
+						BYTE trackNo = static_cast<BYTE>(tracks[trkIdx].trackNumber);
+						BYTE indexNo = isInPregap ? 0 : 1;
+
+						// Relative MSF (counts down in pregap, up in index 1)
+						int relFrames;
+						if (isInPregap) {
+							relFrames = static_cast<int>(tracks[trkIdx].startLBA) - 1
+								- static_cast<int>(binSector);
+						}
+						else {
+							relFrames = static_cast<int>(binSector)
+								- static_cast<int>(tracks[trkIdx].startLBA);
+						}
+
+						// Absolute MSF (LBA 0 = 00:02:00)
+						int absFrames = static_cast<int>(binSector) + 150;
+
+						BYTE absM = static_cast<BYTE>(absFrames / (75 * 60));
+						BYTE absS = static_cast<BYTE>((absFrames / 75) % 60);
+						BYTE absF = static_cast<BYTE>(absFrames % 75);
+						BYTE relM = static_cast<BYTE>(relFrames / (75 * 60));
+						BYTE relS = static_cast<BYTE>((relFrames / 75) % 60);
+						BYTE relF = static_cast<BYTE>(relFrames % 75);
+
+						BYTE q12[12];
+
+						// Avoid replacing position Q at track/index transitions
+						// so the player always sees the boundary change
+						bool atTrackBoundary = (binSector == tracks[trkIdx].startLBA)
+							|| (tracks[trkIdx].hasPregap && binSector == tracks[trkIdx].pregapLBA);
+
+						// MCN (Mode-2) at sector % 100 == 99
+						// ISRC (Mode-3) at sector % 100 == 49
+						if (!atTrackBoundary && !discMCN.empty() && discMCN.size() >= 13
+							&& (binSector % 100 == 99)) {
+							EncodeMCN(q12, discMCN.c_str(), absF);
+						}
+						else if (!atTrackBoundary && !tracks[trkIdx].isrcCode.empty()
+							&& (binSector % 100 == 49)) {
+							EncodeISRC(q12, tracks[trkIdx].isrcCode.c_str(), absF);
+						}
+						else {
+							BuildPositionQ(q12, 0x00, trackNo, indexNo,
+								relM, relS, relF, absM, absS, absF);
+						}
+
+						BuildPackedSubchannel(subDest, q12, isInPregap);
+
+						if (driveWantsRaw) {
+							BYTE raw96[SUBCHANNEL_SIZE];
+							InterleaveSubchannel(subDest, raw96);
+							memcpy(subDest, raw96, SUBCHANNEL_SIZE);
 						}
 					}
 				}
@@ -504,14 +593,14 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 						Console::Error("\nDrive not recovering - aborting\n");
 						progress.Finish(false);
 						binInput.close();
-						if (hasSubchannel) subInput.close();
+						if (hasSubFile) subInput.close();
 						return false;
 					}
 					continue;
 				}
 				DWORD binSector = (sectorsWritten >= PREGAP_SECTORS) ? sectorsWritten - PREGAP_SECTORS : 0;
 				binInput.seekg(static_cast<long long>(binSector) * AUDIO_SECTOR_SIZE);
-				if (hasSubchannel)
+				if (hasSubFile)
 					subInput.seekg(static_cast<long long>(binSector) * SUBCHANNEL_SIZE);
 				consecutiveErrors = 0;
 				continue;
@@ -526,13 +615,13 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 				Console::Error("Too many consecutive write errors - aborting\n");
 				progress.Finish(false);
 				binInput.close();
-				if (hasSubchannel) subInput.close();
+				if (hasSubFile) subInput.close();
 				return false;
 			}
 
 			DWORD binSector = (sectorsWritten >= PREGAP_SECTORS) ? sectorsWritten - PREGAP_SECTORS : 0;
 			binInput.seekg(static_cast<long long>(binSector) * AUDIO_SECTOR_SIZE);
-			if (hasSubchannel)
+			if (hasSubFile)
 				subInput.seekg(static_cast<long long>(binSector) * SUBCHANNEL_SIZE);
 			Sleep(1000);
 			continue;
@@ -554,11 +643,15 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 
 	progress.Finish(true);
 	binInput.close();
-	if (hasSubchannel) subInput.close();
+	if (hasSubFile) subInput.close();
 
 	Console::Success("Successfully wrote ");
 	std::cout << sectorsWritten << " sectors";
-	if (hasSubchannel) std::cout << " (with subchannel data)";
+	if (hasSubchannel) {
+		std::cout << " (with subchannel";
+		if (!hasSubFile) std::cout << ", synthesized";
+		std::cout << ")";
+	}
 	std::cout << "\n";
 	return true;
 }
