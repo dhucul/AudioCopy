@@ -133,9 +133,6 @@
     <ClCompile Include="AudioCDCopier_WriteDisc_Media.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="AudioCDCopier_WriteDisc_Cue.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="AudioCDCopier_WriteDisc_CDText.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -191,6 +188,21 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="AudioCDCopier_FileOutput.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_WriteDisc_Helpers.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_WriteDisc_CueParse.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_WriteDisc_CueSheet.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_WriteAudioSectors.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AudioCDCopier_WriteVerify.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

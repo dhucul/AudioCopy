@@ -153,10 +153,14 @@
     <ClCompile Include="AudioCDCopier_TOCScan.cpp" />
     <ClCompile Include="AudioCDCopier_Utilities.cpp" />
     <ClCompile Include="AudioCDCopier_Verification.cpp" />
+    <ClCompile Include="AudioCDCopier_WriteAudioSectors.cpp" />
     <ClCompile Include="AudioCDCopier_WriteDisc.cpp" />
     <ClCompile Include="AudioCDCopier_WriteDisc_CDText.cpp" />
-    <ClCompile Include="AudioCDCopier_WriteDisc_Cue.cpp" />
+    <ClCompile Include="AudioCDCopier_WriteDisc_CueParse.cpp" />
+    <ClCompile Include="AudioCDCopier_WriteDisc_CueSheet.cpp" />
+    <ClCompile Include="AudioCDCopier_WriteDisc_Helpers.cpp" />
     <ClCompile Include="AudioCDCopier_WriteDisc_Media.cpp" />
+    <ClCompile Include="AudioCDCopier_WriteVerify.cpp" />
     <ClCompile Include="CopyWorkflow.cpp" />
     <ClCompile Include="Drive.cpp" />
     <ClCompile Include="DriveOffsetDatabase.cpp" />
