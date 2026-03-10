@@ -10,6 +10,13 @@ bool ScsiDrive::Open(wchar_t driveLetter) {
 	std::wstring path = L"\\\\.\\" + std::wstring(1, driveLetter) + L":";
 	m_handle = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE,
 		FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+
+	if (m_handle != INVALID_HANDLE_VALUE) {
+		// Reset cached probe results — new handle may be a different drive
+		m_qcheckProbed = -1;
+		m_liteonScanProbed = -1;
+	}
+
 	return m_handle != INVALID_HANDLE_VALUE;
 }
 

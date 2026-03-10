@@ -22,6 +22,10 @@ private:
 	int m_retryDelayMs = 100;
 	bool m_c2Functional = true;        // C2 pointer data is actually populated
 
+	// ── Cached capability probe results ─────────────────────
+	int m_qcheckProbed = -1;           // -1 = not probed, 0 = unsupported, 1 = supported
+	int m_liteonScanProbed = -1;       // -1 = not probed, 0 = unsupported, 1 = supported
+
 public:
 	// ── Type aliases for backward compatibility ──────────────
 	using C2ReadOptions = ::C2ReadOptions;  // Re-export from ScsiTypes.h

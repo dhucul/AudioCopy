@@ -33,6 +33,9 @@ static bool s_liteonNewMethod = false;
 static DWORD s_liteonLBA = 0;
 
 bool ScsiDrive::SupportsLiteOnScan() {
+	if (m_liteonScanProbed >= 0)
+		return m_liteonScanProbed == 1;
+
 	std::string vendor, model;
 	GetDriveInfo(vendor, model);
 
@@ -56,6 +59,7 @@ bool ScsiDrive::SupportsLiteOnScan() {
 	if (ok || sk <= 0x01) {
 		s_liteonNewMethod = true;
 		std::cout << "  [LiteOnScan] Drive supports 0xF3 quality scan (new method)\n";
+		m_liteonScanProbed = 1;
 		return true;
 	}
 
@@ -80,10 +84,12 @@ bool ScsiDrive::SupportsLiteOnScan() {
 		SendSCSIWithSense(cdb, 12, buf256.data(), 256, &sk, &asc, &ascq);
 
 		std::cout << "  [LiteOnScan] Drive supports 0xDF quality scan (old method)\n";
+		m_liteonScanProbed = 1;
 		return true;
 	}
 
 	OutputDebugStringA("LiteOnScan: No supported scan commands found\n");
+	m_liteonScanProbed = 0;
 	return false;
 }
 

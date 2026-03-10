@@ -66,12 +66,16 @@ static int DetectDataOffset(const BYTE* buffer, DWORD bufferSize) {
 }
 
 bool ScsiDrive::SupportsQCheck() {
+	if (m_qcheckProbed >= 0)
+		return m_qcheckProbed == 1;
+
 	std::string vendor, model;
 	GetDriveInfo(vendor, model);
 
 	if (!IsPlextor()) {
 		std::cout << "  [QCheck] Drive '" << vendor << " " << model
 			<< "' is not Plextor/Lite-On — skipping Q-Check\n" << std::flush;
+		m_qcheckProbed = 0;
 		return false;
 	}
 
@@ -90,7 +94,10 @@ bool ScsiDrive::SupportsQCheck() {
 	bool ok = SendSCSIWithSense(cdb, 12, nullptr, 0, &senseKey, &asc, &ascq);
 	PlextorQCheckStop();
 
-	if (ok || (senseKey <= 0x01 && senseKey != 0xFF)) return true;
+	if (ok || (senseKey <= 0x01 && senseKey != 0xFF)) {
+		m_qcheckProbed = 1;
+		return true;
+	}
 
 	// Try subcommand 0x01 (C2/combined — PX-755/760)
 	cdb[1] = 0x01;
@@ -98,7 +105,10 @@ bool ScsiDrive::SupportsQCheck() {
 	ok = SendSCSIWithSense(cdb, 12, nullptr, 0, &senseKey, &asc, &ascq);
 	PlextorQCheckStop();
 
-	if (ok || (senseKey <= 0x01 && senseKey != 0xFF)) return true;
+	if (ok || (senseKey <= 0x01 && senseKey != 0xFF)) {
+		m_qcheckProbed = 1;
+		return true;
+	}
 
 	// Provide a specific diagnostic for "Invalid Command Operation Code"
 	if (asc == 0x20) {
@@ -115,6 +125,7 @@ bool ScsiDrive::SupportsQCheck() {
 			<< std::dec << ")\n" << std::flush;
 	}
 
+	m_qcheckProbed = 0;
 	return false;
 }
 
