@@ -13,12 +13,14 @@ AudioCopy reads and writes audio CDs at the raw sector level using SCSI/MMC comm
 ### Ripping
 - **Burst, standard, and secure ripping** with configurable multi-pass verification and cache defeat
 - **Drive read offset correction** with auto-detection (AccurateRip database, pregap analysis, or manual)
-- **AccurateRip V1** checksum calculation and online verification
+- **AccurateRip V1** checksum calculation and online verification (V2 data is received from the server but not yet used for verification)
 - **Pre-gap extraction** (include in image, skip, or extract separately)
+- **Hidden track detection** — detects hidden audio before Track 1 (HTOA) and after the last track
 - **Subchannel reading** with integrity verification
 - **CD-Text and ISRC extraction**
 - **CUE sheet generation**
 - **Disc fingerprinting** — CDDB, MusicBrainz, and AccurateRip disc IDs
+- **TOC-less disc scanning** — reconstructs track layout from raw Q subchannel when the TOC is damaged or missing
 
 ### Disc Writing
 - **Write audio CDs** from `.bin` / `.cue` / `.sub` file sets
@@ -27,28 +29,120 @@ AudioCopy reads and writes audio CDs at the raw sector level using SCSI/MMC comm
 - **CD-Text writing** — builds and sends CD-Text packs (Title, Performer) from CUE sheet metadata
 - **CD-RW detection and blanking** — detects rewritable media, supports quick and full blank with progress tracking
 - **Optical Power Calibration (OPC)** — optional laser power calibration before writing
+- **Disc capacity check** — verifies the image fits before writing begins
 - **Write verification** — cache flush, session close, lead-out finalization, and post-write sector readback
 - **Configurable write speed** with drive speed selection
 
-### Disc Diagnostics
+### Disc Quality
+- **Quality scan (C1/C2/CU)** — hardware-driven Plextor Q-Check or LiteOn/MediaTek quality scan with per-second C1/C2/CU graphs
 - **C2 error scan** — quick pass/fail quality check
 - **BLER scan** — detailed per-second error rate with Red Book compliance check
 - **Disc rot detection** — two-phase spatial degradation pattern analysis
-- **Comprehensive scan** — all tests combined into a single scored report (A–F)
 - **Surface map** — per-sector C2 error CSV for external visualization
-- **Speed comparison test** — reads sectors at two speeds to detect surface instability
 - **Multi-pass verification** — reads sectors N times to detect read inconsistency
-- **Lead-in/lead-out area check** — scans the first/last 150 sectors for edge damage
+
+### Disc Information
 - **Audio content analysis** — detects silent, clipped, low-level, and DC-offset sectors
-- **Seek time analysis** — measures seek latency to detect mechanical issues
-- **C2 validation test** — verifies that the drive's C2 error reporting is reliable
+- **Disc fingerprint** — CDDB, MusicBrainz, and AccurateRip disc IDs
+- **Lead area check** — scans the first/last 150 sectors for edge damage
+- **Subchannel integrity check** — validates Q-channel CRC data across the disc
+- **Subchannel burn status** — determines whether subchannel data was mastered onto the disc
 - **Copy-protection detection** — heuristic scan for common audio CD protection schemes
+
+### Drive Diagnostics
+- **Drive capabilities** — queries and displays drive features, media support, and extraction suitability
+- **Drive offset detection** — auto-detects read offset via AccurateRip database or pregap analysis
+- **C2 validation test** — verifies that the drive's C2 error reporting is reliable
+- **Speed comparison test** — reads sectors at two speeds to detect surface instability
+- **Seek time analysis** — measures seek latency to detect mechanical issues
+- **Chipset identification** — identifies the drive's internal chipset/controller, interface type, and USB bridge
+- **Disc balance check** — detects vibration and wobble by sweeping read speed from 4× to 40×
+
+### Utility
+- **Rescan disc** — re-reads disc TOC and metadata; supports switching between multiple drives
+- **Check for updates** — queries GitHub Releases for newer versions
+- **Help** — built-in test descriptions
+
+---
+
+## Interactive Menu
+
+AudioCopy presents a numbered interactive menu organized into five sections:
+
+| # | Section | Operation |
+|---|---|---|
+| 1 | Ripping | Copy disc |
+| 2 | Ripping | Write disc (.bin/.cue/.sub files) |
+| 3 | Disc Quality | Quality scan (C1/C2/CU graphs) |
+| 4 | Disc Quality | C2 error scan |
+| 5 | Disc Quality | BLER scan (detailed) |
+| 6 | Disc Quality | Disc rot detection |
+| 7 | Disc Quality | Generate surface map |
+| 8 | Disc Quality | Multi-pass verification |
+| 9 | Disc Info | Audio content analysis |
+| 10 | Disc Info | Disc fingerprint (CDDB/MusicBrainz/AccurateRip IDs) |
+| 11 | Disc Info | Lead area check |
+| 12 | Disc Info | Subchannel integrity check |
+| 13 | Disc Info | Verify subchannel burn status |
+| 14 | Disc Info | Copy-protection check |
+| 15 | Drive | Drive capabilities |
+| 16 | Drive | Drive offset detection |
+| 17 | Drive | C2 validation test |
+| 18 | Drive | Speed comparison test |
+| 19 | Drive | Seek time analysis |
+| 20 | Drive | Chipset identification |
+| 21 | Drive | Disc balance check |
+| 22 | Utility | Rescan disc |
+| 23 | Utility | Check for updates |
+| 24 | Utility | Help (test descriptions) |
+| 25 | Utility | Exit |
+
+Operations marked with **\*** in the menu use pre-gap analysis (scan range includes pregap sectors).
+
+Press **ESC** or **Ctrl+C** at any time to cancel a running operation.
+
+---
+
+## Rip Modes
+
+AudioCopy offers five rip modes with increasing verification. The mode determines how many re-read passes are performed and how errors are handled.
+
+| Mode | Passes | Matches required | Cache defeat | Description |
+|---|---|---|---|---|
+| **Burst** | 1 | — | No | Maximum speed, no verification |
+| **Standard** | 1 | 1 | No | Single pass with retry on error, C2-guided |
+| **Secure Fast** | 2 | 2 | No | Light verification with minimal re-reads |
+| **Secure Standard** | 3–6 | 2 | Yes | Balanced re-read strategy |
+| **Secure Paranoid** | 4–8 | 3 | Yes | Maximum accuracy, speed-capped |
+
+All secure modes use C2 error pointers when available — a clean C2 read is trusted as verified, skipping unnecessary re-reads. Cache defeat forces a seek to a distant location between reads to ensure each pass is a true disc re-read rather than cached data.
 
 ---
 
 ## Quality Scan Modes
 
-AudioCopy offers three primary quality scans. Each answers a different question about a disc.
+AudioCopy offers multiple quality scans. Each answers a different question about a disc.
+
+### Quality Scan — C1/C2/CU (Hardware-Driven)
+
+**Question answered:** *"What are the actual CIRC decoder error rates across the entire disc?"*
+
+This scan uses **vendor-specific hardware commands** to put the drive into a dedicated error-measurement mode. The drive spins at its internal scan speed and reports aggregate CIRC decoder statistics (C1 block errors, C2 block errors, and CU uncorrectable errors) per time slice — **no audio data is transferred**. This is the same measurement performed by QPXTool and PlexTools Professional.
+
+Two command sets are supported:
+
+| Drive type | Command set | Detection |
+|---|---|---|
+| **Classic Plextor** (PX-708A, PX-712A/SA, PX-716A/SA/AL, PX-755A/SA, PX-760A/SA) | Q-Check vendor commands `0xE9` (start) / `0xEB` (poll) | Auto-probed at startup |
+| **LiteOn / MediaTek-based** (LiteOn, ASUS, some Plextor OEM) | LiteOn vendor command `0xDF` | Auto-probed if Q-Check is unavailable |
+
+If neither command set is supported by the drive, the scan reports the incompatibility and suggests using the BLER scan (option 5) instead.
+
+**Output:** Per-second C1/C2/CU time-series data, aggregate statistics (total, average, peak), quality rating, and a CSV log (`qcheck_scan.csv`) for graphing.
+
+**When to use:** The most accurate quality assessment available — measures the drive's actual error-correction workload rather than relying on host-side C2 pointer interpretation.
+
+---
 
 ### C2 Error Scan (Quick)
 
@@ -67,7 +161,7 @@ This scan reads every audio sector once and asks the drive to report C2 error po
 
 Optionally performs **dual-speed validation** — re-reads error sectors at a different speed to distinguish real media errors from speed-dependent read artifacts.
 
-**Output:** Total C2 count, per-sector error counts, error LBA list, and a summary report.
+**Output:** Total C2 count, per-sector error counts, error LBA list, and a CSV log (`c2_scan.csv`).
 
 **When to use:** Quick check before ripping to decide whether standard or secure mode is needed.
 
@@ -100,6 +194,8 @@ Some drives expose per-sector C1 block error counts in bytes 294–295 of the C2
 | **Max C1/sec** | Peak one-second C1 count |
 | **Avg C2/sec** | Mean C2 errors per second across the entire disc |
 | **Max C2/sec** | Peak one-second error count (with timestamp) |
+| **C1 utilization** | Average C1 rate as a percentage of the Red Book 220/sec limit |
+| **C2 margin** | How close C1 is to exhausting C2 correction capacity (WIDE / ADEQUATE / NARROW / CRITICAL / EXHAUSTED) |
 | **Red Book threshold** | Avg BLER < 220/sec = PASS (IEC 60908 compliance) |
 | **Quality threshold** | Avg C2/sec < 1.0 = GOOD for archival ripping |
 | **Per-track breakdown** | C1 count, C2 count, affected sectors, avg/sec, and status per track |
@@ -196,7 +292,7 @@ A weighted scoring system produces the final risk level:
 | **Read consistency** | Not tested | Not tested | Multi-pass re-read detects instability |
 | **Pattern analysis** | None | Per-second bucketing, per-track totals, error clustering | Edge concentration, progressive gradient, pinhole clusters |
 | **Typical cause detected** | Scratches, fingerprints, poor burns | Same as C2 but with temporal context + early wear via C1 | Chemical oxidation, delamination, bronzing |
-| **Output format** | Console report | Console report + CSV + ASCII graph | Console report + text log |
+| **Output format** | Console report + CSV | Console report + CSV + ASCII graph | Console report + text log |
 | **Actionable result** | "Use secure rip" or "clean the disc" | "Meets/fails Red Book" or "use Paranoid mode" | "Back up NOW — data loss imminent" |
 | **Speed** | Fast (minutes) | Moderate (full disc read) | Slow (full disc read + re-read sampling) |
 
@@ -204,6 +300,52 @@ A weighted scoring system produces the final risk level:
 
 ---
 
+## Disc Balance Check
+
+**Question answered:** *"Is this disc mechanically balanced, and what is the maximum safe rip speed?"*
+
+Unbalanced or warped CDs vibrate at high rotation speeds, causing read instability, jitter, and in severe cases, read failures. AudioCopy sweeps the drive through six read speeds (4×, 8×, 16×, 24×, 32×, 40×) and measures four independent metrics at each speed:
+
+| Metric | What it measures |
+|---|---|
+| **Error rate** | C2 errors per sector (or hardware C1/C2 via LiteOn `0xDF` when available) |
+| **Read time jitter** | Coefficient of variation of per-sector read times |
+| **Stability ratio** | Per-sector read time consistency (higher = more wobble) |
+| **Speed scaling** | Whether actual throughput scales linearly with requested speed |
+
+Each metric produces a 0–100 sub-score. These are blended into a single **Balance Score**:
+
+| Score | Assessment | Recommendation |
+|---|---|---|
+| 75–100 | **GOOD** — disc is well balanced | Any rip speed is safe |
+| 50–74 | **FAIR** — some wobble detected | Reduce rip speed |
+| 0–49 | **POOR** — significant balance problem | Use 4×–8× maximum |
+
+The scan also determines the **maximum safe rip speed** — the highest speed at which no wobble degradation was detected.
+
+**Output:** Per-speed error rates, jitter statistics, sub-scores, balance score, and safe speed recommendation.
+
+**When to use:** Before ripping at high speed, or when you suspect a disc is warped, cracked near the hub, or has an off-center label.
+
+---
+
+## Chipset Identification
+
+**Question answered:** *"What chipset is in my drive, and does it have any known audio extraction quirks?"*
+
+AudioCopy identifies the drive's internal chipset/controller by combining:
+
+1. **SCSI INQUIRY** vendor, model, and firmware strings
+2. **Known model-to-chipset lookup table** covering Plextor, LiteOn, Pioneer, ASUS, Samsung/TSSTcorp, Sony, NEC/Optiarc, Panasonic, LG/HLDS, Philips, and Ricoh
+3. **Firmware signature analysis** for unrecognized models
+4. **Interface type probing** — detects SATA, IDE/ATAPI, USB, or SCSI attachment via `IOCTL_STORAGE_QUERY_PROPERTY`
+5. **USB bridge identification** — recognizes JMicron, ASMedia, Realtek, and VIA bridge chips
+
+The report includes the chipset family, detection confidence, interface type, USB bridge (if applicable), and any known audio extraction quirks for the identified chipset.
+
+**When to use:** When setting up a new drive — understanding the chipset helps choose optimal extraction settings and explains drive-specific behavior (e.g., TSSTcorp drives may report inaccurate C2 data).
+
+---
 
 ## Subchannel Data Extraction
 
@@ -234,17 +376,18 @@ When ripping, AudioCopy asks whether to include subchannel data. Enabling it cre
 
 ### How to decide
 
-If you are unsure whether a disc has subchannel content worth preserving, run **option 11 — Verify Subchannel Burn Status** before ripping. This samples sectors across the disc and reports:
+If you are unsure whether a disc has subchannel content worth preserving, run **option 13 — Verify Subchannel Burn Status** before ripping. This samples sectors across the disc and reports:
 
 - Whether Q-channel CRC data is valid (indicating reliable subchannel data was mastered/burned)
 - Whether R–W channels contain CD-G graphics or CD-TEXT metadata
+- The media type (CD-ROM / CD-R / CD-RW)
 - A clear recommendation on whether to enable subchannel extraction
 
 **Rule of thumb:** If you are archiving and storage is not a concern, always include subchannel data — it costs ~4% extra file size and ensures nothing is lost. If you are ripping for playback only, skip it.
 
 # Subchannel Data on Burned Audio CDs: Why R–W Is Often Empty and P+Q Gets Auto-Generated
 
-This README explains why **R–W subchannel data is usually missing** on burned audio CDs, why **P+Q timing is commonly generated automatically**, and why the **TOC is typically more reliable** for navigation.
+This section explains why **R–W subchannel data is usually missing** on burned audio CDs, why **P+Q timing is commonly generated automatically**, and why the **TOC is typically more reliable** for navigation.
 
 ---
 
@@ -417,7 +560,7 @@ A high subchannel error rate is a signal to inspect the disc further (run a C2 o
 
 ## Disc Writing
 
-AudioCopy can write audio CDs from `.bin` / `.cue` / `.sub` file sets produced by a previous rip. The write workflow handles media detection, mode negotiation, CD-Text embedding, and session finalization automatically.
+AudioCopy can write audio CDs from `.bin` / `.cue` / `.sub` file sets produced by a previous rip. The write workflow handles media detection, capacity verification, mode negotiation, CD-Text embedding, and session finalization automatically.
 
 ### Write Mode Negotiation
 
@@ -425,11 +568,12 @@ Not all drives support the same write modes. AudioCopy probes the drive by testi
 
 | Priority | Mode | Block size | Description |
 |---|---|---|---|
-| 1 | Raw DAO + packed P-W | 2448 bytes | Exact 1:1 copy including subchannel data (best fidelity) |
-| 2 | Raw DAO + raw P-W | 2448 bytes | Raw subchannel format (deinterleaving handled by host) |
-| 3 | SAO + packed P-W | 2448 bytes | Session-At-Once with packed subchannel |
-| 4 | SAO + raw P-W | 2448 bytes | Session-At-Once with raw subchannel |
-| 5 | Plain SAO | 2352 bytes | Audio only — drive generates subchannel automatically (last resort) |
+| 1 | Raw + packed P-W | 2448 bytes | Exact 1:1 copy including subchannel data (best fidelity) |
+| 2 | Raw + raw P-W | 2448 bytes | Raw subchannel format (deinterleaving handled by host) |
+| 3 | DAO + packed P-W | 2448 bytes | Disc-At-Once with packed subchannel |
+| 4 | DAO + raw P-W | 2448 bytes | Disc-At-Once with raw subchannel |
+| 5 | Raw (no subchannel) | 2352 bytes | Raw write mode without subchannel data |
+| 6 | Plain SAO | 2352 bytes | Audio only — drive generates subchannel automatically (last resort) |
 
 If the drive silently downgrades the requested write parameters (accepts MODE SELECT but stores different values), AudioCopy detects this via readback verification and rejects the mode.
 
@@ -471,14 +615,16 @@ If the standard blank fails (e.g., corrupted TOC prevents the drive from process
 
 The full write sequence is:
 
-1. **File validation** — verify `.bin`, `.cue`, and optional `.sub` files exist and are consistent
-2. **CUE sheet parsing** — extract track layout, pregap data, ISRC codes, and CD-Text metadata
-3. **Power calibration** — optional OPC (SEND OPC INFORMATION, 0x54)
-4. **Write mode negotiation** — probe drive capabilities and select best supported mode
-5. **SCSI CUE sheet** — build and send the disc layout (SEND CUE SHEET, 0x5D) with Track 1 pregap at MSF 00:00:00
-6. **CD-Text** — build and send packs if CUE metadata is present
-7. **Audio sector writing** — write 150 sectors of pregap silence followed by BIN file data via WRITE(10), with subchannel data appended when available
-8. **Finalization** — SYNCHRONIZE CACHE (0x35), CLOSE SESSION (0x5B), and lead-out polling until the drive is ready
+1. **Media check** — verify disc is empty and writable; blank CD-RW if needed
+2. **File validation** — verify `.bin`, `.cue`, and optional `.sub` files exist and are consistent
+3. **Capacity check** — verify the image (including pregap and lead-out overhead) fits on the disc
+4. **CUE sheet parsing** — extract track layout, pregap data, ISRC codes, MCN, and CD-Text metadata
+5. **Power calibration** — optional OPC (SEND OPC INFORMATION, 0x54)
+6. **Write mode negotiation** — probe drive capabilities and select best supported mode
+7. **SCSI CUE sheet** — build and send the disc layout (SEND CUE SHEET, 0x5D) with Track 1 pregap at MSF 00:00:00
+8. **CD-Text** — build and send packs if CUE metadata is present
+9. **Audio sector writing** — write 150 sectors of pregap silence followed by BIN file data via WRITE(10), with subchannel data appended when available
+10. **Finalization** — SYNCHRONIZE CACHE (0x35), CLOSE SESSION (0x5B), and lead-out polling until the drive is ready
 
 ### Post-Write Verification
 
@@ -496,7 +642,7 @@ AudioCopy performs an 8-step heuristic scan that combines structural analysis (n
 
 | Step | Check | I/O required | Severity | What it detects |
 |---|---|---|---|---|
-| 1 | **Illegal TOC** | No | Strong | Track numbers outside 1–99, impossibly high start LBAs |
+| 1 | **Illegal TOC** | No | Strong | Track numbers outside 1–99, impossibly high start LBAs (> 85 min), overlapping tracks |
 | 2 | **Multi-session abuse** | No | Strong | Session count > 2 (used by MediaMax/XCP to confuse rippers) |
 | 3 | **Data track presence** | No | Strong | Non-audio track in last session (rootkit installer, autorun) |
 | 4 | **Pre-emphasis anomaly** | No | Weak | Pre-emphasis flag set inconsistently across tracks |
@@ -571,18 +717,37 @@ This algorithm ensures accurate pre-gap detection across a wide variety of CD pr
 
 ### Output
 
-The detected pre-gap boundary is stored in `disc.tracks[i].pregapLBA` and reported to the user:
+The detected pre-gap boundary is stored in `disc.tracks[i].pregapLBA` and reported to the user.
+
+---
+
+## TOC-Less Disc Scanning
+
+**Question answered:** *"Can I still extract audio from a disc with a damaged or missing Table of Contents?"*
+
+When `READ TOC` fails or returns illegal entries, AudioCopy can reconstruct the track layout by scanning the disc directly. The algorithm is inspired by CloneCD and IsoBuster:
+
+| Phase | Method | Purpose |
+|---|---|---|
+| **Phase 0** | `READ DISC INFORMATION` + `READ TRACK INFORMATION` | Firmware-level query — completes in milliseconds, no disc I/O |
+| **Phase 1** | Coarse Q-subchannel scan from LBA 0 (75-sector steps) | Discover track numbers and approximate boundaries; gap-hopping survives data tracks and inter-session gaps |
+| **Phase 2** | Group coarse samples by track number | Build candidate track list |
+| **Phase 3** | Binary-search refinement of audio↔audio boundaries | Pinpoint exact track transitions |
+| **Phase 4** | Build validated `DiscInfo` | Populate track list with validated start/end LBAs |
+
+If the standard TOC is read successfully but contains out-of-range entries that had to be clamped, AudioCopy automatically re-scans the disc using this method for more accurate boundaries.
+
 ---
 
 ## Building
 
-Requires **Visual Studio** with the **C++ Desktop Development** workload. Open `AudioCopy.vcxproj` and build. No external dependencies beyond the Windows SDK (`winhttp.lib` is used for AccurateRip lookups and is included in the SDK).
+Requires **Visual Studio** with the **C++ Desktop Development** workload. Open `AudioCopy.vcxproj` and build. No external dependencies beyond the Windows SDK (`winhttp.lib` is used for AccurateRip lookups and update checks and is included in the SDK).
 
 ---
 
 ## Usage
 
-Insert an audio CD. AudioCopy auto-detects drives, reads the TOC, queries AccurateRip, and presents an interactive menu:
+Insert an audio CD. AudioCopy auto-detects drives, reads the TOC, queries AccurateRip, and presents the interactive menu shown above.
 
 Press **ESC** or **Ctrl+C** at any time to cancel a running operation.
 
@@ -603,5 +768,7 @@ This project is provided as-is for personal and educational use.
 - **[Exact Audio Copy (EAC)](https://www.exactaudiocopy.de/)** by André Wiethoff — the pioneering CD ripper that defined secure ripping methodology. EAC established the practices of multi-pass sector reading, C2 error pointer detection, drive cache defeat, read offset correction, overreading into lead-in/lead-out, and paranoid-mode extraction with bit-level verification. AudioCopy's secure rip implementation, error handling strategy, and overall approach to verifiable extraction are directly informed by the standards EAC set.
 
 - **[dBpoweramp](https://www.dbpoweramp.com/)** by Illustrate — created the AccurateRip system and popularized the concept of verifying CD rips against a shared online database of checksums. dBpoweramp's approach to automatic drive offset detection, C2 error reporting, and its emphasis on making verified ripping accessible to a broad audience established industry-wide expectations for audio CD extraction software.
+
+- **[QPXTool](https://qpxtool.sourceforge.io/)** — open-source CD/DVD quality scanning tool that documents the Plextor Q-Check (0xE9/0xEB) and LiteOn/MediaTek (0xDF) vendor command sets used for hardware-driven C1/C2/CU error measurement. AudioCopy's quality scan implementation draws from QPXTool's reverse-engineering of these vendor-specific commands.
 
 EAC and dBpoweramp together defined the modern standard for verifiable, bit-perfect audio CD extraction. AudioCopy builds on the methodology and concepts they established.
