@@ -176,6 +176,7 @@ public:
 		DWORD pregapLBA;
 		bool isAudio;
 		bool hasPregap;        // true only when INDEX 00 was explicitly in the CUE file
+		int dataMode;          // 0=audio, 1=MODE1/2352, 2=MODE2/2352
 		std::string isrcCode;
 		std::string title;     // CD-Text: track title from CUE TITLE command
 		std::string performer; // CD-Text: track performer from CUE PERFORMER command

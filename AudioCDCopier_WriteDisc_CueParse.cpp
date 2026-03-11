@@ -108,7 +108,28 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 			inTrack = true;
 			currentTrack = {};
 			currentTrack.hasPregap = false;
-			currentTrack.isAudio = (line.find(L"AUDIO") != std::wstring::npos);
+			currentTrack.dataMode = 0;
+
+			if (line.find(L"AUDIO") != std::wstring::npos) {
+				currentTrack.isAudio = true;
+				currentTrack.dataMode = 0;
+			}
+			else if (line.find(L"MODE1/2352") != std::wstring::npos) {
+				currentTrack.isAudio = false;
+				currentTrack.dataMode = 1;
+			}
+			else if (line.find(L"MODE2/2352") != std::wstring::npos) {
+				currentTrack.isAudio = false;
+				currentTrack.dataMode = 2;
+			}
+			else {
+				Console::Warning("Unsupported track mode in CUE: ");
+				std::wcout << line << L"\n";
+				Console::Info("Only AUDIO, MODE1/2352, and MODE2/2352 are supported\n");
+				tracks.clear();
+				file.close();
+				return false;
+			}
 
 			std::wistringstream iss(line);
 			std::wstring cmd;
@@ -138,6 +159,9 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 			std::wistringstream iss(line);
 			std::wstring cmd;
 			iss >> cmd >> indexNum >> timeStr;
+
+			// Ignore INDEX 00 for data tracks (pregap is not applicable)
+			if (!currentTrack.isAudio && indexNum == 0) continue;
 
 			int mm = 0, ss = 0, ff = 0;
 			wchar_t sep;
@@ -196,9 +220,10 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 	}
 
 	for (size_t i = 0; i < tracks.size(); i++) {
-		if (!tracks[i].isAudio) {
-			Console::Error("Track ");
-			std::cout << tracks[i].trackNumber << " is not an audio track\n";
+		// Mixed-mode: data track must be track 1
+		if (!tracks[i].isAudio && tracks[i].trackNumber != 1) {
+			Console::Error("Data track must be track 1 in a mixed-mode disc (found at track ");
+			std::cout << tracks[i].trackNumber << ")\n";
 			tracks.clear();
 			return false;
 		}
@@ -231,6 +256,26 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 		}
 	}
 
+	// Enforce mandatory 150-frame transition gap between data track 1 and
+	// the first audio track (Red Book / Yellow Book requirement).
+	if (tracks.size() >= 2 && !tracks[0].isAudio && tracks[1].isAudio) {
+		if (!tracks[1].hasPregap) {
+			DWORD gapStart = (tracks[1].startLBA >= 150)
+				? tracks[1].startLBA - 150
+				: tracks[0].endLBA + 1;
+
+			if (gapStart > tracks[0].startLBA) {
+				tracks[1].pregapLBA = gapStart;
+				tracks[1].hasPregap = true;
+				Console::Info("Inserted mandatory 150-frame transition gap before audio track ");
+				std::cout << tracks[1].trackNumber << " (LBA " << gapStart << ")\n";
+			}
+			else {
+				Console::Warning("Cannot insert data-to-audio transition gap (insufficient space)\n");
+			}
+		}
+	}
+
 	Console::Success("Parsed CUE sheet: ");
 	std::cout << tracks.size() << " tracks\n";
 
@@ -246,6 +291,10 @@ bool AudioCDCopier::ParseCueSheet(const std::wstring& cueFile,
 		Console::Info("  Track ");
 		std::cout << t.trackNumber << ": LBA " << t.startLBA
 			<< " - " << t.endLBA;
+		if (!t.isAudio) {
+			const char* modeName = (t.dataMode == 2) ? "MODE2" : "MODE1";
+			std::cout << " [" << modeName << "]";
+		}
 		if (t.hasPregap && t.startLBA >= t.pregapLBA) {
 			std::cout << " (pregap at " << t.pregapLBA
 				<< ", " << (t.startLBA - t.pregapLBA) << " frames)";

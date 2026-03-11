@@ -4,18 +4,24 @@
 #include "Progress.h"
 #include "InterruptHandler.h"
 #include "WriteDiscInternal.h"
+#include <algorithm>
+#include <conio.h>
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <windows.h>
 
 // ============================================================================
-// WriteAudioSectors - Write pregap silence + audio data (+ optional subchannel)
+// WriteAudioSectors - Write pregap silence + audio/data sectors (+ optional subchannel)
 //
 // When a .sub file is provided, subchannel data is read from it.  Otherwise,
 // if the write mode includes subchannel, Q-channel data is synthesized from
 // the CUE sheet track list, injecting MCN and ISRC at the Red Book intervals
 // (every 100 sectors at positions 99 and 49 respectively).
+//
+// Mixed-mode discs are supported: data tracks (MODE1/2352, MODE2/2352) are
+// written from the same BIN file as raw 2352-byte sectors.  The Q-channel CTL
+// field is set to 0x04 for data tracks and 0x00 for audio tracks.
 // ============================================================================
 bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 	const std::wstring& subFile,
@@ -39,7 +45,8 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 		subInput.open(subFile, std::ios::binary);
 		if (subInput.is_open()) {
 			hasSubFile = true;
-		} else {
+		}
+		else {
 			Console::Warning("Cannot open .sub file -- synthesizing Q-channel from CUE metadata\n");
 		}
 	}
@@ -52,14 +59,20 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 	constexpr DWORD PREGAP_SECTORS = 150;
 	DWORD writeTotalSectors = PREGAP_SECTORS + totalSectors;
 
+	// Detect mixed-mode disc
+	bool isMixedMode = std::any_of(tracks.begin(), tracks.end(),
+		[](const TrackWriteInfo& t) { return !t.isAudio; });
+
 	Console::Info("Binary file size: ");
 	long long fileSize = static_cast<long long>(totalSectors) * AUDIO_SECTOR_SIZE;
 	std::cout << (fileSize / (1024 * 1024)) << " MB (" << totalSectors << " sectors)\n";
 	Console::Info("Total write: ");
-	std::cout << writeTotalSectors << " sectors (150 pregap + " << totalSectors << " audio)\n";
+	std::cout << writeTotalSectors << " sectors (150 pregap + " << totalSectors
+		<< (isMixedMode ? " data+audio" : " audio") << ")\n";
 
 	if (hasSubchannel) {
-		Console::Info("Write mode: 2448 bytes/sector (2352 audio + 96 subchannel");
+		Console::Info("Write mode: 2448 bytes/sector (2352 ");
+		std::cout << (isMixedMode ? "data/audio" : "audio") << " + 96 subchannel";
 		if (hasSubFile && needsDeinterleave) std::cout << ", deinterleaving";
 		if (!hasSubFile) std::cout << ", synthesized Q-channel";
 		if (!discMCN.empty()) std::cout << ", MCN: " << discMCN;
@@ -114,8 +127,11 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 					int relFrame = static_cast<int>(PREGAP_SECTORS) - 1 - static_cast<int>(globalSector);
 					int absFrame = static_cast<int>(globalSector);
 
+					// Pregap CTL matches the first track type
+					BYTE pregapCtl = tracks[0].isAudio ? 0x00 : 0x04;
+
 					BYTE q12[12];
-					BuildPositionQ(q12, 0x00, 1, 0,
+					BuildPositionQ(q12, pregapCtl, 1, 0,
 						static_cast<BYTE>(relFrame / (75 * 60)),
 						static_cast<BYTE>((relFrame / 75) % 60),
 						static_cast<BYTE>(relFrame % 75),
@@ -133,7 +149,7 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 				}
 			}
 			else {
-				// ── Data sector (LBA 0+) ────────────────────────────────
+				// ── Data/audio sector (LBA 0+) ──────────────────────────
 				binInput.read(reinterpret_cast<char*>(dest), AUDIO_SECTOR_SIZE);
 				size_t audioRead = binInput.gcount();
 				if (audioRead < AUDIO_SECTOR_SIZE) {
@@ -171,6 +187,9 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 						BYTE trackNo = static_cast<BYTE>(tracks[trkIdx].trackNumber);
 						BYTE indexNo = isInPregap ? 0 : 1;
 
+						// CTL: 0x00 for audio tracks, 0x04 for data tracks
+						BYTE ctl = tracks[trkIdx].isAudio ? 0x00 : 0x04;
+
 						// Relative MSF (counts down in pregap, up in index 1)
 						int relFrames;
 						if (isInPregap) {
@@ -199,18 +218,24 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 						bool atTrackBoundary = (binSector == tracks[trkIdx].startLBA)
 							|| (tracks[trkIdx].hasPregap && binSector == tracks[trkIdx].pregapLBA);
 
+						// MCN and ISRC are only valid for audio tracks
+						bool canInjectMCN = tracks[trkIdx].isAudio && !discMCN.empty()
+							&& discMCN.size() >= 13;
+						bool canInjectISRC = tracks[trkIdx].isAudio
+							&& !tracks[trkIdx].isrcCode.empty();
+
 						// MCN (Mode-2) at sector % 100 == 99
 						// ISRC (Mode-3) at sector % 100 == 49
-						if (!atTrackBoundary && !discMCN.empty() && discMCN.size() >= 13
+						if (!atTrackBoundary && canInjectMCN
 							&& (binSector % 100 == 99)) {
 							EncodeMCN(q12, discMCN.c_str(), absF);
 						}
-						else if (!atTrackBoundary && !tracks[trkIdx].isrcCode.empty()
+						else if (!atTrackBoundary && canInjectISRC
 							&& (binSector % 100 == 49)) {
 							EncodeISRC(q12, tracks[trkIdx].isrcCode.c_str(), absF);
 						}
 						else {
-							BuildPositionQ(q12, 0x00, trackNo, indexNo,
+							BuildPositionQ(q12, ctl, trackNo, indexNo,
 								relM, relS, relF, absM, absS, absF);
 						}
 
@@ -292,8 +317,11 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 		while (currentTrackIdx + 1 < tracks.size() &&
 			binPosition >= tracks[currentTrackIdx + 1].startLBA) {
 			currentTrackIdx++;
+			const auto& t = tracks[currentTrackIdx];
 			Console::Info("\n  Track ");
-			std::cout << tracks[currentTrackIdx].trackNumber << " reached\n";
+			std::cout << t.trackNumber
+				<< (t.isAudio ? "" : (t.dataMode == 2 ? " [MODE2]" : " [MODE1]"))
+				<< " reached\n";
 		}
 	}
 
@@ -303,6 +331,7 @@ bool AudioCDCopier::WriteAudioSectors(const std::wstring& binFile,
 
 	Console::Success("Successfully wrote ");
 	std::cout << sectorsWritten << " sectors";
+	if (isMixedMode) std::cout << " (mixed-mode)";
 	if (hasSubchannel) {
 		std::cout << " (with subchannel";
 		if (!hasSubFile) std::cout << ", synthesized";

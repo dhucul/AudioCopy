@@ -300,10 +300,10 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 		}
 	}
 
-	Console::Info("\nWriting audio sectors...\n");
+	Console::Info("\nWriting sectors...\n");
 	if (!WriteAudioSectors(binFile, subFile, tracks, totalSectors,
 		hasSubchannel, needsDeinterleave, subchannelMode, discMCN)) {
-		Console::Error("Failed to write audio sectors\n");
+		Console::Error("Failed to write sectors\n");
 		return false;
 	}
 

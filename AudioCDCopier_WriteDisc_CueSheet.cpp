@@ -2,6 +2,7 @@
 #include "AudioCDCopier.h"
 #include "ConsoleColors.h"
 #include "WriteDiscInternal.h"
+#include <algorithm>
 #include <iomanip>
 #include <iostream>
 #include <vector>
@@ -123,6 +124,42 @@ static bool SetWriteParametersPage(ScsiDrive& drive, int subchannelMode, bool qu
 }
 
 // ============================================================================
+// Helper: Get SCSI CUE sheet CTL/ADR byte for a track
+// ============================================================================
+static BYTE GetCueCtlAdr(bool isAudio) {
+	// ADR=1 (position data) in lower nibble
+	// CTL: 0x00 for audio, 0x04 for data
+	return isAudio ? 0x01 : 0x41;
+}
+
+// ============================================================================
+// Helper: Get SCSI CUE sheet Data Form byte for a track
+// ============================================================================
+static BYTE GetCueDataForm(bool isAudio, int dataMode, int subchannelMode) {
+	BYTE subBits;
+	switch (subchannelMode) {
+	case 1:
+	case 3:
+		subBits = 0x02; break;  // packed P-W
+	case 2:
+	case 4:
+		subBits = 0x03; break;  // raw P-W
+	default:
+		subBits = 0x00; break;  // no subchannel
+	}
+
+	if (isAudio) {
+		return subBits;             // 0x00, 0x02, or 0x03
+	}
+	else if (dataMode == 2) {
+		return 0x20 | subBits;      // Mode 2: 0x20, 0x22, or 0x23
+	}
+	else {
+		return 0x10 | subBits;      // Mode 1: 0x10, 0x12, or 0x13
+	}
+}
+
+// ============================================================================
 // Helper: Build and send SCSI CUE sheet
 // ============================================================================
 bool WriteDiscInternal::BuildAndSendCueSheet(ScsiDrive& drive,
@@ -134,23 +171,12 @@ bool WriteDiscInternal::BuildAndSendCueSheet(ScsiDrive& drive,
 		return false;
 	}
 
-	BYTE trackDataForm;
-	switch (subchannelMode) {
-	case 1:
-	case 3:
-		trackDataForm = 0x02; break;
-	case 2:
-	case 4:
-		trackDataForm = 0x03; break;
-	default: trackDataForm = 0x00; break;
-	}
-
-	size_t entryCount = 2;
-	entryCount++;
+	size_t entryCount = 2;  // lead-in TOC + first track INDEX 00
+	entryCount++;            // lead-out
 	for (size_t i = 0; i < tracks.size(); i++) {
-		entryCount++;
+		entryCount++;        // INDEX 01
 		if (i > 0 && tracks[i].hasPregap && tracks[i].pregapLBA < tracks[i].startLBA) {
-			entryCount++;
+			entryCount++;    // INDEX 00 for pregap
 		}
 	}
 
@@ -158,61 +184,73 @@ bool WriteDiscInternal::BuildAndSendCueSheet(ScsiDrive& drive,
 	std::vector<BYTE> cueSheet(cueSheetSize, 0);
 	size_t ei = 0;
 
-	// Lead-in data form must match track data form
-	BYTE leadInDataForm = trackDataForm;
+	// Lead-in: CTL/ADR and data form must match the first track
+	BYTE leadInCtlAdr = GetCueCtlAdr(tracks[0].isAudio);
+	BYTE leadInDataForm = GetCueDataForm(tracks[0].isAudio, tracks[0].dataMode, subchannelMode);
 
-	cueSheet[ei * 8 + 0] = 0x01;
+	// Lead-in TOC entry
+	cueSheet[ei * 8 + 0] = leadInCtlAdr;
 	cueSheet[ei * 8 + 1] = 0x00;
 	cueSheet[ei * 8 + 2] = 0x00;
 	cueSheet[ei * 8 + 3] = leadInDataForm;
 	ei++;
 
-	cueSheet[ei * 8 + 0] = 0x01;
+	// First track INDEX 00 (start of disc at 00:00:00)
+	cueSheet[ei * 8 + 0] = GetCueCtlAdr(tracks[0].isAudio);
 	cueSheet[ei * 8 + 1] = static_cast<BYTE>(tracks[0].trackNumber);
 	cueSheet[ei * 8 + 2] = 0x00;
-	cueSheet[ei * 8 + 3] = trackDataForm;
+	cueSheet[ei * 8 + 3] = GetCueDataForm(tracks[0].isAudio, tracks[0].dataMode, subchannelMode);
 	cueSheet[ei * 8 + 5] = 0x00;
 	cueSheet[ei * 8 + 6] = 0x00;
 	cueSheet[ei * 8 + 7] = 0x00;
 	ei++;
 
+	// Track entries
 	for (size_t i = 0; i < tracks.size(); i++) {
 		const auto& t = tracks[i];
+		BYTE ctlAdr = GetCueCtlAdr(t.isAudio);
+		BYTE dataForm = GetCueDataForm(t.isAudio, t.dataMode, subchannelMode);
 
+		// INDEX 00 (pregap) for tracks after the first
 		if (i > 0 && t.hasPregap && t.pregapLBA < t.startLBA) {
 			BYTE m, s, f;
 			LBAtoMSF(static_cast<int>(t.pregapLBA), m, s, f);
 
-			cueSheet[ei * 8 + 0] = 0x01;
+			cueSheet[ei * 8 + 0] = ctlAdr;
 			cueSheet[ei * 8 + 1] = static_cast<BYTE>(t.trackNumber);
 			cueSheet[ei * 8 + 2] = 0x00;
-			cueSheet[ei * 8 + 3] = trackDataForm;
+			cueSheet[ei * 8 + 3] = dataForm;
 			cueSheet[ei * 8 + 5] = m;
 			cueSheet[ei * 8 + 6] = s;
 			cueSheet[ei * 8 + 7] = f;
 			ei++;
 		}
 
+		// INDEX 01
 		BYTE m, s, f;
 		LBAtoMSF(static_cast<int>(t.startLBA), m, s, f);
 
-		cueSheet[ei * 8 + 0] = 0x01;
+		cueSheet[ei * 8 + 0] = ctlAdr;
 		cueSheet[ei * 8 + 1] = static_cast<BYTE>(t.trackNumber);
 		cueSheet[ei * 8 + 2] = 0x01;
-		cueSheet[ei * 8 + 3] = trackDataForm;
+		cueSheet[ei * 8 + 3] = dataForm;
 		cueSheet[ei * 8 + 5] = m;
 		cueSheet[ei * 8 + 6] = s;
 		cueSheet[ei * 8 + 7] = f;
 		ei++;
 	}
 
+	// Lead-out
 	{
 		BYTE m, s, f;
 		LBAtoMSF(static_cast<int>(totalSectors), m, s, f);
-		cueSheet[ei * 8 + 0] = 0x01;
+		// Lead-out CTL matches the last track
+		BYTE lastCtlAdr = GetCueCtlAdr(tracks.back().isAudio);
+		BYTE lastDataForm = GetCueDataForm(tracks.back().isAudio, tracks.back().dataMode, subchannelMode);
+		cueSheet[ei * 8 + 0] = lastCtlAdr;
 		cueSheet[ei * 8 + 1] = 0xAA;
 		cueSheet[ei * 8 + 2] = 0x01;
-		cueSheet[ei * 8 + 3] = trackDataForm;
+		cueSheet[ei * 8 + 3] = lastDataForm;
 		cueSheet[ei * 8 + 5] = m;
 		cueSheet[ei * 8 + 6] = s;
 		cueSheet[ei * 8 + 7] = f;
@@ -226,7 +264,9 @@ bool WriteDiscInternal::BuildAndSendCueSheet(ScsiDrive& drive,
 			else if (e[1] == 0xAA)  std::cout << "  Lead-out";
 			else                    std::cout << "  Track " << std::setw(2) << static_cast<int>(e[1]);
 			std::cout << "  Index " << static_cast<int>(e[2])
-				<< "  DataForm 0x" << std::hex << std::setfill('0') << std::setw(2)
+				<< "  CTL 0x" << std::hex << std::setfill('0') << std::setw(2)
+				<< static_cast<int>(e[0])
+				<< "  DataForm 0x" << std::setw(2)
 				<< static_cast<int>(e[3]) << std::dec
 				<< "  MSF " << std::setfill('0') << std::setw(2) << static_cast<int>(e[5])
 				<< ":" << std::setw(2) << static_cast<int>(e[6])
@@ -235,11 +275,12 @@ bool WriteDiscInternal::BuildAndSendCueSheet(ScsiDrive& drive,
 		}
 	}
 	else {
+		bool isMixedMode = std::any_of(tracks.begin(), tracks.end(),
+			[](const AudioCDCopier::TrackWriteInfo& t) { return !t.isAudio; });
 		Console::Info("Sending CUE sheet (");
-		std::cout << entryCount << " entries, DataForm 0x"
-			<< std::hex << std::setfill('0') << std::setw(2)
-			<< static_cast<int>(trackDataForm) << std::dec
-			<< std::setfill(' ') << ")...\n";
+		std::cout << entryCount << " entries"
+			<< (isMixedMode ? ", mixed-mode" : ", audio-only")
+			<< ")...\n";
 	}
 
 	BYTE cdb[10] = { 0x5D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
