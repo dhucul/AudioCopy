@@ -607,6 +607,17 @@ bool ScsiDrive::DetectCapabilities(DriveCapabilities& caps) {
 			 caps.vendor.find("LITEON") != std::string::npos)) {
 			caps.supportsCDText = true;
 		}
+
+		// Optiarc vendor override — Sony NEC Optiarc drives support CD-Text
+		// reading via READ TOC format 5 but often don't advertise it in
+		// Feature 0x001E.
+		if (!caps.supportsCDText) {
+			std::string vendorUpper = caps.vendor;
+			std::transform(vendorUpper.begin(), vendorUpper.end(), vendorUpper.begin(), ::toupper);
+			if (vendorUpper.find("OPTIARC") != std::string::npos) {
+				caps.supportsCDText = true;
+			}
+		}
 	}
 
 	// CD-Text write: supported when drive can write SAO/DAO (feature 0x002E)
