@@ -303,6 +303,146 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 		}
 	}
 
+	// ── C2 recheck: verify transient C2 errors ───────────────
+	// Plextor drives occasionally report spurious C2 errors that vanish
+	// on a second scan.  When C2 errors are found, automatically re-scan
+	// and compare.  If the recheck is clean, the original C2 counts are
+	// discarded as transient hardware artifacts.
+	if (result.totalC2 > 0 && !InterruptHandler::Instance().IsInterrupted()) {
+		std::cout << "\n  C2 errors detected (" << result.totalC2
+			<< " total) — running verification re-scan...\n";
+
+		// Stop any lingering scan state before restarting
+		if (usePlextor) m_drive.PlextorQCheckStop();
+		else m_drive.LiteOnScanStop();
+		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+		bool recheckStarted = usePlextor
+			? m_drive.PlextorQCheckStart(firstLBA, lastLBA)
+			: m_drive.LiteOnScanStart(firstLBA, lastLBA);
+
+		if (recheckStarted) {
+			int recheckC2Total = 0;
+			bool recheckDone = false;
+			bool recheckStopped = false;       // ← track whether stop was already called
+			int recheckSampleIdx = 0;
+			DWORD recheckLastLBA = DWORD(-1);
+			int recheckLastLine = 0;
+			auto recheckStart = std::chrono::steady_clock::now();
+
+			while (!recheckDone) {
+				if (InterruptHandler::Instance().IsInterrupted() || InterruptHandler::Instance().CheckEscapeKey()) {
+					if (usePlextor) m_drive.PlextorQCheckStop();
+					else m_drive.LiteOnScanStop();
+					recheckStopped = true;     // ← mark stopped
+					std::cout << "\n  *** Recheck cancelled — keeping original C2 results ***\n";
+					break;
+				}
+
+				if (usePlextor)
+					std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+				int rc1 = 0, rc2 = 0, rcu = 0;
+				DWORD rLBA = 0;
+
+				bool rpoll = usePlextor
+					? m_drive.PlextorQCheckPoll(rc1, rc2, rcu, rLBA, recheckDone)
+					: m_drive.LiteOnScanPoll(rc1, rc2, rcu, rLBA, recheckDone);
+
+				if (!rpoll) {
+					if (usePlextor) {
+						std::this_thread::sleep_for(std::chrono::milliseconds(200));
+						rpoll = m_drive.PlextorQCheckPoll(rc1, rc2, rcu, rLBA, recheckDone);
+					}
+					if (!rpoll) {
+						if (usePlextor) m_drive.PlextorQCheckStop();
+						else m_drive.LiteOnScanStop();
+						recheckStopped = true; // ← mark stopped
+						std::cout << "\n  Recheck communication lost — keeping original C2 results.\n";
+						break;
+					}
+				}
+
+				if (rLBA == 0 && rc1 == 0 && rc2 == 0 && rcu == 0 && !recheckDone)
+					continue;
+				if (rLBA == recheckLastLBA && !recheckDone)
+					continue;
+				recheckLastLBA = rLBA;
+
+				// Skip startup samples just like the primary scan
+				if (recheckSampleIdx < 3) {
+					recheckSampleIdx++;
+					continue;
+				}
+
+				if (useLiteOn && rLBA >= lastLBA)
+					recheckDone = true;
+
+				recheckC2Total += rc2;
+				recheckSampleIdx++;
+
+				// ── Recheck progress bar ─────────────────────
+				double rpct = 0.0;
+				if (rLBA >= firstLBA && result.totalSectors > 0) {
+					rpct = static_cast<double>(rLBA - firstLBA) * 100.0 / result.totalSectors;
+					if (rpct > 100.0) rpct = 100.0;
+				}
+
+				auto rnow = std::chrono::steady_clock::now();
+				int rElapsed = static_cast<int>(
+					std::chrono::duration_cast<std::chrono::seconds>(rnow - recheckStart).count());
+
+				std::ostringstream rline;
+				int rfilled = static_cast<int>(rpct * BAR_WIDTH / 100.0);
+				rline << "\r  Recheck [";
+				for (int i = 0; i < BAR_WIDTH; i++)
+					rline << (i < rfilled ? "\xe2\x96\x88" : "\xe2\x96\x91");
+				rline << "] " << std::fixed << std::setprecision(1) << rpct << "%"
+					<< "  " << (rElapsed / 60) << ":"
+					<< std::setfill('0') << std::setw(2) << (rElapsed % 60)
+					<< "  C2=" << recheckC2Total;
+
+				std::string routput = rline.str();
+				if (static_cast<int>(routput.size()) < recheckLastLine)
+					routput.append(recheckLastLine - routput.size(), ' ');
+				recheckLastLine = static_cast<int>(routput.size());
+				std::cout << routput << std::flush;
+			}
+
+			if (recheckDone) {
+				if (recheckC2Total == 0) {
+					// Recheck found no C2 errors — original was transient
+					std::cout << "\n  Recheck PASSED: 0 C2 errors on re-scan.\n";
+					std::cout << "  Original C2 count (" << result.totalC2
+						<< ") discarded as transient.\n";
+
+					// Clear C2 from each sample and recalculate totals
+					for (auto& s : result.samples) {
+						s.c2 = 0;
+					}
+					result.totalC2 = 0;
+					result.maxC2PerSecond = 0;
+					result.maxC2SecondIndex = -1;
+				}
+				else {
+					// Recheck also found C2 errors — they are real
+					std::cout << "\n  Recheck CONFIRMED: " << recheckC2Total
+						<< " C2 errors on re-scan (original: " << result.totalC2 << ").\n";
+					std::cout << "  C2 errors are genuine — keeping original results.\n";
+				}
+			}
+
+			// Only stop if not already stopped by cancel/comm-loss handler
+			if (!recheckStopped) {
+				if (usePlextor) m_drive.PlextorQCheckStop();
+				else m_drive.LiteOnScanStop();
+			}
+		}
+		else {
+			std::cout << "  WARNING: Could not start recheck scan — keeping original C2 results.\n";
+		}
+	}
+
 	// ── Compute averages ─────────────────────────────────────
 	DWORD sampleCount = static_cast<DWORD>(result.samples.size());
 	if (sampleCount > 0) {
@@ -375,6 +515,21 @@ void AudioCDCopier::PrintQCheckReport(const QCheckResult& result) {
 	std::cout << "  Max C1/sec:  " << result.maxC1PerSecond;
 	if (result.maxC1SecondIndex >= 0 && result.maxC1SecondIndex < static_cast<int>(result.samples.size()))
 		std::cout << "  (at LBA " << result.samples[result.maxC1SecondIndex].lba << ")";
+
+	// Report if there's a large discrepancy between max C1 and average C1
+	if (result.samples.size() >= 10 && result.avgC1PerSecond > 50.0) {
+		int warningMargin = 5; // allow some margin for minor fluctuations
+		// Look for recent samples around the supposed max sample time
+		for (int i = static_cast<int>(result.samples.size()) - 1; i >= 0; i--) {
+			if (result.samples[i].lba < result.samples.back().lba - warningMargin)
+				break;
+			if (result.samples[i].c1 > result.avgC1PerSecond * 10) {
+				std::cout << "  WARNING: Recent C1 spike detected (LBA "
+					<< result.samples[i].lba << ", C1=" << result.samples[i].c1 << ")\n";
+				break;
+			}
+		}
+	}
 	std::cout << "\n";
 
 	if (result.avgC1PerSecond < 5.0)
@@ -436,6 +591,16 @@ void AudioCDCopier::PrintQCheckReport(const QCheckResult& result) {
 	std::cout << "  Max C2/sec:  " << result.maxC2PerSecond;
 	if (result.maxC2SecondIndex >= 0 && result.maxC2SecondIndex < static_cast<int>(result.samples.size()))
 		std::cout << "  (at LBA " << result.samples[result.maxC2SecondIndex].lba << ")";
+
+	// Brief C2 description: count, average, and max spikes
+	if (result.totalC2 > 0) {
+		if (result.avgC2PerSecond < 1.0)
+			std::cout << "  (few, isolated spikes)";
+		else if (result.avgC2PerSecond < 10.0)
+			std::cout << "  (moderate spike activity)";
+		else
+			std::cout << "  (significant, sustained errors)";
+	}
 	std::cout << "\n";
 
 	if (result.totalC2 == 0)
