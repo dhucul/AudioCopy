@@ -13,25 +13,65 @@
 // ============================================================================
 
 int AudioCDCopier::SelectSpeed() {
-	std::cout << "\n=== Speed ===\n0. Back to menu\n1. Max\n2. 1x (best quality)\n3. 4x (recommended)\n4. Custom\nChoice: ";
+	// Determine disc-type-aware default and recommended range
+	int defaultSpeed = 4;
+	int minRecommended = 4;
+	int maxRecommended = 16;
+	const char* discTypeLabel = "Audio CD";
+
+	// Query current media profile to adjust recommendation
+	WORD profileCode = 0;
+	std::string profileName;
+	if (m_drive.GetMediaProfile(profileCode, profileName)) {
+		switch (profileCode) {
+		case 0x0009: // CD-R (burned)
+		case 0x000A: // CD-RW (rewritable)
+			defaultSpeed = 8;
+			minRecommended = 4;
+			maxRecommended = 12;
+			discTypeLabel = "Burned CD-R/RW";
+			break;
+		case 0x0010: // DVD-ROM
+		case 0x0011: // DVD-R
+		case 0x0012: // DVD-RAM
+			defaultSpeed = 16;
+			minRecommended = 16;
+			maxRecommended = 32;
+			discTypeLabel = "Data disc";
+			break;
+		case 0x0008: // CD-ROM (pressed)
+		default:
+			defaultSpeed = 8;
+			minRecommended = 8;
+			maxRecommended = 16;
+			discTypeLabel = "Pressed Audio CD";
+			break;
+		}
+	}
+
+	std::cout << "\n=== Speed ===\n";
+	std::cout << "  Detected: " << discTypeLabel
+	          << " (recommended " << minRecommended << "x-" << maxRecommended << "x)\n";
+	std::cout << "0. Back to menu\n1. Max\n2. 1x (slowest, safest for damaged discs)\n3. "
+	          << defaultSpeed << "x (recommended)\n4. Custom\nChoice: ";
 	int c = GetMenuChoice(0, 4, 3);
 	std::cin.clear(); std::cin.ignore(10000, '\n');
 
 	if (c == 0) return -1;
 	if (c == 1) { m_drive.SetSpeed(0); std::cout << "WARNING: Max speed - accuracy not guaranteed\n"; return 0; }
 	if (c == 2) { m_drive.SetSpeed(1); std::cout << "1x speed\n"; return 1; }
-	if (c == 3) { m_drive.SetSpeed(4); std::cout << "4x speed\n"; return 4; }
+	if (c == 3) { m_drive.SetSpeed(defaultSpeed); std::cout << defaultSpeed << "x speed\n"; return defaultSpeed; }
 
 	std::cout << "Enter multiplier (1-52): ";
 	std::string s; std::cin >> s;
 	if (!s.empty() && (s.back() == 'x' || s.back() == 'X')) s.pop_back();
-	int m = 4;
+	int m = defaultSpeed;
 	try { m = std::stoi(s); }
 	catch (...) {}
 	if (m < 1) m = 1; if (m > 52) m = 52;
 	m_drive.SetSpeed(m);
-	if (m >= 8)
-		std::cout << "WARNING: " << m << "x speed - accuracy may be reduced\n";
+	if (m > maxRecommended)
+		std::cout << "WARNING: " << m << "x exceeds recommended " << maxRecommended << "x for " << discTypeLabel << "\n";
 	else
 		std::cout << m << "x speed\n";
 	std::cin.clear(); std::cin.ignore(10000, '\n');
@@ -131,7 +171,7 @@ int AudioCDCopier::SelectScanSpeed() {
 	std::cout << "Slower speeds are more accurate for damaged discs.\n";
 	std::cout << "NOTE: Speeds 8x and above significantly reduce accuracy.\n\n";
 	std::cout << "0. Back to menu\n";
-	std::cout << "1. 1x (most accurate)\n";
+	std::cout << "1. 1x (slowest, for severely damaged discs)\n";
 	std::cout << "2. 2x (recommended)\n";
 	std::cout << "3. 4x (good for undamaged discs)\n";
 	std::cout << "4. 8x (faster, reduced accuracy)\n";
