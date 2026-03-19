@@ -44,19 +44,18 @@ bool RunCopyWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& 
 
 	bool hasAccurateStream = false;
 
-	if (!isBurstMode) {
+	// Detect capabilities for ALL modes (including burst)
+	{
 		std::cout << "\nDetecting drive capabilities..." << std::flush;
 		DriveCapabilities caps;
 		if (copier.DetectDriveCapabilities(caps)) {
-			disc.enableC2Detection = caps.supportsC2ErrorReporting;
+			disc.enableC2Detection = isBurstMode ? false : caps.supportsC2ErrorReporting;
 			hasAccurateStream = caps.supportsAccurateStream;
 			std::cout << " done.\n";
 
-			if (hasAccurateStream) {
+			if (hasAccurateStream && !isBurstMode) {
 				Console::Info("Drive supports Accurate Stream (jitter-free reads).\n");
 
-				// Accurate Stream drives guarantee jitter-free reads,
-				// so we can reduce redundant re-read passes and disable cache defeat
 				if (secureConfig.mode == SecureRipMode::Fast) {
 					secureConfig.minPasses = 1;
 					secureConfig.cacheDefeat = false;
@@ -69,14 +68,15 @@ bool RunCopyWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& 
 					secureConfig.cacheDefeat = false;
 				}
 			}
+			// No separate message for burst — the later auto-disable block handles it
+			else if (hasAccurateStream && isBurstMode) {
+				Console::Info("Drive supports Accurate Stream — cache defeat unnecessary in burst mode.\n");
+			}
 		}
 		else {
 			disc.enableC2Detection = false;
 			std::cout << " skipped (detection failed).\n";
 		}
-	}
-	else {
-		disc.enableC2Detection = false;
 	}
 
 	int offset = copier.SelectOffset();
@@ -84,7 +84,7 @@ bool RunCopyWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& 
 	disc.driveOffset = offset;
 
 	if (hasAccurateStream) {
-		// Both read paths (standard + secure) have cache defeat disabled above,
+		// Both read paths (standard + secure + burst) have cache defeat disabled
 		// so skip the prompt entirely
 		disc.enableCacheDefeat = false;
 		Console::Info("Cache defeat auto-disabled (Accurate Stream drive).\n");
