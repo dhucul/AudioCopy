@@ -7,7 +7,7 @@
 // Burst Mode Reading (Maximum Speed, No Verification)
 // ============================================================================
 
-bool AudioCDCopier::ReadDiscBurst(DiscInfo& disc, std::function<void(int, int)> progress) {
+bool AudioCDCopier::ReadDiscBurst(DiscInfo& disc, std::function<void(int, int)> progress, int speedOverride) {
 	DWORD total = 0;
 	for (size_t i = 0; i < disc.tracks.size(); i++) {
 		if (disc.selectedSession > 0 && disc.tracks[i].session != disc.selectedSession) continue;
@@ -24,8 +24,8 @@ bool AudioCDCopier::ReadDiscBurst(DiscInfo& disc, std::function<void(int, int)> 
 		return false;
 	}
 
-	m_drive.SetSpeed(0);
-	std::cout << "  BURST MODE - Maximum speed, no verification\n";
+	m_drive.SetSpeed(speedOverride);   // 0 = max (original behaviour)
+	std::cout << "  BURST MODE - " << (speedOverride == 0 ? "Maximum speed" : (std::to_string(speedOverride) + "x")) << ", no verification\n";
 	if (disc.enableCacheDefeat) {
 		std::cout << "  Cache defeat: ENABLED (will reduce speed)\n";
 	}

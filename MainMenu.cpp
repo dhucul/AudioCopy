@@ -30,32 +30,33 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 		PrintMenuItem(6, "Disc rot detection *");
 		PrintMenuItem(7, "Generate surface map *");
 		PrintMenuItem(8, "Multi-pass verification *");
+		PrintMenuItem(9, "Compare disc CRCs (original vs. copy)");
 
 		// ── Disc Information ────────────────────────────────────────────
 		PrintMenuSection("Disc Info");
-		PrintMenuItem(9, "Audio content analysis *");
-		PrintMenuItem(10, "Disc fingerprint (CDDB/MusicBrainz/AccurateRip IDs)");
-		PrintMenuItem(11, "Lead area check");
-		PrintMenuItem(12, "Subchannel integrity check *");
-		PrintMenuItem(13, "Verify subchannel burn status *");
-		PrintMenuItem(14, "Copy-protection check");
+		PrintMenuItem(10, "Audio content analysis *");
+		PrintMenuItem(11, "Disc fingerprint (CDDB/MusicBrainz/AccurateRip IDs)");
+		PrintMenuItem(12, "Lead area check");
+		PrintMenuItem(13, "Subchannel integrity check *");
+		PrintMenuItem(14, "Verify subchannel burn status *");
+		PrintMenuItem(15, "Copy-protection check");
 
 		// ── Drive Diagnostics ───────────────────────────────────────────
 		PrintMenuSection("Drive");
-		PrintMenuItem(15, "Drive capabilities");
-		PrintMenuItem(16, "Drive offset detection");
-		PrintMenuItem(17, "C2 validation test");
-		PrintMenuItem(18, "Speed comparison test");
-		PrintMenuItem(19, "Seek time analysis");
-		PrintMenuItem(20, "Chipset identification");
-		PrintMenuItem(21, "Disc balance check *");
+		PrintMenuItem(16, "Drive capabilities");
+		PrintMenuItem(17, "Drive offset detection");
+		PrintMenuItem(18, "C2 validation test");
+		PrintMenuItem(19, "Speed comparison test");
+		PrintMenuItem(20, "Seek time analysis");
+		PrintMenuItem(21, "Chipset identification");
+		PrintMenuItem(22, "Disc balance check *");
 
 		// ── Utility ─────────────────────────────────────────────────────
 		PrintMenuSection("Utility");
-		PrintMenuItem(22, "Rescan disc");
-		PrintMenuItem(23, "Check for updates");
-		PrintMenuItem(24, "Help (test descriptions)");
-		PrintMenuItem(25, "Exit", true);
+		PrintMenuItem(23, "Rescan disc");
+		PrintMenuItem(24, "Check for updates");
+		PrintMenuItem(25, "Help (test descriptions)");
+		PrintMenuItem(26, "Exit", true);
 
 		Console::SetColor(Console::Color::DarkGray);
 		std::cout << "  * Uses pre-gap analysis (scan range includes pregap sectors)\n";
@@ -64,7 +65,7 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 		Console::BoxFooter();
 		std::cout << Console::Sym::Arrow << " Choice: ";
 
-		int choice = GetMenuChoice(1, 25, 1);
+		int choice = GetMenuChoice(1, 26, 1);
 		std::cin.clear();
 		if (std::cin.peek() == '\n') {
 			std::cin.ignore();
@@ -200,12 +201,195 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
+			  // ── 9. Compare disc CRCs (original vs. copy) ───────────────
+		case 9: {
+			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
+
+			bool hasAudio = false;
+			for (const auto& t : disc.tracks) { if (t.isAudio) { hasAudio = true; break; } }
+			if (!hasAudio) {
+				Console::Warning("No audio tracks found on this disc.\n");
+				break;
+			}
+
+			Console::Heading("\n=== Compare Disc CRCs (Original vs. Copy) ===\n");
+			Console::Info("Reads both discs in full (burst mode) and compares track CRCs.\n");
+			Console::Info("Make sure the ORIGINAL disc is currently inserted.\n\n");
+
+			int speed = copier.SelectSpeed();
+			if (speed == -1) break;
+
+			// ── Read original disc ─────────────────────────────────────
+			Console::Info("Step 1/2: Reading original disc...\n");
+			DiscInfo originalDisc = disc;
+			originalDisc.rawSectors.clear();
+			originalDisc.selectedSession = 0;
+			originalDisc.enableCacheDefeat = false;
+			originalDisc.pregapMode = PregapMode::Skip;
+			originalDisc.enableC2Detection = false;
+			originalDisc.includeSubchannel = false;
+
+			ProgressIndicator origProgress(40);
+			origProgress.SetLabel("  Original");
+			origProgress.Start();
+
+			bool origOk = copier.ReadDiscBurst(originalDisc, [&origProgress](int cur, int tot) {
+				origProgress.Update(cur, tot);
+				}, speed);
+
+			origProgress.Finish(origOk);
+
+			if (!origOk) {
+				Console::Error("Failed to read original disc.\n");
+				break;
+			}
+
+			// Keep probe sectors for offset detection before freeing
+			std::vector<std::vector<BYTE>> origProbe;
+			{
+				size_t total = originalDisc.rawSectors.size();
+				size_t probeSize = std::min<size_t>(100, total);
+				size_t midStart = (total > probeSize) ? (total - probeSize) / 2 : 0;
+				origProbe.assign(originalDisc.rawSectors.begin() + midStart,
+					originalDisc.rawSectors.begin() + midStart + probeSize);
+			}
+
+			// Compute original CRCs, then free the bulk data
+			std::vector<std::pair<int, uint32_t>> originalCRCs;
+			for (int i = 0; i < static_cast<int>(originalDisc.tracks.size()); i++) {
+				if (originalDisc.tracks[i].isAudio) {
+					originalCRCs.push_back({
+						originalDisc.tracks[i].trackNumber,
+						copier.CalculateTrackCRC(originalDisc, i)
+						});
+				}
+			}
+			originalDisc.rawSectors.clear();
+			originalDisc.rawSectors.shrink_to_fit();
+
+			Console::Success("Original disc read complete.\n\n");
+
+			// ── Swap discs ─────────────────────────────────────────────
+			copier.Eject();
+			Console::Info("Please insert the COPIED disc and press any key...\n");
+			_getch();
+
+			copier.Close();
+			Sleep(3000);
+
+			if (!copier.Open(audioDrive)) {
+				Console::Error("Failed to reopen drive.\n");
+				break;
+			}
+
+			DiscInfo copyDisc;
+			bool copyTOC = false;
+			for (int attempt = 0; attempt < 10; attempt++) {
+				if (g_interrupt.IsInterrupted() || g_interrupt.CheckEscapeKey()) {
+					Console::Warning("\n*** Cancelled by user ***\n");
+					break;
+				}
+				if (copier.ReadTOC(copyDisc)) {
+					copyTOC = true;
+					break;
+				}
+				Console::Info("Waiting for disc to become ready...\n");
+				Sleep(2000);
+			}
+
+			if (!copyTOC) {
+				Console::Error("Failed to read TOC of copied disc.\n");
+				break;
+			}
+
+			if (copyDisc.tracks.size() != disc.tracks.size()) {
+				Console::Error("Track count mismatch — this doesn't appear to be a copy of the original disc.\n");
+				std::cout << "  Original: " << disc.tracks.size() << " tracks\n";
+				std::cout << "  Copy:     " << copyDisc.tracks.size() << " tracks\n";
+				disc = copyDisc;
+				hasTOC = true;
+				break;
+			}
+
+			// Force original's track boundaries so both CRC calculations
+			// cover identical sector ranges (endLBA is non-deterministic).
+			copyDisc.tracks = disc.tracks;
+
+			// ── Read copy disc ─────────────────────────────────────────
+			Console::Info("Step 2/2: Reading copied disc...\n");
+			copyDisc.pregapMode = PregapMode::Skip;
+			copyDisc.enableC2Detection = false;
+			copyDisc.includeSubchannel = false;
+
+			ProgressIndicator copyProgress(40);
+			copyProgress.SetLabel("  Copy");
+			copyProgress.Start();
+
+			bool copyOk = copier.ReadDiscBurst(copyDisc, [&copyProgress](int cur, int tot) {
+				copyProgress.Update(cur, tot);
+				}, speed);
+
+			copyProgress.Finish(copyOk);
+
+			if (!copyOk) {
+				Console::Error("Failed to read copied disc.\n");
+				break;
+			}
+
+			Console::Success("Copied disc read complete.\n");
+
+			// ── Detect and compensate for write offset ─────────────────
+			int detectedOffset = 0;
+			if (!origProbe.empty() && !copyDisc.rawSectors.empty()) {
+				// Build a matching mid-disc probe from the copy
+				size_t total = copyDisc.rawSectors.size();
+				size_t probeSize = std::min<size_t>(100, total);
+				size_t midStart = (total > probeSize) ? (total - probeSize) / 2 : 0;
+				std::vector<std::vector<BYTE>> copyProbe(
+					copyDisc.rawSectors.begin() + midStart,
+					copyDisc.rawSectors.begin() + midStart + probeSize);
+				detectedOffset = copier.DetectSampleOffset(origProbe, copyProbe);
+			}
+			origProbe.clear();
+
+			if (detectedOffset != 0) {
+				Console::Info("\nWrite offset detected: ");
+				std::cout << detectedOffset << " samples ("
+					<< (detectedOffset * 4) << " bytes)\n";
+				Console::Info("Compensating before CRC comparison...\n\n");
+				copier.ApplySampleOffset(copyDisc.rawSectors, detectedOffset);
+			}
+			else {
+				Console::Info("\nNo write offset detected (discs appear sample-aligned).\n\n");
+			}
+
+			// ── Compute copy CRCs (from offset-compensated data) ───────
+			std::vector<std::pair<int, uint32_t>> copyCRCs;
+			for (int i = 0; i < static_cast<int>(copyDisc.tracks.size()); i++) {
+				if (copyDisc.tracks[i].isAudio) {
+					copyCRCs.push_back({
+						copyDisc.tracks[i].trackNumber,
+						copier.CalculateTrackCRC(copyDisc, i)
+						});
+				}
+			}
+			copyDisc.rawSectors.clear();
+			copyDisc.rawSectors.shrink_to_fit();
+
+			// ── Compare ────────────────────────────────────────────────
+			copier.CompareDiscCRCs(originalCRCs, copyCRCs);
+
+			disc = copyDisc;
+			hasTOC = true;
+			break;
+		}
+
 			  // ════════════════════════════════════════════════════════════
 			  //  Disc Information
 			  // ════════════════════════════════════════════════════════════
 
-				// ── 9. Audio content analysis ───────────────────────────────
-		case 9: {
+				// ── 10. Audio content analysis ──────────────────────────────
+		case 10: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -214,9 +398,10 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			  // ── 10. Disc fingerprint ────────────────────────────────────
-		case 10: {
-			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break;
+			   // ── 11. Disc fingerprint ────────────────────────────────────
+		case 11: {
+			if (!hasTOC) {
+				Console::Error("This operation requires a disc with a valid TOC.\n"); break;
 			}
 			DiscFingerprint fingerprint;
 			if (copier.GenerateDiscFingerprint(disc, fingerprint)) {
@@ -233,8 +418,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			  // ── 11. Lead area check ────────────────────────────────────
-		case 11: {
+			   // ── 12. Lead area check ────────────────────────────────────
+		case 12: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -242,8 +427,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 12. Subchannel integrity check ─────────────────────────
-		case 12: {
+			   // ── 13. Subchannel integrity check ─────────────────────────
+		case 13: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -264,8 +449,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 13. Verify subchannel burn status ──────────────────────
-		case 13: {
+			   // ── 14. Verify subchannel burn status ──────────────────────
+		case 14: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -277,8 +462,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 14. Copy-protection check ─────────────────────────────
-		case 14: {
+			   // ── 15. Copy-protection check ─────────────────────────────
+		case 15: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int speed = copier.SelectScanSpeed();
 			if (speed == -1) break;
@@ -290,8 +475,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			   //  Drive Diagnostics
 			   // ════════════════════════════════════════════════════════════
 
-				  // ── 15. Drive capabilities ─────────────────────────────────
-		case 15: {
+				  // ── 16. Drive capabilities ─────────────────────────────────
+		case 16: {
 			DriveCapabilities caps;
 			if (copier.DetectDriveCapabilities(caps)) {
 				copier.PrintDriveCapabilities(caps);
@@ -304,8 +489,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 16. Drive offset detection ─────────────────────────────
-		case 16: {
+			   // ── 17. Drive offset detection ─────────────────────────────
+		case 17: {
 			OffsetDetectionResult offsetResult;
 			Console::Info("\nDetecting drive read offset...\n");
 
@@ -322,8 +507,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 17. C2 validation test ─────────────────────────────────
-		case 17: {
+			   // ── 18. C2 validation test ─────────────────────────────────
+		case 18: {
 			Console::Info("\n=== C2 Validation Test ===\n");
 			Console::Info("This test reads sectors at different speeds to verify C2 accuracy.\n");
 			Console::Info("Inconsistent C2 results may indicate unreliable C2 reporting.\n\n");
@@ -380,15 +565,15 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 18. Speed comparison test ──────────────────────────────
-		case 18: {
+			   // ── 19. Speed comparison test ──────────────────────────────
+		case 19: {
 			std::vector<SpeedComparisonResult> results;
 			copier.RunSpeedComparisonTest(disc, results);
 			break;
 		}
 
-			   // ── 19. Seek time analysis ─────────────────────────────────
-		case 19: {
+			   // ── 20. Seek time analysis ─────────────────────────────────
+		case 20: {
 			std::vector<SeekTimeResult> results;
 			Console::Info("\nRunning seek time analysis...\n");
 			if (copier.RunSeekTimeAnalysis(disc, results)) {
@@ -400,8 +585,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 20. Chipset identification ─────────────────────────────
-		case 20: {
+			   // ── 21. Chipset identification ─────────────────────────────
+		case 21: {
 			Console::Info("\nIdentifying drive chipset / controller...\n");
 			ChipsetInfo chipsetInfo;
 			if (copier.DetectChipset(chipsetInfo)) {
@@ -413,8 +598,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 21. Disc balance check ────────────────────────────────
-		case 21: {
+			   // ── 22. Disc balance check ────────────────────────────────
+		case 22: {
 			if (!hasTOC) { Console::Error("This operation requires a disc with a valid TOC.\n"); break; }
 			int balanceScore = 0;
 			Console::Info("\nRunning disc balance check...\n");
@@ -431,8 +616,8 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			   //  Utility
 			   // ════════════════════════════════════════════════════════════
 
-				  // ── 22. Rescan disc ────────────────────────────────────────
-		case 22: {
+				  // ── 23. Rescan disc ────────────────────────────────────────
+		case 23: {
 			Console::Info("\nScanning drives...\n");
 			wchar_t newAudioDrive = 0;
 			std::vector<wchar_t> newAudioDrives;
@@ -516,19 +701,19 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-			   // ── 23. Check for updates ──────────────────────────────────
-		case 23: {
+			   // ── 24. Check for updates ──────────────────────────────────
+		case 24: {
 			CheckForUpdates(APP_VERSION);
 			break;
 		}
 
-			   // ── 24. Help ───────────────────────────────────────────────
-		case 24:
+			   // ── 25. Help ───────────────────────────────────────────────
+		case 25:
 			PrintHelpMenu();
 			break;
 
-			// ── 25. Exit ───────────────────────────────────────────────
-		case 25:
+			// ── 26. Exit ───────────────────────────────────────────────
+		case 26:
 			copier.Close();
 			Console::Success("\nGoodbye!\n");
 			return 0;
@@ -538,7 +723,7 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			break;
 		}
 
-		if (choice != 25) {
+		if (choice != 26) {
 			WaitForKey();
 		}
 	}

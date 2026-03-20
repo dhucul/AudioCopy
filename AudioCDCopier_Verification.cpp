@@ -143,7 +143,7 @@ bool AudioCDCopier::RunMultiPassVerification(DiscInfo& disc, std::vector<MultiPa
 			MultiPassResult r{};
 			r.lba = lba;
 			r.passesMatched = matchCount;
-			r.totalPasses = passes;
+		 r.totalPasses = passes;
 			r.allMatch = allMatch;
 			r.majorityHash = majorityHash;
 
@@ -867,5 +867,175 @@ void AudioCDCopier::PrintSubchannelBurnReport(const SubchannelBurnResult& result
 			Console::Info("  subchannel\" produce the same result because the R-W channels are empty\n");
 			Console::Info("  on the source. The P+Q timing data is always written by the drive.\n");
 		}
+	}
+}
+
+bool AudioCDCopier::CompareDiscCRCs(const std::vector<std::pair<int, uint32_t>>& originalCRCs,
+	const std::vector<std::pair<int, uint32_t>>& copyCRCs) {
+	Console::Heading("\n=== CRC Comparison Results ===\n");
+
+	if (originalCRCs.size() != copyCRCs.size()) {
+		Console::Warning("Audio track count mismatch!\n");
+		std::cout << "  Original: " << originalCRCs.size() << " audio tracks\n";
+		std::cout << "  Copy:     " << copyCRCs.size() << " audio tracks\n\n";
+	}
+
+	size_t compareCount = std::min(originalCRCs.size(), copyCRCs.size());
+	int matchCount = 0;
+	int mismatchCount = 0;
+
+	std::cout << "  Track   Original CRC   Copy CRC       Result\n";
+	std::cout << "  -----   ------------   --------       ------\n";
+
+	for (size_t i = 0; i < compareCount; i++) {
+		uint32_t origCRC = originalCRCs[i].second;
+		uint32_t copyCRC = copyCRCs[i].second;
+		bool match = (origCRC == copyCRC);
+
+		if (match) matchCount++;
+		else mismatchCount++;
+
+		std::cout << "  " << std::setw(5) << originalCRCs[i].first << "   "
+			<< std::hex << std::setfill('0') << std::setw(8) << origCRC
+			<< "       "
+			<< std::setw(8) << copyCRC << std::dec << std::setfill(' ')
+			<< "       ";
+
+		if (match) {
+			Console::SetColor(Console::Color::Green);
+			std::cout << "MATCH";
+		}
+		else {
+			Console::SetColor(Console::Color::Red);
+			std::cout << "MISMATCH";
+		}
+		Console::Reset();
+		std::cout << "\n";
+	}
+
+	std::cout << "\n  Summary: " << matchCount << " matched, " << mismatchCount << " mismatched";
+	if (originalCRCs.size() != copyCRCs.size()) {
+		size_t extra = (originalCRCs.size() > copyCRCs.size())
+			? originalCRCs.size() - copyCRCs.size()
+			: copyCRCs.size() - originalCRCs.size();
+		std::cout << ", " << extra << " unmatched (track count differs)";
+	}
+	std::cout << "\n";
+
+	if (mismatchCount == 0 && originalCRCs.size() == copyCRCs.size()) {
+		Console::Success("\n  *** ALL TRACKS MATCH - COPY IS IDENTICAL ***\n");
+	}
+	else {
+		Console::Error("\n  *** CRC MISMATCH DETECTED - COPY DIFFERS FROM ORIGINAL ***\n");
+	}
+
+	return mismatchCount == 0 && originalCRCs.size() == copyCRCs.size();
+}
+
+// ============================================================================
+// DetectSampleOffset - Cross-correlate to find the sample shift between
+// two disc reads.  Returns the offset in samples (positive = copy is
+// shifted forward).  Uses the first few sectors of both reads.
+// ============================================================================
+int AudioCDCopier::DetectSampleOffset(
+    const std::vector<std::vector<BYTE>>& origSectors,
+    const std::vector<std::vector<BYTE>>& copySectors,
+    int maxOffsetSamples)
+{
+    // Convert raw sector bytes to int16 sample arrays for correlation.
+    // Only use the first ~100 sectors — enough for reliable detection
+    // without excessive memory or compute.
+    auto toSamples = [](const std::vector<std::vector<BYTE>>& sectors, size_t maxSecs) {
+        std::vector<int16_t> out;
+        size_t n = std::min(maxSecs, sectors.size());
+        out.reserve(n * (AUDIO_SECTOR_SIZE / 2));
+        for (size_t i = 0; i < n; i++) {
+            const auto& s = sectors[i];
+            for (size_t j = 0; j + 1 < s.size() && j + 1 < AUDIO_SECTOR_SIZE; j += 2) {
+                out.push_back(static_cast<int16_t>(s[j] | (s[j + 1] << 8)));
+            }
+        }
+        return out;
+    };
+
+    auto orig = toSamples(origSectors, 100);
+    auto copy = toSamples(copySectors, 100);
+
+    if (orig.size() < 5000 || copy.size() < 5000)
+        return 0;
+
+    // Compare in the middle of the probe to avoid lead-in / boundary artefacts.
+    size_t winStart = orig.size() / 4;
+    size_t winLen = std::min<size_t>(orig.size() / 4, 20000);
+
+    int64_t bestSSD = INT64_MAX;
+    int     bestOff = 0;
+    size_t  bestCnt = 0;
+
+    for (int off = -maxOffsetSamples; off <= maxOffsetSamples; off++) {
+        // Each stereo sample pair = 2 int16 values in the interleaved array.
+        int shift = off * 2;
+        int64_t ssd = 0;
+        size_t  cnt = 0;
+
+        for (size_t i = 0; i < winLen; i++) {
+            ptrdiff_t oi = static_cast<ptrdiff_t>(winStart + i);
+            ptrdiff_t ci = oi + shift;
+            if (ci < 0 || ci >= static_cast<ptrdiff_t>(copy.size()))
+                continue;
+
+            int d = static_cast<int>(orig[oi]) - static_cast<int>(copy[ci]);
+            ssd += static_cast<int64_t>(d) * d;
+            cnt++;
+        }
+
+        if (cnt > 0 && ssd < bestSSD) {
+            bestSSD = ssd;
+            bestOff = off;
+            bestCnt = cnt;
+        }
+    }
+
+    // Reject if the best alignment is still noisy — means genuinely different audio.
+    if (bestCnt == 0) return 0;
+    double avgSSD = static_cast<double>(bestSSD) / bestCnt;
+    if (avgSSD > 10.0) return 0;
+
+    return bestOff;
+}
+
+void AudioCDCopier::ApplySampleOffset(std::vector<std::vector<BYTE>>& rawSectors, int offsetSamples)
+{
+	if (offsetSamples == 0 || rawSectors.empty()) return;
+
+	int64_t byteOffset = static_cast<int64_t>(offsetSamples) * 4;
+
+	// Flatten into one contiguous buffer
+	std::vector<BYTE> all;
+	all.reserve(rawSectors.size() * AUDIO_SECTOR_SIZE);
+	for (auto& s : rawSectors)
+		all.insert(all.end(), s.begin(),
+			s.begin() + std::min(s.size(), static_cast<size_t>(AUDIO_SECTOR_SIZE)));
+
+	// Shift
+	std::vector<BYTE> shifted;
+	if (byteOffset > 0) {
+		if (static_cast<size_t>(byteOffset) >= all.size()) return;
+		shifted.assign(all.begin() + byteOffset, all.end());
+		shifted.resize(all.size(), 0);
+	}
+	else {
+		shifted.resize(static_cast<size_t>(-byteOffset), 0);
+		shifted.insert(shifted.end(), all.begin(),
+			all.end() + byteOffset);   // byteOffset is negative
+	}
+
+	// Write back into per-sector buffers
+	size_t pos = 0;
+	for (auto& s : rawSectors) {
+		size_t len = std::min(static_cast<size_t>(AUDIO_SECTOR_SIZE), shifted.size() - pos);
+		if (pos < shifted.size())
+			memcpy(s.data(), &shifted[pos], len);
+		pos += AUDIO_SECTOR_SIZE;
 	}
 }

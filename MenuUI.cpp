@@ -184,18 +184,28 @@ void PrintHelpMenu() {
 		"   Sectors that differ between passes are flagged as unreliable.",
 		"Maximum confidence in rip accuracy." });
 
+	PrintEntry({ "9. Compare Disc CRCs (Original vs. Copy)",
+		"Performs a full burst-mode read of two discs (original then copy) and\n"
+		"   compares CRC-32 checksums for every audio track. The tool reads the\n"
+		"   first disc, ejects it, waits for the second disc, then reads and\n"
+		"   compares track-by-track.\n"
+		"\n"
+		"   A matching CRC on every track confirms a bit-perfect copy.\n"
+		"   Mismatches pinpoint exactly which tracks differ.",
+		"Verifying that a burned CD-R is an exact copy of the original disc." });
+
 	// ═════════════════════════════════════════════════════════════════════
 	//  Disc Information
 	// ═════════════════════════════════════════════════════════════════════
 	PrintSection("Disc Info");
 
-	PrintEntry({ "9. Audio Content Analysis",
+	PrintEntry({ "10. Audio Content Analysis",
 		"Analyzes audio characteristics: silence detection, clipping, levels.\n"
 		"   Detects pre-emphasis, HDCD encoding, and dynamic range.\n"
 		"   Reports peak levels and average loudness per track.",
 		"Understanding the audio mastering of the disc." });
 
-	PrintEntry({ "10. Disc Fingerprint (CDDB/MusicBrainz/AccurateRip IDs)",
+	PrintEntry({ "11. Disc Fingerprint (CDDB/MusicBrainz/AccurateRip IDs)",
 		"Generates unique disc identifiers for online database lookups:\n"
 		"   - CDDB/FreeDB ID for metadata lookup\n"
 		"   - MusicBrainz Disc ID for accurate metadata matching\n"
@@ -204,19 +214,19 @@ void PrintHelpMenu() {
 		"   Results are saved to disc_fingerprint.txt.",
 		"Looking up album metadata or verifying disc identity." });
 
-	PrintEntry({ "11. Lead Area Check",
+	PrintEntry({ "12. Lead Area Check",
 		"Examines lead-in and lead-out areas for hidden data or damage.\n"
 		"   These areas contain TOC data and are critical for disc recognition.\n"
 		"   Can reveal hidden track zero audio (HTOA) or pre-gap content.",
 		"Diagnosing discs that fail to load or have TOC issues." });
 
-	PrintEntry({ "12. Subchannel Integrity Check",
+	PrintEntry({ "13. Subchannel Integrity Check",
 		"Verifies the integrity of subchannel data (Q-channel timing, etc.).\n"
 		"   Subchannel errors can cause incorrect track indexing or timing issues.\n"
 		"   Reports total error count across all sectors.",
 		"Diagnosing timing/indexing issues or verifying subchannel extraction." });
 
-	PrintEntry({ "13. Verify Subchannel Burn Status",
+	PrintEntry({ "14. Verify Subchannel Burn Status",
 		"Samples sectors across the disc and reads raw subchannel data to determine\n"
 		"   whether subchannel information was actually mastered/burned onto the disc.\n"
 		"   Checks Q-channel CRC validity, P-channel pause/play state, R-W channel\n"
@@ -226,7 +236,7 @@ void PrintHelpMenu() {
 		"   or may not, depending on the burning software and settings used.",
 		"Deciding if subchannel extraction is useful before ripping, or identifying burned copies vs. originals." });
 
-	PrintEntry({ "14. Copy-Protection Check",
+	PrintEntry({ "15. Copy-Protection Check",
 		"Scans the disc for common audio CD copy-protection mechanisms.\n"
 		"   Performs 8 heuristic checks:\n"
 		"   - Illegal / non-standard TOC entries\n"
@@ -248,46 +258,46 @@ void PrintHelpMenu() {
 	// ═════════════════════════════════════════════════════════════════════
 	PrintSection("Drive");
 
-	PrintEntry({ "15. Drive Capabilities",
+	PrintEntry({ "16. Drive Capabilities",
 		"Detects and displays your CD/DVD drive's hardware capabilities.\n"
 		"   Shows support for: C2 errors, accurate stream, CD-TEXT, subchannel.\n"
 		"   Also displays: read/write speeds, buffer size, overread capability.\n"
 		"   Provides a ripping quality score to assess drive suitability.",
 		"Checking if your drive is suitable for accurate ripping." });
 
-	PrintEntry({ "16. Drive Offset Detection",
+	PrintEntry({ "17. Drive Offset Detection",
 		"Automatically detects your CD drive's read offset using AccurateRip database.\n"
 		"   Offset correction ensures sample-accurate rips that match the original master.\n"
 		"   Displays the detected offset in samples along with a confidence percentage.",
 		"Configuring your drive for accurate ripping." });
 
-	PrintEntry({ "17. C2 Validation Test",
+	PrintEntry({ "18. C2 Validation Test",
 		"Tests the reliability of your drive's C2 error reporting at different speeds.\n"
 		"   Some drives report false C2 errors at high speeds. This test verifies accuracy\n"
 		"   by comparing C2 results at slow and fast speeds for consistency.\n"
 		"   Tests up to 3 sectors spread across inner, middle, and outer disc regions.",
 		"Determining if your drive's C2 detection is trustworthy before scanning." });
 
-	PrintEntry({ "18. Speed Comparison Test",
+	PrintEntry({ "19. Speed Comparison Test",
 		"Tests read performance at multiple speeds to find optimal ripping speed.\n"
 		"   Slower speeds often yield better results on damaged discs.\n"
 		"   Compares C2 error counts at each speed to identify the best trade-off.",
 		"Determining the best speed for problematic discs." });
 
-	PrintEntry({ "19. Seek Time Analysis",
+	PrintEntry({ "20. Seek Time Analysis",
 		"Measures drive seek performance across the disc surface.\n"
 		"   Slow seeks may indicate mechanical issues or disc damage.\n"
 		"   Tests seek latency at various positions from inner to outer edge.",
 		"Diagnosing drive performance or disc readability issues." });
 
-	PrintEntry({ "20. Chipset Identification",
+	PrintEntry({ "21. Chipset Identification",
 		"Identifies the internal chipset / controller used by your CD/DVD drive.\n"
 		"   Displays chipset vendor, model, and firmware-level details when available.\n"
 		"   Useful for determining hardware-level capabilities not exposed via standard\n"
 		"   MMC feature queries.",
 		"Identifying drive hardware for compatibility or capability research." });
 
-	PrintEntry({ "21. Disc Balance Check",
+	PrintEntry({ "22. Disc Balance Check",
 		"Detects disc wobble or eccentricity by reading sample sectors at increasing\n"
 		"   speeds (4x through 40x) and measuring how C2 errors change.\n"
 		"\n"
@@ -303,17 +313,22 @@ void PrintHelpMenu() {
 	// ═════════════════════════════════════════════════════════════════════
 	PrintSection("Utility");
 
-	PrintEntry({ "22. Rescan Disc",
+	PrintEntry({ "23. Rescan Disc",
 		"Re-scans drives and reloads disc metadata (TOC, CD-TEXT, ISRC, AccurateRip).\n"
 		"   Automatically detects if the drive letter changed and re-opens the handle.\n"
 		"   Supports switching between multiple drives if more than one is present.",
 		"Use after swapping discs without restarting the program." });
 
-	PrintEntry({ "23. Help (Test Descriptions)",
+	PrintEntry({ "24. Check for Updates",
+		"Checks for a newer version of the tool online.\n"
+		"   Compares the running version against the latest published release.",
+		"Keeping the tool up to date." });
+
+	PrintEntry({ "25. Help (Test Descriptions)",
 		"Displays this help screen with detailed descriptions of each operation.",
 		"Understanding the purpose and details of each operation." });
 
-	PrintEntry({ "24. Exit",
+	PrintEntry({ "26. Exit",
 		"Exits the program.",
 		"Closing the tool when done." });
 

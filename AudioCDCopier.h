@@ -50,7 +50,7 @@ public:
 		std::function<void(int, int)> progress = nullptr);
 	bool ReadDiscSecure(DiscInfo& disc, const SecureRipConfig& config,
 		SecureRipResult& result, std::function<void(int, int)> progress = nullptr);
-	bool ReadDiscBurst(DiscInfo& disc, std::function<void(int, int)> progress = nullptr);
+	bool ReadDiscBurst(DiscInfo& disc, std::function<void(int, int)> progress = nullptr, int speedOverride = 0);
 
 	// Quality scanning
 	bool RunBlerScan(const DiscInfo& disc, BlerResult& result, int scanSpeed = 8);
@@ -128,6 +128,12 @@ public:
 	// CRC verification
 	uint32_t CalculateTrackCRC(const DiscInfo& disc, int trackIndex);
 	bool VerifyTrackCRCs(const DiscInfo& disc, std::vector<CRCVerification>& results);
+	bool CompareDiscCRCs(const std::vector<std::pair<int, uint32_t>>& originalCRCs,
+		const std::vector<std::pair<int, uint32_t>>& copyCRCs);
+	int DetectSampleOffset(const std::vector<std::vector<BYTE>>& origSectors,
+		const std::vector<std::vector<BYTE>>& copySectors,
+		int maxOffsetSamples = 3000);
+	void ApplySampleOffset(std::vector<std::vector<BYTE>>& rawSectors, int offsetSamples);
 
 	// Drive capabilities
 	bool DetectDriveCapabilities(DriveCapabilities& caps);
