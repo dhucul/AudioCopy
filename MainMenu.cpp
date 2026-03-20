@@ -213,8 +213,31 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			}
 
 			Console::Heading("\n=== Compare Disc CRCs (Original vs. Copy) ===\n");
-			Console::Info("Reads both discs in full (burst mode) and compares track CRCs.\n");
+			Console::Info("Reads both discs and compares track CRCs.\n");
 			Console::Info("Make sure the ORIGINAL disc is currently inserted.\n\n");
+
+			// ── Read mode selection ────────────────────────────────────
+			std::cout << "=== Read Mode ===\n";
+			std::cout << "1. Burst (fast, no error correction)\n";
+			std::cout << "2. Secure (C2-guided, re-reads to correct errors)\n";
+			std::cout << "Choice: ";
+			int readMode = GetMenuChoice(1, 2, 1);
+			std::cin.clear(); std::cin.ignore(10000, '\n');
+
+			bool useSecure = (readMode == 2);
+
+			SecureRipConfig secureConfig;
+			if (useSecure) {
+				secureConfig.mode = SecureRipMode::Standard;
+				secureConfig.minPasses = 2;
+				secureConfig.maxPasses = 8;
+				secureConfig.requiredMatches = 2;
+				secureConfig.useC2 = true;
+				secureConfig.c2Guided = true;
+				secureConfig.cacheDefeat = true;
+				secureConfig.rereadOnC2 = true;
+				secureConfig.maxSpeed = 0;
+			}
 
 			int speed = copier.SelectSpeed();
 			if (speed == -1) break;
@@ -224,24 +247,40 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 			DiscInfo originalDisc = disc;
 			originalDisc.rawSectors.clear();
 			originalDisc.selectedSession = 0;
-			originalDisc.enableCacheDefeat = false;
+			originalDisc.enableCacheDefeat = useSecure;
 			originalDisc.pregapMode = PregapMode::Skip;
-			originalDisc.enableC2Detection = false;
+			originalDisc.enableC2Detection = useSecure;
 			originalDisc.includeSubchannel = false;
 
 			ProgressIndicator origProgress(40);
 			origProgress.SetLabel("  Original");
 			origProgress.Start();
 
-			bool origOk = copier.ReadDiscBurst(originalDisc, [&origProgress](int cur, int tot) {
-				origProgress.Update(cur, tot);
-				}, speed);
+			bool origOk = false;
+			SecureRipResult origSecureResult;
+
+			if (useSecure) {
+				origOk = copier.ReadDiscSecure(originalDisc, secureConfig, origSecureResult,
+					[&origProgress](int cur, int tot) {
+						origProgress.Update(cur, tot);
+					});
+			}
+			else {
+				origOk = copier.ReadDiscBurst(originalDisc, [&origProgress](int cur, int tot) {
+					origProgress.Update(cur, tot);
+					}, speed);
+			}
 
 			origProgress.Finish(origOk);
 
 			if (!origOk) {
 				Console::Error("Failed to read original disc.\n");
 				break;
+			}
+
+			if (useSecure && origSecureResult.unsecureSectors > 0) {
+				Console::Warning(("Original disc: " + std::to_string(origSecureResult.unsecureSectors)
+					+ " sector(s) could not be fully corrected.\n").c_str());
 			}
 
 			// Keep probe sectors for offset detection before freeing
@@ -302,38 +341,51 @@ int RunMainMenuLoop(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& w
 				break;
 			}
 
-			if (copyDisc.tracks.size() != disc.tracks.size()) {
-				Console::Error("Track count mismatch — this doesn't appear to be a copy of the original disc.\n");
-				std::cout << "  Original: " << disc.tracks.size() << " tracks\n";
-				std::cout << "  Copy:     " << copyDisc.tracks.size() << " tracks\n";
-				disc = copyDisc;
-				hasTOC = true;
-				break;
+			// Re-apply the user-selected speed — Close/Open resets the
+			// SCSI SET CD SPEED command, and the drive may also reset it
+			// when new media is detected.  Must be done AFTER the disc is
+			// ready (TOC read succeeded).  ReadDiscBurst handles this
+			// internally, but ReadDiscSecure does not.
+			if (useSecure) {
+				copier.GetDriveRef().SetSpeed(speed);
 			}
 
-			// Force original's track boundaries so both CRC calculations
-			// cover identical sector ranges (endLBA is non-deterministic).
-			copyDisc.tracks = disc.tracks;
-
-			// ── Read copy disc ─────────────────────────────────────────
-			Console::Info("Step 2/2: Reading copied disc...\n");
+			// Re-use originalDisc's track info — already validated
+			copyDisc.tracks = originalDisc.tracks;
 			copyDisc.pregapMode = PregapMode::Skip;
-			copyDisc.enableC2Detection = false;
+			copyDisc.enableC2Detection = useSecure;
+			copyDisc.enableCacheDefeat = useSecure;
 			copyDisc.includeSubchannel = false;
 
 			ProgressIndicator copyProgress(40);
 			copyProgress.SetLabel("  Copy");
 			copyProgress.Start();
 
-			bool copyOk = copier.ReadDiscBurst(copyDisc, [&copyProgress](int cur, int tot) {
-				copyProgress.Update(cur, tot);
-				}, speed);
+			bool copyOk = false;
+			SecureRipResult copySecureResult;
+
+			if (useSecure) {
+				copyOk = copier.ReadDiscSecure(copyDisc, secureConfig, copySecureResult,
+					[&copyProgress](int cur, int tot) {
+						copyProgress.Update(cur, tot);
+					});
+			}
+			else {
+				copyOk = copier.ReadDiscBurst(copyDisc, [&copyProgress](int cur, int tot) {
+					copyProgress.Update(cur, tot);
+					}, speed);
+			}
 
 			copyProgress.Finish(copyOk);
 
 			if (!copyOk) {
 				Console::Error("Failed to read copied disc.\n");
 				break;
+			}
+
+			if (useSecure && copySecureResult.unsecureSectors > 0) {
+				Console::Warning(("Copied disc: " + std::to_string(copySecureResult.unsecureSectors)
+					+ " sector(s) could not be fully corrected.\n").c_str());
 			}
 
 			Console::Success("Copied disc read complete.\n");

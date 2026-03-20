@@ -185,10 +185,16 @@ void PrintHelpMenu() {
 		"Maximum confidence in rip accuracy." });
 
 	PrintEntry({ "9. Compare Disc CRCs (Original vs. Copy)",
-		"Performs a full burst-mode read of two discs (original then copy) and\n"
-		"   compares CRC-32 checksums for every audio track. The tool reads the\n"
-		"   first disc, ejects it, waits for the second disc, then reads and\n"
-		"   compares track-by-track.\n"
+		"Performs a full read of two discs (original then copy) and compares\n"
+		"   CRC-32 checksums for every audio track. The tool reads the first\n"
+		"   disc, ejects it, waits for the second disc, then reads and compares\n"
+		"   track-by-track.\n"
+		"\n"
+		"   Read mode:\n"
+		"     Burst  - Single fast read with no error correction (default).\n"
+		"     Secure - C2-guided multi-pass read that re-reads sectors with C2\n"
+		"              errors until consistent data is obtained. Use this when\n"
+		"              discs may have scratches or marginal sectors.\n"
 		"\n"
 		"   A matching CRC on every track confirms a bit-perfect copy.\n"
 		"   Mismatches pinpoint exactly which tracks differ.",
