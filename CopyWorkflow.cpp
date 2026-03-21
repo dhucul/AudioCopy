@@ -31,7 +31,7 @@ bool RunCopyWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& 
 	int errorMode = copier.SelectErrorHandling();
 	if (errorMode == -1) return false;
 
-	int secureMode = copier.SelectSecureRipMode();
+	int secureMode = copier.SelectSecureRipMode(speed);
 	if (secureMode == -1) return false;
 
 	bool isBurstMode = (secureMode == -2);
@@ -312,7 +312,7 @@ bool RunCopyWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& 
 	SecureRipResult secureResult;
 
 	if (isBurstMode) {
-		readSuccess = copier.ReadDiscBurst(disc, MakeProgressCallback(&prog));
+		readSuccess = copier.ReadDiscBurst(disc, MakeProgressCallback(&prog), speed);
 	}
 	else {
 		// Use secure path even for Standard (single-pass) to avoid abort-on-first-error

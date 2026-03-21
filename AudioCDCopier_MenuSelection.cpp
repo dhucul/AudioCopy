@@ -190,7 +190,8 @@ int AudioCDCopier::SelectScanSpeed() {
 	}
 }
 
-int AudioCDCopier::SelectSecureRipMode() {
+int AudioCDCopier::SelectSecureRipMode(int selectedSpeed) {
+	std::string speedLabel = (selectedSpeed == 0) ? "maximum speed" : (std::to_string(selectedSpeed) + "x");
 	std::cout << "\n=== Rip Mode ===\n";
 	std::cout << "Choose verification level for accuracy vs speed.\n\n";
 	std::cout << "0. Back to menu\n";
@@ -198,7 +199,7 @@ int AudioCDCopier::SelectSecureRipMode() {
 	std::cout << "2. Secure - Fast (2 passes, light verification)\n";
 	std::cout << "3. Secure - Standard (3-6 passes, balanced accuracy)\n";
 	std::cout << "4. Secure - Paranoid (4-8 passes, maximum accuracy)\n";
-	std::cout << "5. Burst (maximum speed, no verification)\n";
+	std::cout << "5. Burst (" << speedLabel << ", no verification)\n";
 
 	int c = GetMenuChoice(0, 5, 1);
 	std::cin.clear(); std::cin.ignore(10000, '\n');
@@ -209,7 +210,7 @@ int AudioCDCopier::SelectSecureRipMode() {
 	case 2: std::cout << "Secure Fast mode - Light verification\n"; return 1;
 	case 3: std::cout << "Secure Standard mode - Balanced accuracy\n"; return 2;
 	case 4: std::cout << "Secure Paranoid mode - Maximum accuracy\n"; return 3;
-	case 5: std::cout << "Burst mode - Maximum speed\n"; return -2;
+	case 5: std::cout << "Burst mode - " << speedLabel << "\n"; return -2;
 	default: return 0;
 	}
 }

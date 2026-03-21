@@ -29,7 +29,7 @@ public:
 	int SelectScanSpeed();
 	int SelectWriteSpeed();
 	int SelectOffset();
-	int SelectSecureRipMode();
+	int SelectSecureRipMode(int selectedSpeed = 0);
 	SecureRipConfig GetSecureRipConfig(SecureRipMode mode);
 	int SelectPregapMode();
 	int SelectCacheDefeat();
