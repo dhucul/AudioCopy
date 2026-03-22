@@ -22,7 +22,6 @@ public:
 	// Configuration menus
 	int SelectSpeed();
 	int SelectSubchannel();
-	int SelectSession(int sessionCount);
 	int SelectErrorHandling();
 	LogOutput SelectLogging();
 	int SelectC2Detection();

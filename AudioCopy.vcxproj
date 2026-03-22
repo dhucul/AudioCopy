@@ -140,7 +140,6 @@
     <ClCompile Include="AudioCDCopier_DiscBalance.cpp" />
     <ClCompile Include="AudioCDCopier_DiscRot.cpp" />
     <ClCompile Include="AudioCDCopier_DriveCapabilities.cpp" />
-    <ClCompile Include="AudioCDCopier_FileOutput.cpp" />
     <ClCompile Include="AudioCDCopier_HiddenTracks.cpp" />
     <ClCompile Include="AudioCDCopier_Metadata.cpp" />
     <ClCompile Include="AudioCDCopier_QCheck.cpp" />

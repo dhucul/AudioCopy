@@ -12,9 +12,10 @@ bool RunCopyWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& 
 	Console::Info("\n(Enter 0 at any prompt to go back to menu)\n");
 
 	if (disc.sessionCount > 1) {
-		int session = copier.SelectSession(disc.sessionCount);
-		if (session == -1) return false;
-		disc.selectedSession = session;
+		// Enhanced/multi-session CDs: auto-select session 1 (audio session)
+		// since the data session cannot be ripped properly.
+		disc.selectedSession = 1;
+		Console::Info("Multi-session disc detected — automatically using session 1 (audio).\n");
 	}
 
 	int speed = copier.SelectSpeed();
@@ -326,14 +327,10 @@ bool RunCopyWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& 
 	}
 	prog.Finish(true);
 
-	// Ensure offset correction is applied before AccurateRip CRC verification.
+	// Ensure offset correction is applied before saving.
 	if (disc.driveOffset != 0) {
 		copier.ApplyOffsetCorrection(disc);
 	}
-
-	std::vector<std::vector<uint32_t>> pressingCRCs;
-	AccurateRip::Lookup(disc, pressingCRCs);
-	AccurateRip::VerifyCRCs(disc, pressingCRCs);
 
 	Console::Info("Saving files...\n");
 	if (!copier.SaveToFile(disc, path)) {

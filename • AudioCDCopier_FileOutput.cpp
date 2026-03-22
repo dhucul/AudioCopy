@@ -107,6 +107,8 @@ bool AudioCDCopier::SaveToFile(const DiscInfo& disc, const std::wstring& base) {
 	DWORD off = 0;
 	for (size_t i = 0; i < disc.tracks.size(); i++) {
 		const auto& t = disc.tracks[i];
+		if (disc.selectedSession > 0 && t.session != disc.selectedSession) continue;
+
 		cue << "  TRACK " << std::setfill('0') << std::setw(2) << t.trackNumber;
 		cue << (t.isAudio ? " AUDIO\n" : " MODE1/2352\n");
 

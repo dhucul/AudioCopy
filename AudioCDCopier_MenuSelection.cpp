@@ -261,27 +261,6 @@ int AudioCDCopier::SelectCacheDefeat() {
 	return enable ? 1 : 0;
 }
 
-int AudioCDCopier::SelectSession(int sessionCount) {
-	if (sessionCount <= 1) return 0;
-
-	std::cout << "\n=== Session Selection ===\n";
-	std::cout << "Disc has " << sessionCount << " sessions.\n";
-	std::cout << "0. Back to menu\n";
-	for (int i = 1; i <= sessionCount; i++) {
-		std::cout << i << ". Session " << i;
-		if (i == sessionCount) std::cout << " (latest)";
-		std::cout << "\n";
-	}
-	std::cout << (sessionCount + 1) << ". All sessions\n";
-	std::cout << "Choice: ";
-
-	int c = GetMenuChoice(0, sessionCount + 1, sessionCount);
-	std::cin.clear(); std::cin.ignore(10000, '\n');
-	if (c == 0) return -1;
-	if (c == sessionCount + 1) return 0;  // All sessions
-	return c;
-}
-
 SecureRipConfig AudioCDCopier::GetSecureRipConfig(SecureRipMode mode) {
 	SecureRipConfig config;
 	config.mode = mode;

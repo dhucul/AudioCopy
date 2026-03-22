@@ -196,7 +196,16 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 
 	// Set last track endLBA now that we know totalSectors
 	if (!tracks.empty()) {
-		tracks.back().endLBA = totalSectors - 1;
+		if (tracks.back().endLBA == 0) {
+			// Last track in CUE — endLBA not set by parser, use BIN file size
+			tracks.back().endLBA = totalSectors - 1;
+		}
+		else if (tracks.back().endLBA + 1 < totalSectors) {
+			// Data tracks were filtered — BIN is larger than audio portion
+			Console::Info("Trimming to audio content: ");
+			std::cout << (tracks.back().endLBA + 1) << " of " << totalSectors << " sectors\n";
+			totalSectors = tracks.back().endLBA + 1;
+		}
 	}
 
 	// Power calibration

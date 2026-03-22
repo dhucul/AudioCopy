@@ -187,9 +187,6 @@
     <ClCompile Include="AudioCDCopier_DiscBalance.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="AudioCDCopier_FileOutput.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="AudioCDCopier_WriteDisc_Helpers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
