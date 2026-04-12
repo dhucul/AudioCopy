@@ -331,6 +331,8 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 	// error rate: if any are 10× above median, trim them.  This matches
 	// QPXTool's behaviour and prevents a single initial spike from
 	// dominating the graph Y-axis and inflating the overall rating.
+	bool spikesTrimmed = false;    // Hoisted — needed by c1Unverified check later
+
 	if (result.samples.size() > 50) {
 		// Compute median total error (C1+C2+CU) across all samples.
 		std::vector<int> allErrs;
@@ -345,7 +347,6 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 		size_t checkEnd = std::min<size_t>(30, result.samples.size() / 2);
 
 		// Iterate backwards so erasing doesn't invalidate lower indices.
-		bool trimmed = false;
 		for (int i = static_cast<int>(checkEnd) - 1; i >= 0; i--) {
 			int err = result.samples[i].c1 + result.samples[i].c2 + result.samples[i].cu;
 			// Two criteria: absolute threshold (>10) when disc is clean,
@@ -356,13 +357,13 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 				result.totalC2 -= result.samples[i].c2;
 				result.totalCU -= result.samples[i].cu;
 				result.samples.erase(result.samples.begin() + i);
-				trimmed = true;
+				spikesTrimmed = true;
 			}
 		}
 
 		// If any samples were trimmed, recalculate peak values since the
 		// old peaks may have come from the removed startup spikes.
-		if (trimmed) {
+		if (spikesTrimmed) {
 			result.maxC1PerSecond = 0; result.maxC1SecondIndex = -1;
 			result.maxC2PerSecond = 0; result.maxC2SecondIndex = -1;
 			result.maxCUPerSecond = 0;
@@ -374,6 +375,12 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 			}
 		}
 	}
+
+	// Track whether the drive reported any C2 during the primary scan,
+	// before the recheck potentially zeroes the total.  Used later to
+	// avoid a false c1Unverified flag — if C2 was reported, the drive's
+	// measurement mode is at least partially functional.
+	bool hadC2BeforeRecheck = result.totalC2 > 0;
 
 	// ── C2 recheck: verify transient C2 errors ───────────────
 	// C2 errors are significant — they mean C1 correction failed and the
@@ -586,6 +593,28 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 		result.archivalC1Rating = "Acceptable";
 	else
 		result.archivalC1Rating = "Poor";
+
+	// ── Flag potentially non-functional quality scan ─────────
+	// A real CD always has some C1 correction activity — even a pristine
+	// pressing produces a few C1 errors per second.  If the entire disc
+	// scanned with zero C1 AND zero C2, the drive likely accepted the
+	// vendor command but is not actually reporting CIRC statistics.
+	// This is a known issue with drives that pass the capability probe
+	// (e.g. respond to 0xE9/0xDF without error) but don't implement the
+	// measurement mode in firmware.
+	//
+	// Guards against false positives:
+	//   !hadC2BeforeRecheck — if the drive did report C2 in the primary
+	//     scan, the measurement mode is at least partially functional
+	//     (even if the recheck later zeroed the C2 as transient).
+	//   !spikesTrimmed — if startup spikes were removed, the original
+	//     data had non-zero errors; the zeroes are from trimming, not
+	//     from a non-functional drive.
+	if (result.totalC1 == 0 && result.totalC2 == 0 && result.totalCU == 0
+		&& !result.samples.empty() && !hadC2BeforeRecheck && !spikesTrimmed) {
+		result.c1Unverified = true;
+		result.qualityRating = "UNVERIFIED";
+	}
 
 	PrintQCheckReport(result);
 	return true;
@@ -929,7 +958,7 @@ void AudioCDCopier::PrintQCheckReport(const QCheckResult& result) {
 	std::string qr = result.qualityRating;
 	if (qr == "EXCELLENT" || qr == "GOOD")
 		Console::SetColorRGB(Console::Theme::GreenR, Console::Theme::GreenG, Console::Theme::GreenB);
-	else if (qr == "FAIR")
+	else if (qr == "FAIR" || qr == "UNVERIFIED")
 		Console::SetColorRGB(Console::Theme::YellowR, Console::Theme::YellowG, Console::Theme::YellowB);
 	else
 		Console::SetColorRGB(Console::Theme::RedR, Console::Theme::RedG, Console::Theme::RedB);
@@ -974,9 +1003,26 @@ void AudioCDCopier::PrintQCheckReport(const QCheckResult& result) {
 		std::cout << "  Elevated C1 rate. Consider cleaning the disc.\n";
 	else if (qr == "POOR")
 		std::cout << "  Significant errors. Back up this disc.\n";
+	else if (qr == "UNVERIFIED")
+		std::cout << "  Results could not be verified — see warning below.\n";
 	else
 		std::cout << "  Critical errors detected. Data loss likely.\n";
 	std::cout << std::string(60, '=') << "\n";
+
+	// ── Drive compatibility warning ──────────────────────────
+	if (result.c1Unverified) {
+		Console::SetColorRGB(Console::Theme::YellowR, Console::Theme::YellowG, Console::Theme::YellowB);
+		std::cout << "\n  ** WARNING: Zero C1 errors across entire disc. **\n";
+		Console::Reset();
+		std::cout << "     This is extremely unlikely on any real CD.\n"
+			<< "     Your drive may have accepted the quality scan command\n"
+			<< "     but does not actually report CIRC error statistics.\n"
+			<< "     Quality scan results from this drive are unreliable.\n\n"
+			<< "     Suggestions:\n"
+			<< "       - Try the C2 error scan (option 5) instead.\n"
+			<< "       - Use a known-compatible drive (Plextor PX-708A\n"
+			<< "         through PX-760A, or LiteOn/MediaTek-based).\n";
+	}
 }
 
 // ============================================================================
@@ -1035,6 +1081,12 @@ bool AudioCDCopier::SaveQCheckLog(const QCheckResult& result, const std::wstring
 	log << "#\n";
 	log << "# --- Archival Audio ---\n";
 	log << "# Peak C1 Rating:        " << result.archivalC1Rating << "\n";
+	if (result.c1Unverified) {
+		log << "#\n";
+		log << "# *** WARNING: Zero C1 errors across entire disc.        ***\n";
+		log << "# *** Quality scan results may be unreliable — the drive ***\n";
+		log << "# *** may not actually populate CIRC error statistics.   ***\n";
+	}
 	log << "#\n";
 
 	// ── Per-sample CSV data ──────────────────────────────────

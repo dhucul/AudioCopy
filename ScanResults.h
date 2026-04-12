@@ -54,6 +54,12 @@ struct QCheckResult {
 
 	// Archival audio peak C1 assessment
 	std::string archivalC1Rating;              // Ideal / Good / Acceptable / Poor
+
+	// Drive compatibility warning — zero C1 across entire disc suggests
+	// the drive accepted the vendor scan command but does not actually
+	// populate CIRC error statistics.  Not all drives that pass the
+	// initial capability probe produce valid measurement data.
+	bool c1Unverified = false;
 };
 
 // ── BLER (Block Error Rate) scan result ─────────────────────────────────────
