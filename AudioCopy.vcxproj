@@ -178,6 +178,7 @@
     <ClCompile Include="ScsiDrive.Core.cpp" />
     <ClCompile Include="ScsiDrive.LiteOnScan.cpp" />
     <ClCompile Include="ScsiDrive.Offset.cpp" />
+    <ClCompile Include="ScsiDrive.PioneerScan.cpp" />
     <ClCompile Include="ScsiDrive.QCheck.cpp" />
     <ClCompile Include="ScsiDrive.Read.cpp" />
     <ClCompile Include="ScsiDrive.Recommendations.cpp" />

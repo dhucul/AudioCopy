@@ -10,7 +10,7 @@
 #include <string>
 #include <utility>
 
-// ── Per-second sample from Plextor Q-Check hardware scan ────────────────────
+// ── Per-second sample from hardware quality scan ────────────────────────────
 struct QCheckSample {
 	DWORD lba = 0;          // Approximate LBA at this time slice
 	int c1 = 0;             // C1 (BLER) error count for this second
@@ -18,12 +18,13 @@ struct QCheckSample {
 	int cu = 0;             // CU (uncorrectable) count for this second
 };
 
-// ── Plextor Q-Check scan result ─────────────────────────────────────────────
-// Populated by the hardware-driven quality scan (0xE9/0xEB vendor commands).
-// This is the same measurement QPXTool performs — aggregate CIRC decoder
-// statistics per time slice, without transferring audio data.
+// ── Hardware quality scan result ────────────────────────────────────────────
+// Populated by the hardware-driven quality scan using Plextor Q-Check
+// (0xE9/0xEB), Pioneer (0x3B/0x3C), or LiteOn/MediaTek (0xDF/0xF3)
+// vendor commands.  Aggregate CIRC decoder statistics per time slice.
 struct QCheckResult {
-	bool supported = false;                    // True if drive accepted 0xE9
+	bool supported = false;                    // True if a scan method was available
+	std::string scanMethod;                    // E.g. "Plextor Q-Check (0xE9/0xEB)"
 	DWORD totalSectors = 0;                    // Disc sectors covered
 	DWORD totalSeconds = 0;                    // Scan duration in time slices
 

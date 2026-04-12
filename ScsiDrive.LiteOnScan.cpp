@@ -19,12 +19,13 @@
 //
 // Both methods read at the current drive speed (not locked to 1x).
 // At 8x a 72-min disc takes ~9 minutes — same as BLER scan.
-// ============================================================================
 #include "ScsiDrive.h"
 #include <iostream>
 #include <iomanip>
 #include <vector>
 #include <cstring>
+#include <thread>
+#include <chrono>
 
 // Which method the drive supports
 static bool s_liteonNewMethod = false;
@@ -57,14 +58,43 @@ bool ScsiDrive::SupportsLiteOnScan() {
 	OutputDebugStringA(dbg);
 
 	if (ok || sk <= 0x01) {
-		s_liteonNewMethod = true;
-		std::cout << "  [LiteOnScan] Drive supports 0xF3 quality scan (new method)\n";
-		m_liteonScanProbed = 1;
-		return true;
+		// Verify the response contains actual scan data — MSF position
+		// and/or error counts in bytes 1-7.  Drives that accept 0xF3 but
+		// don't implement measurement mode return all zeros.
+		bool hasData = false;
+		for (int i = 1; i <= 7; i++) {
+			if (buf[i] != 0) { hasData = true; break; }
+		}
+
+		if (!hasData) {
+			// Drive may still be seeking — retry once after a delay
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
+			std::fill(buf.begin(), buf.end(), BYTE(0));
+			memset(cdb, 0, 12); cdb[0] = 0xF3; cdb[1] = 0x0E;
+			ok = SendSCSIWithSense(cdb, 12, buf.data(), 0x10, &sk, &asc, &ascq);
+			if (ok || sk <= 0x01) {
+				for (int i = 1; i <= 7; i++) {
+					if (buf[i] != 0) { hasData = true; break; }
+				}
+			}
+		}
+
+		if (hasData) {
+			s_liteonNewMethod = true;
+			std::cout << "  [LiteOnScan] Drive supports 0xF3 quality scan (new method)\n";
+			m_liteonScanProbed = 1;
+			return true;
+		}
+
+		snprintf(dbg, sizeof(dbg), "LiteOnScan: 0xF3 accepted but response all zeros\n");
+		OutputDebugStringA(dbg);
+		std::cout << "  [LiteOnScan] Drive accepts 0xF3 but does not produce scan data\n" << std::flush;
+		// Fall through to try OLD method
 	}
 
 	// Try OLD method: 0xDF/0xA3 init sequence
 	s_liteonNewMethod = false;
+	SeekToLBA(0);
 
 	memset(cdb, 0, 12);
 	cdb[0] = 0xDF;
@@ -76,16 +106,58 @@ bool ScsiDrive::SupportsLiteOnScan() {
 	OutputDebugStringA(dbg);
 
 	if (ok || sk <= 0x01) {
-		// Stop it
-		memset(cdb, 0, 12);
-		cdb[0] = 0xDF;
-		cdb[1] = 0xA3;
-		cdb[2] = 0x01;
+		// Probe accepted — verify the drive actually produces scan data
+		// by completing the init sequence and doing trial reads.
+
+		// Steps B-E of old-method init (same as LiteOnScanStart)
+		memset(cdb, 0, 12); cdb[0] = 0xDF; cdb[1] = 0xA0; cdb[4] = 0x02;
 		SendSCSIWithSense(cdb, 12, buf256.data(), 256, &sk, &asc, &ascq);
 
-		std::cout << "  [LiteOnScan] Drive supports 0xDF quality scan (old method)\n";
-		m_liteonScanProbed = 1;
-		return true;
+		memset(cdb, 0, 12); cdb[0] = 0xDF; cdb[1] = 0xA0;
+		SendSCSIWithSense(cdb, 12, buf256.data(), 256, &sk, &asc, &ascq);
+
+		memset(cdb, 0, 12); cdb[0] = 0xDF; cdb[1] = 0xA0; cdb[4] = 0x04;
+		SendSCSIWithSense(cdb, 12, buf256.data(), 256, &sk, &asc, &ascq);
+
+		memset(cdb, 0, 12); cdb[0] = 0xDF; cdb[1] = 0xA0; cdb[4] = 0x02;
+		SendSCSIWithSense(cdb, 12, buf256.data(), 256, &sk, &asc, &ascq);
+
+		// Trial reads — check up to 3 blocks for non-zero C1/C2/CU.
+		// Even pristine discs produce some C1 during startup / seek settle.
+		bool hasData = false;
+		for (int trial = 0; trial < 3 && !hasData; trial++) {
+			// Read interval
+			memset(cdb, 0, 12); cdb[0] = 0xDF; cdb[1] = 0x82; cdb[2] = 0x09;
+			SendSCSIWithSense(cdb, 12, buf256.data(), 256, &sk, &asc, &ascq);
+
+			// Get data
+			std::fill(buf256.begin(), buf256.end(), BYTE(0));
+			memset(cdb, 0, 12); cdb[0] = 0xDF; cdb[1] = 0x82; cdb[2] = 0x05;
+			SendSCSIWithSense(cdb, 12, buf256.data(), 256, &sk, &asc, &ascq);
+
+			// Check C1 (bytes 0-1), C2 (bytes 2-3), CU (byte 4)
+			for (int i = 0; i <= 4; i++) {
+				if (buf256[i] != 0) { hasData = true; break; }
+			}
+
+			// Reset interval
+			memset(cdb, 0, 12); cdb[0] = 0xDF; cdb[1] = 0x97;
+			SendSCSIWithSense(cdb, 12, buf256.data(), 256, &sk, &asc, &ascq);
+		}
+
+		// Stop the scan session
+		memset(cdb, 0, 12); cdb[0] = 0xDF; cdb[1] = 0xA3; cdb[2] = 0x01;
+		SendSCSIWithSense(cdb, 12, buf256.data(), 256, &sk, &asc, &ascq);
+
+		if (hasData) {
+			std::cout << "  [LiteOnScan] Drive supports 0xDF quality scan (old method)\n";
+			m_liteonScanProbed = 1;
+			return true;
+		}
+
+		snprintf(dbg, sizeof(dbg), "LiteOnScan: 0xDF accepted but trial reads returned all zeros\n");
+		OutputDebugStringA(dbg);
+		std::cout << "  [LiteOnScan] Drive accepts 0xDF but does not produce scan data\n" << std::flush;
 	}
 
 	OutputDebugStringA("LiteOnScan: No supported scan commands found\n");

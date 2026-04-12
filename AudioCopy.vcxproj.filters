@@ -205,6 +205,9 @@
     <ClCompile Include="TrackRipWorkflow.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ScsiDrive.PioneerScan.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DiscTypes.h">

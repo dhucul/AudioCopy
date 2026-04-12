@@ -2,11 +2,11 @@
 // AudioCDCopier_QCheck.cpp - Hardware-driven CD quality scan
 //
 // Performs a C1/C2/CU error-rate scan using either Plextor Q-Check vendor
-// commands (0xE9 start / 0xEB poll) or the LiteOn/MediaTek equivalent
-// (0xDF).  Unlike the D8-based BLER scan which reads audio data and
-// inspects C2 pointers, this mode puts the drive into a dedicated
-// error-measurement state where the CIRC decoder reports aggregate
-// correction statistics per time slice — no audio is transferred.
+// commands (0xE9 start / 0xEB poll), Pioneer vendor scan (0x3B/0x3C), or
+// the LiteOn/MediaTek equivalent (0xDF).  Unlike the D8-based BLER scan
+// which reads audio data and inspects C2 pointers, this mode puts the drive
+// into a dedicated error-measurement state where the CIRC decoder reports
+// aggregate correction statistics per time slice — no audio is transferred.
 //
 // The scan produces the same metrics as QPXTool's C1/C2 scan:
 //   C1 = block error rate (first-level Reed-Solomon correction)
@@ -41,20 +41,24 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 
 	// ── Probe drive for hardware quality scan support ────────
 	// Try Plextor Q-Check first (classic PX-708A through PX-760A drives),
-	// then fall back to the LiteOn/MediaTek 0xDF vendor command used by
-	// ASUS, LiteOn, and OEM Plextor drives with MediaTek chipsets.
+	// then Pioneer vendor scan (0x3B/0x3C), then fall back to the
+	// LiteOn/MediaTek 0xDF vendor command.
 	bool usePlextor = m_drive.SupportsQCheck();
+	bool usePioneer = false;
 	bool useLiteOn = false;
 
 	if (!usePlextor) {
-		useLiteOn = m_drive.SupportsLiteOnScan();
+		usePioneer = m_drive.SupportsPioneerScan();
+		if (!usePioneer)
+			useLiteOn = m_drive.SupportsLiteOnScan();
 	}
 
 	// Neither scan method is available — inform the user which commands
 	// were probed so they know this is a hardware limitation, not a bug.
-	if (!usePlextor && !useLiteOn) {
+	if (!usePlextor && !usePioneer && !useLiteOn) {
 		std::cout << "ERROR: No quality scan commands available on this drive.\n";
 		std::cout << "       Plextor Q-Check (0xE9/0xEB): not supported\n";
+		std::cout << "       Pioneer Scan   (0x3B/0x3C):  not supported\n";
 		std::cout << "       LiteOn/MediaTek (0xDF):      not supported\n";
 		result.supported = false;
 		return false;
@@ -63,9 +67,13 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 	result.supported = true;
 
 	if (usePlextor)
-		std::cout << "Using Plextor Q-Check (0xE9/0xEB)\n";
+		result.scanMethod = "Plextor Q-Check (0xE9/0xEB)";
+	else if (usePioneer)
+		result.scanMethod = "Pioneer (0x3B/0x3C)";
 	else
-		std::cout << "Using LiteOn/MediaTek quality scan (0xDF)\n";
+		result.scanMethod = "LiteOn/MediaTek (0xDF)";
+
+	std::cout << "Using " << result.scanMethod << "\n";
 
 	// ── Determine scan range ─────────────────────────────────
 	// Scan all audio sectors on the disc, starting from LBA 0 for track 1
@@ -97,12 +105,14 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 		<< result.totalSeconds << " sec)\n";
 	if (usePlextor)
 		std::cout << "Drive will scan at ~1x internally (hardware-driven).\n";
+	else if (usePioneer)
+		std::cout << "Drive will scan internally (hardware-driven).\n";
 	std::cout << "  (Press ESC or Ctrl+C to cancel)\n\n";
 
 	// ── Start the hardware scan ──────────────────────────────
 	// For LiteOn drives, set the spindle speed before starting — the drive
 	// scans at whatever speed is currently configured.  Plextor Q-Check
-	// ignores the speed setting and always scans at ~1x internally.
+	// and Pioneer ignore the speed setting and scan internally.
 	if (useLiteOn) {
 		m_drive.SetSpeed(scanSpeed);
 		if (scanSpeed == 0)
@@ -113,8 +123,8 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 
 	// Send the vendor-specific "start scan" command.  The drive begins
 	// scanning immediately and will report results via polling.
-	bool started = usePlextor
-		? m_drive.PlextorQCheckStart(firstLBA, lastLBA)
+	bool started = usePlextor ? m_drive.PlextorQCheckStart(firstLBA, lastLBA)
+		: usePioneer ? m_drive.PioneerScanStart(firstLBA, lastLBA)
 		: m_drive.LiteOnScanStart(firstLBA, lastLBA);
 
 	if (!started) {
@@ -141,16 +151,18 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 		// doesn't continue spinning in measurement mode indefinitely.
 		if (InterruptHandler::Instance().IsInterrupted() || InterruptHandler::Instance().CheckEscapeKey()) {
 			if (usePlextor) m_drive.PlextorQCheckStop();
+			else if (usePioneer) m_drive.PioneerScanStop();
 			else m_drive.LiteOnScanStop();
 			std::cout << "\n*** Quality scan cancelled by user ***\n";
 			return false;
 		}
 
-		// Plextor Q-Check is asynchronous — the drive scans internally at
-		// ~1x and we poll for updates.  A 500ms delay prevents busy-waiting.
+		// Plextor Q-Check and Pioneer are asynchronous — the drive scans
+		// internally and we poll for updates.  A 500ms delay prevents
+		// busy-waiting and gives the drive time to complete each slice.
 		// LiteOn is synchronous — each poll call triggers a read, so no
 		// delay is needed (the SCSI command itself blocks until data is ready).
-		if (usePlextor)
+		if (usePlextor || usePioneer)
 			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
 		int c1 = 0, c2 = 0, cu = 0;
@@ -161,18 +173,23 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 		// `scanDone` is set to true by the driver when it reaches lastLBA.
 		bool pollOk = usePlextor
 			? m_drive.PlextorQCheckPoll(c1, c2, cu, currentLBA, scanDone)
-			: m_drive.LiteOnScanPoll(c1, c2, cu, currentLBA, scanDone);
+			: (usePioneer ? m_drive.PioneerScanPoll(c1, c2, cu, currentLBA, scanDone)
+				: m_drive.LiteOnScanPoll(c1, c2, cu, currentLBA, scanDone));
 
 		if (!pollOk) {
-			// One retry for Plextor — transient SCSI timeouts are common
-			// when the drive is busy with its internal scan loop.
-			if (usePlextor) {
+			// One retry for asynchronous scans (Plextor / Pioneer) —
+			// transient SCSI timeouts are common when the drive is busy
+			// with its internal scan loop.
+			if (usePlextor || usePioneer) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(200));
-				pollOk = m_drive.PlextorQCheckPoll(c1, c2, cu, currentLBA, scanDone);
+				pollOk = usePlextor
+					? m_drive.PlextorQCheckPoll(c1, c2, cu, currentLBA, scanDone)
+					: m_drive.PioneerScanPoll(c1, c2, cu, currentLBA, scanDone);
 			}
 			if (!pollOk) {
 				// Communication lost.  Stop the scan if possible.
 				if (usePlextor) m_drive.PlextorQCheckStop();
+				else if (usePioneer) m_drive.PioneerScanStop();
 				else m_drive.LiteOnScanStop();
 				// If we already have partial data, treat it as a completed
 				// scan and report what we have — better than nothing.
@@ -184,7 +201,9 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 
 		// Skip empty responses — the drive hasn't produced data yet
 		// (still seeking to the start position or spinning up).
-		if (currentLBA == 0 && c1 == 0 && c2 == 0 && cu == 0 && !scanDone)
+		// Pioneer tracks LBA in software starting at firstLBA, so LBA 0
+		// is a valid position — don't apply this filter for Pioneer scans.
+		if (!usePioneer && currentLBA == 0 && c1 == 0 && c2 == 0 && cu == 0 && !scanDone)
 			continue;
 
 		// Skip duplicate LBA reports — the drive sometimes returns the
@@ -197,7 +216,7 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 		// up and reports accumulated startup errors in the initial responses.
 		// QPXTool does the same; without this the first sample creates a
 		// massive spike that dominates the entire graph and skews statistics.
-		// Applies to both Plextor and LiteOn paths.
+		// Applies to all scan paths (Plextor, Pioneer, LiteOn).
 		if (sampleIndex < 3) {
 			sampleIndex++;
 			continue;
@@ -396,13 +415,15 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 		// Stop the current scan session and wait for the drive to settle
 		// before starting a fresh scan.
 		if (usePlextor) m_drive.PlextorQCheckStop();
+		else if (usePioneer) m_drive.PioneerScanStop();
 		else m_drive.LiteOnScanStop();
 		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
 		// Start a second complete scan over the same LBA range.
 		bool recheckStarted = usePlextor
 			? m_drive.PlextorQCheckStart(firstLBA, lastLBA)
-			: m_drive.LiteOnScanStart(firstLBA, lastLBA);
+			: (usePioneer ? m_drive.PioneerScanStart(firstLBA, lastLBA)
+				: m_drive.LiteOnScanStart(firstLBA, lastLBA));
 
 		if (recheckStarted) {
 			int recheckC2Total = 0;        // Only C2 matters for this pass
@@ -418,13 +439,16 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 			while (!recheckDone) {
 				if (InterruptHandler::Instance().IsInterrupted() || InterruptHandler::Instance().CheckEscapeKey()) {
 					if (usePlextor) m_drive.PlextorQCheckStop();
+					else if (usePioneer) m_drive.PioneerScanStop();
 					else m_drive.LiteOnScanStop();
 					recheckStopped = true;
 					std::cout << "\n  *** Recheck cancelled — keeping original C2 results ***\n";
 					break;
 				}
 
-				if (usePlextor)
+				// Same async delay as the primary loop — Plextor and Pioneer
+				// need time between polls; LiteOn blocks on the SCSI command.
+				if (usePlextor || usePioneer)
 					std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
 				int rc1 = 0, rc2 = 0, rcu = 0;
@@ -432,16 +456,21 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 
 				bool rpoll = usePlextor
 					? m_drive.PlextorQCheckPoll(rc1, rc2, rcu, rLBA, recheckDone)
-					: m_drive.LiteOnScanPoll(rc1, rc2, rcu, rLBA, recheckDone);
+					: (usePioneer ? m_drive.PioneerScanPoll(rc1, rc2, rcu, rLBA, recheckDone)
+						: m_drive.LiteOnScanPoll(rc1, rc2, rcu, rLBA, recheckDone));
 
 				if (!rpoll) {
-					// Same retry logic as the primary scan.
-					if (usePlextor) {
+					// Same retry logic as the primary scan — async scans
+					// (Plextor / Pioneer) get one retry on transient failure.
+					if (usePlextor || usePioneer) {
 						std::this_thread::sleep_for(std::chrono::milliseconds(200));
-						rpoll = m_drive.PlextorQCheckPoll(rc1, rc2, rcu, rLBA, recheckDone);
+						rpoll = usePlextor
+							? m_drive.PlextorQCheckPoll(rc1, rc2, rcu, rLBA, recheckDone)
+							: m_drive.PioneerScanPoll(rc1, rc2, rcu, rLBA, recheckDone);
 					}
 					if (!rpoll) {
 						if (usePlextor) m_drive.PlextorQCheckStop();
+						else if (usePioneer) m_drive.PioneerScanStop();
 						else m_drive.LiteOnScanStop();
 						recheckStopped = true;
 						std::cout << "\n  Recheck communication lost — keeping original C2 results.\n";
@@ -450,7 +479,9 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 				}
 
 				// Same filtering as primary scan: skip empty / duplicate / startup samples.
-				if (rLBA == 0 && rc1 == 0 && rc2 == 0 && rcu == 0 && !recheckDone)
+				// Pioneer tracks LBA in software starting at firstLBA, so LBA 0
+				// is a valid position — don't apply this filter for Pioneer scans.
+				if (!usePioneer && rLBA == 0 && rc1 == 0 && rc2 == 0 && rcu == 0 && !recheckDone)
 					continue;
 				if (rLBA == recheckLastLBA && !recheckDone)
 					continue;
@@ -527,6 +558,7 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 			// Ensure the scan session is stopped regardless of outcome.
 			if (!recheckStopped) {
 				if (usePlextor) m_drive.PlextorQCheckStop();
+				else if (usePioneer) m_drive.PioneerScanStop();
 				else m_drive.LiteOnScanStop();
 			}
 		}
@@ -636,11 +668,13 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 
 void AudioCDCopier::PrintQCheckReport(const QCheckResult& result) {
 	std::cout << "\n" << std::string(60, '=') << "\n";
-	std::cout << "         PLEXTOR Q-CHECK QUALITY SCAN REPORT\n";
+	std::cout << "              CD QUALITY SCAN REPORT\n";
 	std::cout << std::string(60, '=') << "\n";
 
 	// ── Section 1: Scan metadata ─────────────────────────────
 	std::cout << "\n--- Scan Info ---\n";
+	if (!result.scanMethod.empty())
+		std::cout << "  Scan method:     " << result.scanMethod << "\n";
 	std::cout << "  Samples collected: " << result.samples.size() << "\n";
 	std::cout << "  Disc length:       "
 		<< (result.totalSeconds / 60) << ":"
@@ -1041,9 +1075,11 @@ bool AudioCDCopier::SaveQCheckLog(const QCheckResult& result, const std::wstring
 	// Written as '#'-prefixed comments so CSV parsers skip them but
 	// humans can read the summary without importing into a spreadsheet.
 	log << "# ==============================\n";
-	log << "# Plextor Q-Check Quality Scan Log\n";
+	log << "# CD Quality Scan Log\n";
 	log << "# ==============================\n";
 	log << "#\n";
+	if (!result.scanMethod.empty())
+		log << "# Scan Method:           " << result.scanMethod << "\n";
 	log << "# Quality Rating:        " << result.qualityRating << "\n";
 	log << "# Total Sectors:         " << result.totalSectors << "\n";
 	log << "# Samples Collected:     " << result.samples.size() << "\n";

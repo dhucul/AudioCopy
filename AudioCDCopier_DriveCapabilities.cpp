@@ -330,6 +330,9 @@ void AudioCDCopier::PrintChipsetInfo(const ChipsetInfo& info) {
 	case ChipsetFamily::Pioneer:
 		Console::Success("  Very good chipset for audio extraction.\n");
 		std::cout << "  Pioneer drives are known for reliable Accurate Stream and C2.\n";
+		if (m_drive.SupportsPioneerScan()) {
+			std::cout << "  Supports hardware BLER/E22 scanning (0x3B/0x3C vendor commands).\n";
+		}
 		break;
 	case ChipsetFamily::LiteOn:
 		Console::Info("  Good chipset for audio extraction.\n");

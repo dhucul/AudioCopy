@@ -25,6 +25,7 @@ private:
 	// ── Cached capability probe results ─────────────────────
 	int m_qcheckProbed = -1;           // -1 = not probed, 0 = unsupported, 1 = supported
 	int m_liteonScanProbed = -1;       // -1 = not probed, 0 = unsupported, 1 = supported
+	int m_pioneerScanProbed = -1;      // -1 = not probed, 0 = unsupported, 1 = supported
 
 public:
 	// ── Type aliases for backward compatibility ──────────────
@@ -96,6 +97,17 @@ public:
 	bool LiteOnScanStart(DWORD startLBA, DWORD endLBA);
 	bool LiteOnScanPoll(int& c1, int& c2, int& cu, DWORD& currentLBA, bool& scanDone);
 	bool LiteOnScanStop();
+
+	// ── Pioneer quality scan (0x3B/0x3C vendor commands) ─────
+	// Uses Pioneer's two-phase WRITE/READ BUFFER protocol to perform
+	// hardware-driven BLER/E22 error scanning.  The drive scans internally
+	// and reports C1 (BLER) and C2 (E22) error counts per time slice.
+	//   Send scan request: CDB 3B 02 E1 (WRITE BUFFER)
+	//   Read scan results: CDB 3C 02 E1 (READ BUFFER)
+	bool SupportsPioneerScan();
+	bool PioneerScanStart(DWORD startLBA, DWORD endLBA);
+	bool PioneerScanPoll(int& c1, int& c2, int& cu, DWORD& currentLBA, bool& scanDone);
+	bool PioneerScanStop();
 
 	// ── Drive capabilities ───────────────────────────────────────
 	bool CheckC2Support();
