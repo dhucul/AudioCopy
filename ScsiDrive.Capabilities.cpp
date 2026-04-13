@@ -644,6 +644,12 @@ bool ScsiDrive::IsPlextor() {
 		vendor.find("LITEON") != std::string::npos;
 }
 
+bool ScsiDrive::IsPioneer() {
+	std::string vendor, model;
+	if (!GetDriveInfo(vendor, model)) return false;
+	return vendor.find("PIONEER") != std::string::npos;
+}
+
 bool ScsiDrive::SupportsC1BlockErrors() const {
 	return m_c1BlockErrorsAvailable;
 }

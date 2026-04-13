@@ -29,6 +29,14 @@ constexpr WORD CD_SPEED_MAX = 0xFFFF;         // Ask drive for maximum speed
 constexpr BYTE SCSI_READ_CD = 0xBE;           // READ CD – raw sector read
 constexpr BYTE SCSI_SET_CD_SPEED = 0xBB;      // SET CD SPEED – spindle control
 
+// ── Pioneer vendor extension for SET CD SPEED (byte 10) ─────────────────────
+// Pioneer drives use byte 10 of the 12-byte SET CD SPEED CDB for an
+// extended speed/session mode.  Bit 7 must always be set.  Bit 6 is the
+// EEP (EEPROM) save flag — when set the speed setting persists across
+// power cycles.  Bits 0–5 carry the speed or session mode value.
+constexpr BYTE PIONEER_SPEED_EXT_FLAG   = 0x80; // Bit 7: always set on Pioneer
+constexpr BYTE PIONEER_SPEED_EEP_SAVE   = 0x40; // Bit 6: persist to EEPROM
+
 // ── Logging destination bitmask ─────────────────────────────────────────────
 // Controls where diagnostic / progress messages are routed.
 enum class LogOutput {

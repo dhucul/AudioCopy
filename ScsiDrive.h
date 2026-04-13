@@ -79,6 +79,7 @@ public:
 		int* outC1BlockErrors = nullptr, int* outC2BlockErrors = nullptr);
 	bool ValidateC2Accuracy(DWORD testLBA);
 	bool IsPlextor();
+	bool IsPioneer();
 	bool SupportsC1BlockErrors() const;
 
 	// ── Plextor Q-Check hardware quality scan ────────────────
@@ -163,6 +164,12 @@ public:
 
 	// Get recommendation text for current drive
 	std::string GetDriveRecommendationText() const;
+
+	// Pioneer-specific SET CD SPEED with vendor byte 10 control.
+	// speedModeValue: bits 0-5 speed/session mode (0 = default).
+	// eepSave: if true, setting persists to EEPROM across power cycles.
+	bool SetCdSpeedPioneer(int multiplier, BYTE speedModeValue = 0,
+		bool eepSave = false, int writeMultiplier = -1);
 
 private:
 	bool ReadSectorQRaw(DWORD lba, int& qTrack, int& qIndex);

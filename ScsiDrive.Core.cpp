@@ -179,6 +179,13 @@ bool ScsiDrive::TrySetSpeedAndVerify(int multiplier, int writeMultiplier,
 	cdb[4] = (writeSpeed >> 8) & 0xFF;
 	cdb[5] = writeSpeed & 0xFF;
 
+	// Pioneer vendor extension: byte 10 carries a speed-mode qualifier.
+	// Bit 7 is always set; bit 6 is the EEP save flag (off by default
+	// so we don't persist to EEPROM on every speed change).
+	// Bits 0-5 hold the speed/session mode value — 0 = default/auto.
+	if (IsPioneer())
+		cdb[10] = PIONEER_SPEED_EXT_FLAG;  // 0x80 — vendor flag, no EEP save, mode 0
+
 	// Attempt command, then fallback with explicit sense if needed.
 	bool sent = SendSCSI(cdb, 12, nullptr, 0, false);
 	if (!sent) {
@@ -426,4 +433,39 @@ bool ScsiDrive::SpinDown() {
 	// cdb[4] bits: LoEj=0, Start=0 → stop the motor
 	BYTE dummy[4] = {};
 	return SendSCSI(cdb, 6, dummy, 0, false);
+}
+
+bool ScsiDrive::SetCdSpeedPioneer(int multiplier, BYTE speedModeValue,
+	bool eepSave, int writeMultiplier) {
+	m_currentSpeed = multiplier <= 0 ? CD_SPEED_MAX : static_cast<WORD>(multiplier * CD_SPEED_1X);
+
+	WORD writeSpeed = CD_SPEED_MAX;
+	if (writeMultiplier > 0)
+		writeSpeed = static_cast<WORD>(writeMultiplier * CD_SPEED_1X);
+	else if (multiplier > 0)
+		writeSpeed = m_currentSpeed;
+
+	BYTE cdb[12] = {};
+	cdb[0] = SCSI_SET_CD_SPEED;
+	cdb[2] = (m_currentSpeed >> 8) & 0xFF;
+	cdb[3] = m_currentSpeed & 0xFF;
+	cdb[4] = (writeSpeed >> 8) & 0xFF;
+	cdb[5] = writeSpeed & 0xFF;
+
+	// Pioneer vendor byte 10: bit 7 always set, bit 6 = EEP save,
+	// bits 0-5 = speed/session mode value (masked to 6 bits).
+	cdb[10] = PIONEER_SPEED_EXT_FLAG | (speedModeValue & 0x3F);
+	if (eepSave)
+		cdb[10] |= PIONEER_SPEED_EEP_SAVE;
+
+	BYTE sk = 0, asc = 0, ascq = 0;
+	bool sent = SendSCSIWithSense(cdb, 12, nullptr, 0, &sk, &asc, &ascq, false);
+
+	char dbg[192];
+	snprintf(dbg, sizeof(dbg),
+		"SetCdSpeedPioneer: %dx mode=0x%02X eep=%d -> sent=%d SK=0x%02X ASC=0x%02X ASCQ=0x%02X\n",
+		multiplier, cdb[10], eepSave ? 1 : 0, sent ? 1 : 0, sk, asc, ascq);
+	DebugSpeedMessage(dbg);
+
+	return sent;
 }
