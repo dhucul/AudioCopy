@@ -146,7 +146,7 @@ bool WriteDiscInternal::HasCDTextContent(const std::string& discTitle,
 }
 
 // ============================================================================
-// Helper: Send CD-Text packs to drive via WRITE BUFFER (0x3B) buffer ID 0x08
+// Helper: Send CD-Text packs to drive via WRITE BUFFER (0x3B)
 // ============================================================================
 bool WriteDiscInternal::SendCDTextToDevice(ScsiDrive& drive, const std::vector<BYTE>& packs) {
 	if (packs.empty()) return false;
@@ -160,20 +160,46 @@ bool WriteDiscInternal::SendCDTextToDevice(ScsiDrive& drive, const std::vector<B
 	buf[1] = static_cast<BYTE>(dataLen & 0xFF);
 	memcpy(buf.data() + 4, packs.data(), packDataLen);
 
-	BYTE cdb[10] = { 0x3B, 0x02, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-	cdb[6] = static_cast<BYTE>((totalLen >> 16) & 0xFF);
-	cdb[7] = static_cast<BYTE>((totalLen >> 8) & 0xFF);
-	cdb[8] = static_cast<BYTE>(totalLen & 0xFF);
+	// Different drives accept different WRITE BUFFER mode / buffer-ID
+	// combinations for CD-Text.  Try the most common ones in order:
+	//   Mode 0 / ID 0 — "Combined header and data" (cdrecord, wodim)
+	//   Mode 1 / ID 0 — "Vendor specific"          (libburn, cdrskin)
+	//   Mode 5 / ID 0 — "Download and save"         (some Plextor/ASUS)
+	struct WriteBufferVariant {
+		BYTE mode;
+		BYTE bufferId;
+		const char* label;
+	};
 
-	BYTE senseKey = 0, asc = 0, ascq = 0;
-	if (drive.SendSCSIWithSense(cdb, sizeof(cdb), buf.data(), totalLen,
-		&senseKey, &asc, &ascq, false)) {
-		Console::Success("CD-Text sent via WRITE BUFFER (");
-		std::cout << (packDataLen / 18) << " packs)\n";
-		return true;
+	static const WriteBufferVariant variants[] = {
+		{ 0x00, 0x00, "mode 0 (combined)"      },
+		{ 0x01, 0x00, "mode 1 (vendor)"         },
+		{ 0x05, 0x00, "mode 5 (download+save)"  },
+	};
+
+	for (const auto& v : variants) {
+		BYTE cdb[10] = { 0x3B, v.mode, v.bufferId, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+		cdb[6] = static_cast<BYTE>((totalLen >> 16) & 0xFF);
+		cdb[7] = static_cast<BYTE>((totalLen >> 8) & 0xFF);
+		cdb[8] = static_cast<BYTE>(totalLen & 0xFF);
+
+		BYTE senseKey = 0, asc = 0, ascq = 0;
+		if (drive.SendSCSIWithSense(cdb, sizeof(cdb), buf.data(), totalLen,
+			&senseKey, &asc, &ascq, false)) {
+			Console::Success("CD-Text sent via WRITE BUFFER ");
+			std::cout << v.label << " (" << (packDataLen / 18) << " packs)\n";
+			return true;
+		}
+
+		// Invalid CDB field → this mode isn't supported, try the next one.
+		// Any other error (medium, hardware) → stop trying.
+		if (senseKey != 0x05 || asc != 0x24) {
+			Console::Warning("CD-Text WRITE BUFFER failed (");
+			std::cout << drive.GetSenseDescription(senseKey, asc, ascq) << ")\n";
+			return false;
+		}
 	}
 
-	Console::Warning("CD-Text WRITE BUFFER failed (");
-	std::cout << drive.GetSenseDescription(senseKey, asc, ascq) << ")\n";
+	Console::Warning("CD-Text WRITE BUFFER failed (drive rejected all known modes)\n");
 	return false;
 }

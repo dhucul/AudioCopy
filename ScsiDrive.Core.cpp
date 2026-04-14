@@ -388,7 +388,11 @@ std::string ScsiDrive::GetSenseDescription(BYTE senseKey, BYTE asc, BYTE ascq) {
 		if (asc == 0x14) return "Track Following Error";
 		return "Medium Error";
 	case 0x04: return "Hardware Error";
-	case 0x05: return "Illegal Request";
+	case 0x05:
+		if (asc == 0x20) return "Illegal Request (invalid command opcode)";
+		if (asc == 0x24) return "Illegal Request (invalid field in CDB)";
+		if (asc == 0x26) return "Illegal Request (invalid field in parameter list)";
+		return "Illegal Request";
 	case 0x06: return "Unit Attention (media changed)";
 	case 0x0B: return "Aborted Command";
 	default: return "Unknown Error (0x" + std::to_string(senseKey) + ")";

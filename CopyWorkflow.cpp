@@ -405,6 +405,7 @@ void RunWriteDiscWorkflow(AudioCDCopier& copier, const std::wstring& workDir) {
 		}
 
 		// Ask whether to continue writing after blank
+		FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
 		std::cout << "\nContinue with writing? (y/n): ";
 		char cont = _getch();
 		std::cout << cont << "\n";
@@ -444,6 +445,7 @@ void RunWriteDiscWorkflow(AudioCDCopier& copier, const std::wstring& workDir) {
 			}
 
 			// Ask whether to continue writing after blank
+			FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
 			std::cout << "\nContinue with writing? (y/n): ";
 			char cont = _getch();
 			std::cout << cont << "\n";

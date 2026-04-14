@@ -134,31 +134,6 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 
 	DWORD totalSectors = static_cast<DWORD>(fileSize / AUDIO_SECTOR_SIZE);
 
-	// ── Verify disc has enough capacity for the image ───────────────
-	{
-		BYTE trackInfoCmd[10] = { 0x52, 0x00, 0x01, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x24, 0x00 };
-		BYTE trackInfoResp[36] = { 0 };
-		if (m_drive.SendSCSI(trackInfoCmd, sizeof(trackInfoCmd),
-			trackInfoResp, sizeof(trackInfoResp), true)) {
-			DWORD freeBlocks = (static_cast<DWORD>(trackInfoResp[24]) << 24) |
-				(static_cast<DWORD>(trackInfoResp[25]) << 16) |
-				(static_cast<DWORD>(trackInfoResp[26]) << 8) |
-				static_cast<DWORD>(trackInfoResp[27]);
-
-			constexpr DWORD LEADOUT_OVERHEAD = 6750;
-			constexpr DWORD PREGAP_OVERHEAD = 150;
-			DWORD sectorsNeeded = totalSectors + PREGAP_OVERHEAD + LEADOUT_OVERHEAD;
-
-			if (freeBlocks > 0 && sectorsNeeded > freeBlocks) {
-				Console::Error("Image too large for disc (need ");
-				std::cout << sectorsNeeded << " sectors, disc has "
-					<< freeBlocks << " free)\n";
-				Console::Info("Use a higher-capacity disc (e.g., 80-min or 90-min CD-R)\n");
-				return false;
-			}
-		}
-	}
-
 	// Determine if we can use Raw mode with subchannel data
 	bool hasSubchannel = false;
 	bool needsDeinterleave = false;
@@ -208,17 +183,54 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 		}
 	}
 
+	// ── Verify disc has enough capacity for the image ───────────────
+	// (after CUE parse so totalSectors reflects any trim)
+	{
+		// READ TRACK INFORMATION: type=1 (track number), track 0xFF (invisible/blank)
+		BYTE trackInfoCmd[10] = { 0x52, 0x01, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x24, 0x00 };
+		BYTE trackInfoResp[36] = { 0 };
+		if (m_drive.SendSCSI(trackInfoCmd, sizeof(trackInfoCmd),
+			trackInfoResp, sizeof(trackInfoResp), true)) {
+			DWORD freeBlocks = (static_cast<DWORD>(trackInfoResp[24]) << 24) |
+				(static_cast<DWORD>(trackInfoResp[25]) << 16) |
+				(static_cast<DWORD>(trackInfoResp[26]) << 8) |
+				static_cast<DWORD>(trackInfoResp[27]);
+
+			constexpr DWORD LEADOUT_OVERHEAD = 6750;
+			constexpr DWORD PREGAP_OVERHEAD = 150;
+			DWORD sectorsNeeded = totalSectors + PREGAP_OVERHEAD + LEADOUT_OVERHEAD;
+
+			if (freeBlocks > 0 && sectorsNeeded > freeBlocks) {
+				Console::Error("Image too large for disc (need ");
+				std::cout << sectorsNeeded << " sectors, disc has "
+					<< freeBlocks << " free)\n";
+				Console::Info("Use a higher-capacity disc (e.g., 80-min or 90-min CD-R)\n");
+				return false;
+			}
+		}
+	}
+
+	// ── Check CD-Text write capability early (before write mode setup) ──
+	bool canWriteCDText = false;
+	if (WriteDiscInternal::HasCDTextContent(discTitle, discPerformer, tracks)) {
+		DriveCapabilities caps;
+		canWriteCDText = m_drive.DetectCapabilities(caps) && caps.supportsWriteCDText;
+		if (!canWriteCDText) {
+			Console::Warning("Drive does not advertise CD-Text write support — skipping\n");
+		}
+	}
+
+	// Set drive write speed BEFORE power calibration (OPC is speed-dependent)
+	m_drive.SetSpeed(speed, speed);
+	Console::Success("Drive speed set to ");
+	std::cout << speed << "x\n";
+
 	// Power calibration
 	if (usePowerCalibration) {
 		if (!PerformPowerCalibration()) {
 			return false;
 		}
 	}
-
-	// Set drive write speed
-	m_drive.SetSpeed(speed, speed);
-	Console::Success("Drive speed set to ");
-	std::cout << speed << "x\n";
 
 	int subchannelMode = 0;
 
@@ -290,7 +302,8 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 		}
 	}
 
-	if (WriteDiscInternal::HasCDTextContent(discTitle, discPerformer, tracks)) {
+	// ── Send CD-Text after write mode setup, using pre-cached capability ──
+	if (canWriteCDText) {
 		Console::Info("Building CD-Text from CUE metadata...\n");
 		std::vector<BYTE> cdTextPacks = WriteDiscInternal::BuildCDTextPacks(discTitle, discPerformer, tracks);
 

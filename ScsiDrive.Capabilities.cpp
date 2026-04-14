@@ -101,6 +101,7 @@ bool ScsiDrive::GetDriveInfo(std::string& vendor, std::string& model) {
 bool ScsiDrive::GetModePage2A(std::vector<BYTE>& pageData) {
 	BYTE cdb[10] = {};
 	cdb[0] = 0x5A;
+	cdb[1] = 0x08;  // DBD = 1 — disable block descriptors
 	cdb[2] = 0x2A;
 	cdb[7] = 0x00;
 	cdb[8] = 0xFF;
@@ -109,6 +110,7 @@ bool ScsiDrive::GetModePage2A(std::vector<BYTE>& pageData) {
 	if (!SendSCSI(cdb, 10, pageData.data(), 255)) {
 		BYTE cdb6[6] = {};
 		cdb6[0] = 0x1A;
+		cdb6[1] = 0x08;  // DBD = 1 — disable block descriptors
 		cdb6[2] = 0x2A;
 		cdb6[4] = 0xFF;
 
@@ -379,8 +381,11 @@ bool ScsiDrive::DetectCapabilities(DriveCapabilities& caps) {
 			int dataLen = (feat[0] << 24) | (feat[1] << 16) | (feat[2] << 8) | feat[3];
 			if (dataLen >= 12) {
 				WORD code = (feat[8] << 8) | feat[9];
-				if (code == 0x002E)
+				if (code == 0x002E) {
 					caps.supportsWriteSAO = true;
+					// Bit 0: R-W sub-code in lead-in (CD-Text write support)
+					caps.supportsWriteCDText = (feat[12] & 0x01) != 0;
+				}
 			}
 		}
 	}
@@ -536,8 +541,6 @@ bool ScsiDrive::DetectCapabilities(DriveCapabilities& caps) {
 	}
 
 	// Deduplicate and sort (GET PERFORMANCE is the authoritative source)
-
-	// Deduplicate and sort (GET PERFORMANCE is the authoritative source)
 	auto dedup = [](std::vector<int>& v) {
 		std::sort(v.begin(), v.end());
 		v.erase(std::unique(v.begin(), v.end()), v.end());
@@ -620,8 +623,8 @@ bool ScsiDrive::DetectCapabilities(DriveCapabilities& caps) {
 		}
 	}
 
-	// CD-Text write: supported when drive can write SAO/DAO (feature 0x002E)
-	caps.supportsWriteCDText = caps.supportsWriteSAO;
+	// CD-Text write capability was already extracted from Feature 0x002E
+	// bit 0 (R-W sub-code in lead-in).  Only vendor overrides below.
 
 	// Plextor writers always support CD-Text writing
 	if (!caps.supportsWriteCDText
@@ -655,14 +658,7 @@ bool ScsiDrive::SupportsC1BlockErrors() const {
 }
 
 bool ScsiDrive::ProbeC1BlockErrors() {
-	// Read several sectors spread across the disc and check whether byte 294
-	// (C1 block errors) or the hardware counter is ever non-zero.
-	// Even pristine discs have routine C1 corrections (typically 1-50/sec),
-	// so if the drive reports them, we should see non-zero values within a modest sample.
-	
-	// Use different probe locations (Lead-in zone, middle, outer)
 	static constexpr int SAMPLES_PER_ZONE = 25;
-	static constexpr DWORD PROBE_LBAS[] = { 0, 75000, 200000 };
 
 	BYTE audio[AUDIO_SECTOR_SIZE];
 	C2ReadOptions opts;
@@ -670,24 +666,34 @@ bool ScsiDrive::ProbeC1BlockErrors() {
 	opts.defeatCache = false;
 	opts.multiPass = false;
 
-	// Ensure drive is open
 	if (!IsOpen()) return false;
 
-	for (DWORD baseLBA : PROBE_LBAS) {
+	// Get actual disc length from TOC to avoid reading past end
+	DWORD discLength = 0;
+	BYTE tocCdb[10] = { 0x43, 0x02, 0, 0, 0, 0, 0xAA, 0, 12, 0 };
+	BYTE tocBuf[12] = {};
+	if (SendSCSI(tocCdb, 10, tocBuf, 12)) {
+		discLength = (static_cast<DWORD>(tocBuf[8]) << 24) |
+			(static_cast<DWORD>(tocBuf[9]) << 16) |
+			(static_cast<DWORD>(tocBuf[10]) << 8) | tocBuf[11];
+	}
+	if (discLength == 0) discLength = 200000;  // fallback
+
+	// Probe at start, middle, and 75% — all within disc bounds
+	DWORD probeLBAs[] = { 0, discLength / 2, discLength * 3 / 4 };
+
+	for (DWORD baseLBA : probeLBAs) {
 		for (int i = 0; i < SAMPLES_PER_ZONE; i++) {
 			DWORD lba = baseLBA + i;
+			if (lba >= discLength) break;
 			int c2Errors = 0;
 			int c1Block = 0;
 			int c2Block = 0;
 
-			// Use ReadSectorWithC2Ex to automatically handle the active c2Mode 
-			// (PlextorD8 vs ErrorPointers) instead of hardcoding raw SCSI commands.
-			// This ensures we test the same path the actual scanner uses.
 			bool ok = ReadSectorWithC2Ex(lba, audio, nullptr, c2Errors, nullptr, opts, 
 				nullptr, nullptr, nullptr, &c1Block, &c2Block);
 
 			if (ok) {
-				// If we see *any* C1 activity in the block error counter, the feature works.
 				if (c1Block > 0) {
 					char msg[64];
 					snprintf(msg, 64, "ProbeC1: LBA %d returned C1=%d\n", lba, c1Block);
@@ -699,22 +705,10 @@ bool ScsiDrive::ProbeC1BlockErrors() {
 	}
 
 	OutputDebugStringA("ProbeC1: All samples returned 0 C1 errors. C1 reporting not supported.\n");
-	return false;  // All samples returned zero — C1 not available
+	return false;
 }
 
 bool ScsiDrive::ProbeC2Liveness() {
-	// Verify the drive actually populates C2 error pointer data.
-	// Some drives (especially MediaTek-based rebrands) accept the ErrorPointers
-	// command but return all-zero C2 bytes regardless of disc condition.
-	//
-	// Strategy: read many sectors at maximum speed.  Even a pristine disc
-	// produces occasional C1 corrections, and at max speed the likelihood of
-	// a C2 event is highest.  If EVERY C2 pointer byte across the entire
-	// sample is zero, the feature is likely non-functional.
-	//
-	// This is a heuristic — a perfect disc at low speed will also produce all
-	// zeros.  Reading at max speed on a large sample minimizes that risk.
-
 	constexpr int TOTAL_SAMPLES = 200;
 	constexpr int ZONES = 4;
 	constexpr int SAMPLES_PER_ZONE = TOTAL_SAMPLES / ZONES;
@@ -724,6 +718,7 @@ bool ScsiDrive::ProbeC2Liveness() {
 	C2ReadOptions opts;
 	opts.countBytes = false;
 
+	WORD savedSpeed = m_currentSpeed;  // Save current speed
 	SetSpeed(0);  // Max speed — best chance of seeing C2
 
 	int totalBytesChecked = 0;
@@ -746,6 +741,8 @@ bool ScsiDrive::ProbeC2Liveness() {
 			}
 		}
 	}
+
+	SetSpeed(savedSpeed);  // Restore previous speed
 
 	char dbg[128];
 	snprintf(dbg, sizeof(dbg), "ProbeC2Liveness: checked %d bytes, %d non-zero\n",
