@@ -163,7 +163,7 @@ public:
 	// ── Disk Writing Operations ─────────────────────────────────────
 	bool WriteDisc(const std::wstring& binFile,
 		const std::wstring& cueFile, const std::wstring& subFile,
-		int speed, bool usePowerCalibration);
+		int speed, bool usePowerCalibration, bool discAlreadyBlanked = false);
 
 	bool CheckRewritableDisk(bool& isFull, bool& isRewritable);
 

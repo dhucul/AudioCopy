@@ -15,12 +15,12 @@
 // ============================================================================
 bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 	const std::wstring& cueFile, const std::wstring& subFile,
-	int speed, bool usePowerCalibration) {
+	int speed, bool usePowerCalibration, bool discAlreadyBlanked) {
 
 	Console::BoxHeading("Write Disc from Files");
 
 	// ── Check disc is empty and writable ────────────────────────────
-	{
+	if (!discAlreadyBlanked) {
 		Console::Info("Checking disc media status...\n");
 
 		WriteDiscInternal::WaitForDriveReady(m_drive, 10);
@@ -119,6 +119,10 @@ bool AudioCDCopier::WriteDisc(const std::wstring& binFile,
 					<< ") -- attempting to write\n";
 			}
 		}
+	}
+	else {
+		Console::Success("Disc was already blanked — skipping media check\n");
+		WriteDiscInternal::WaitForDriveReady(m_drive, 10);
 	}
 
 	// Verify input files exist

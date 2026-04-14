@@ -381,6 +381,7 @@ void RunWriteDiscWorkflow(AudioCDCopier& copier, const std::wstring& workDir) {
 
 	// Track speed selected during erase so we can reuse it for writing
 	int eraseSpeed = -1;
+	bool wasBlanked = false;
 
 	// Offer to erase only if the disc is actually CD-RW
 	if (isRewritable && isFull) {
@@ -403,6 +404,7 @@ void RunWriteDiscWorkflow(AudioCDCopier& copier, const std::wstring& workDir) {
 		if (!copier.BlankRewritableDisk(eraseSpeed, quickBlank)) {
 			return;
 		}
+		wasBlanked = true;
 
 		// Ask whether to continue writing after blank
 		FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
@@ -443,6 +445,7 @@ void RunWriteDiscWorkflow(AudioCDCopier& copier, const std::wstring& workDir) {
 			if (!copier.BlankRewritableDisk(eraseSpeed, quickBlank)) {
 				return;
 			}
+			wasBlanked = true;
 
 			// Ask whether to continue writing after blank
 			FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
@@ -531,7 +534,7 @@ void RunWriteDiscWorkflow(AudioCDCopier& copier, const std::wstring& workDir) {
 
 	// ── FIX #2: Reuse erase speed if already selected, else prompt ──
 	int speed;
-	if (eraseSpeed > 0) {
+	if (wasBlanked) {
 		Console::Info("Using previously selected write speed (");
 		std::cout << eraseSpeed << "x)\n";
 		speed = eraseSpeed;
@@ -548,7 +551,7 @@ void RunWriteDiscWorkflow(AudioCDCopier& copier, const std::wstring& workDir) {
 	bool useCal = (calibChoice == 1);
 
 	// Perform write — includes .sub file automatically when available
-	if (copier.WriteDisc(binFile, cueFile, subFile, speed, useCal)) {
+	if (copier.WriteDisc(binFile, cueFile, subFile, speed, useCal, wasBlanked)) {
 		Console::Success("Disc write completed successfully\n");
 	}
 	else {

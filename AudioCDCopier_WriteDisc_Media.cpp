@@ -1,7 +1,9 @@
 ﻿#define NOMINMAX
 #include "AudioCDCopier.h"
 #include "ConsoleColors.h"
+#include "Drive.h"
 #include "InterruptHandler.h"
+#include "MenuHelpers.h"
 #include <chrono>
 #include <conio.h>
 #include <iomanip>
@@ -63,9 +65,8 @@ bool AudioCDCopier::CheckRewritableDisk(bool& isFull, bool& isRewritable) {
 		if (m_drive.SendSCSI(profileCmd, sizeof(profileCmd), profileResponse, sizeof(profileResponse), true)) {
 			WORD profile = (static_cast<WORD>(profileResponse[6]) << 8) | profileResponse[7];
 			isRewritable = (profile == 0x0A);
-
 			if (isRewritable)
-				isFull = true;
+				isFull = true;  // always assumes full — even if disc is empty
 
 			Console::Success("Media type detected: ");
 			switch (profile) {
@@ -165,6 +166,8 @@ bool AudioCDCopier::BlankRewritableDisk(int speed, bool quickBlank) {
 	int lastLineLen = 0;
 	auto startTime = std::chrono::steady_clock::now();
 
+	bool blankCompleted = false;
+	bool driveReportsProgress = false;
 	for (int i = 0; i < maxWait; i++) {
 		Sleep(1000);
 
@@ -178,10 +181,17 @@ bool AudioCDCopier::BlankRewritableDisk(int speed, bool quickBlank) {
 		int drivePct = -1;
 		m_drive.RequestSenseProgress(sk, asc, ascq, drivePct);
 
+		if (drivePct >= 0)
+			driveReportsProgress = true;
+
+		// Only use TUR to detect completion once the drive has reported
+		// progress at least once, or after a few seconds have elapsed.
+		// Some drives return TUR success during background BLANK.
 		BYTE testCmd[6] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 		BYTE tsk = 0, tasc = 0, tascq = 0;
-		if (m_drive.SendSCSIWithSense(testCmd, sizeof(testCmd), nullptr, 0,
-			&tsk, &tasc, &tascq, true)) {
+		if ((driveReportsProgress || i >= 3) &&
+			m_drive.SendSCSIWithSense(testCmd, sizeof(testCmd), nullptr, 0,
+				&tsk, &tasc, &tascq, true)) {
 			drivePct = 100;
 		}
 
@@ -191,6 +201,11 @@ bool AudioCDCopier::BlankRewritableDisk(int speed, bool quickBlank) {
 		}
 		else {
 			pct = std::min((i + 1) * 100 / maxWait, 99);
+		}
+
+		// Never allow progress to go backward
+		if (lastPct >= 0 && pct < lastPct) {
+			pct = lastPct;
 		}
 
 		if (pct != lastPct) {
@@ -217,12 +232,22 @@ bool AudioCDCopier::BlankRewritableDisk(int speed, bool quickBlank) {
 			lastLineLen = static_cast<int>(line.size());
 		}
 
-		if (drivePct >= 100) break;
+		if (drivePct >= 100) {
+			blankCompleted = true;
+			break;
+		}
 	}
 
 	auto totalSec = std::chrono::duration_cast<std::chrono::seconds>(
 		std::chrono::steady_clock::now() - startTime).count();
-	std::cout << "\n  Done";
+	std::cout << "\n";
+
+	if (!blankCompleted) {
+		Console::Error("Blank operation timed out — disc may not be fully erased.\n");
+		return false;
+	}
+
+	std::cout << "  Done";
 	if (totalSec > 0) {
 		if (totalSec >= 60)
 			std::cout << " in " << totalSec / 60 << "m "
@@ -262,4 +287,44 @@ bool AudioCDCopier::PerformPowerCalibration() {
 
 	Console::Success("Power calibration complete\n");
 	return true;
+}
+
+void BlankDiscStandalone(int speed, int eraseType) {
+	AudioCDCopier copier;
+
+	Console::Info("Standalone disc blanking tool\n");
+
+	// Discover CD/DVD drives and pick one
+	std::vector<wchar_t> audioDrives;
+	std::vector<wchar_t> cdDrives = ScanDrives(audioDrives);
+
+	if (cdDrives.empty()) {
+		Console::Error("No CD/DVD drives found\n");
+		return;
+	}
+
+	wchar_t driveLetter = cdDrives[0];
+	if (cdDrives.size() > 1) {
+		Console::Info("Select drive:\n");
+		for (size_t i = 0; i < cdDrives.size(); i++) {
+			std::cout << "  " << (i + 1) << ". " << static_cast<char>(cdDrives[i]) << ":\n";
+		}
+		std::cout << "Choice: ";
+		int pick = GetMenuChoice(1, static_cast<int>(cdDrives.size()), 1);
+		std::cin.clear();
+		if (std::cin.peek() == '\n') std::cin.ignore();
+		driveLetter = cdDrives[pick - 1];
+	}
+
+	if (!copier.Open(driveLetter)) {
+		Console::Error("Failed to open drive\n");
+		return;
+	}
+
+	if (eraseType == 0) {
+		Console::Error("Invalid erase type specified\n");
+		return;
+	}
+
+	copier.BlankRewritableDisk(speed, eraseType == 1);
 }
