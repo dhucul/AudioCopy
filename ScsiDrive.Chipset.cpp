@@ -251,6 +251,148 @@ bool ScsiDrive::DetectChipset(ChipsetInfo& info) {
 		}
 	}
 
+	// ── Step 4b: Vendor-command probing to verify/correct the table ─────
+	// Send harmless vendor-specific SCSI commands and check whether the
+	// drive accepts them.  This disambiguates OEM rebrands (e.g. a
+	// "PLEXTOR" PX-891SAF that is actually a MediaTek/LiteOn drive).
+	{
+		bool acceptsPlextorD8 = false;
+		bool acceptsPlextorE9 = false;
+		bool acceptsLiteOnF3  = false;
+		bool acceptsLiteOnDF  = false;
+		bool acceptsPioneer   = false;
+
+		// ── Probe Plextor 0xD8 (vendor read) ──
+		// Genuine Plextor AND some LiteOn drives accept this, so D8 alone
+		// is not conclusive — but D8-rejected + F3-accepted = MediaTek.
+		{
+			BYTE cdb[12] = { 0xD8, 0, 0, 0, 0, 0, 0, 0, 1, 0x02, 0, 0 };
+			std::vector<BYTE> buf(SECTOR_WITH_C2_SIZE);
+			BYTE sk = 0, asc = 0, ascq = 0;
+			bool ok = SendSCSIWithSense(cdb, 12, buf.data(),
+				static_cast<DWORD>(buf.size()), &sk, &asc, &ascq);
+			acceptsPlextorD8 = ok || (sk <= 0x01);
+		}
+
+		// ── Probe Plextor 0xE9 (Q-Check init) ──
+		// Only genuine Plextor PX-708/712/716/755/760 accept this.
+		{
+			BYTE cdb[12] = {};
+			cdb[0] = 0xE9;
+			cdb[1] = 0x00;
+			cdb[9] = 150;
+			BYTE sk = 0, asc = 0, ascq = 0;
+			bool ok = SendSCSIWithSense(cdb, 12, nullptr, 0, &sk, &asc, &ascq);
+			acceptsPlextorE9 = ok || (sk <= 0x01);
+			// Stop any scan we may have started
+			if (acceptsPlextorE9) PlextorQCheckStop();
+		}
+
+		// ── Probe LiteOn/MediaTek 0xF3 (new scan) ──
+		{
+			SeekToLBA(0);
+			BYTE cdb[12] = {};
+			cdb[0] = 0xF3;
+			cdb[1] = 0x0E;
+			std::vector<BYTE> buf(0x10, 0);
+			BYTE sk = 0, asc = 0, ascq = 0;
+			bool ok = SendSCSIWithSense(cdb, 12, buf.data(), 0x10,
+				&sk, &asc, &ascq);
+			acceptsLiteOnF3 = ok || (sk <= 0x01);
+		}
+
+		// ── Probe LiteOn/MediaTek 0xDF (old scan) ──
+		if (!acceptsLiteOnF3) {
+			BYTE cdb[12] = {};
+			cdb[0] = 0xDF;
+			cdb[1] = 0xA3;
+			cdb[2] = 0x00;
+			BYTE sk = 0, asc = 0, ascq = 0;
+			bool ok = SendSCSIWithSense(cdb, 12, nullptr, 0,
+				&sk, &asc, &ascq);
+			acceptsLiteOnDF = ok || (sk <= 0x01);
+			// Clean up
+			if (acceptsLiteOnDF) {
+				BYTE stop[12] = {};
+				stop[0] = 0xDF;
+				stop[1] = 0xA3;
+				stop[2] = 0x01;
+				SendSCSI(stop, 12, nullptr, 0, false, 5);
+			}
+		}
+
+		// ── Probe Pioneer 0x3C (READ BUFFER with vendor feature) ──
+		{
+			BYTE cdb[10] = {};
+			cdb[0] = 0x3C;   // READ BUFFER
+			cdb[1] = 0x02;
+			cdb[2] = 0xE1;   // Pioneer vendor feature selector
+			cdb[8] = 0x20;
+			std::vector<BYTE> buf(32, 0);
+			BYTE sk = 0, asc = 0, ascq = 0;
+			bool ok = SendSCSIWithSense(cdb, 10, buf.data(), 32,
+				&sk, &asc, &ascq);
+			acceptsPioneer = ok || (sk <= 0x01);
+		}
+
+		// ── Resolve the chipset based on probe results ──
+
+		// Case 1: Drive claims to be Plextor but accepts LiteOn commands
+		// and does NOT accept Plextor-exclusive E9 → it's MediaTek OEM
+		if (info.family == ChipsetFamily::Plextor &&
+			(acceptsLiteOnF3 || acceptsLiteOnDF) && !acceptsPlextorE9) {
+			info.family = ChipsetFamily::MediaTek;
+			info.chipsetName = "MediaTek (LiteOn OEM, Plextor-branded)";
+			info.knownAudioQuirks = false;
+			info.quirkDescription.clear();
+			info.detectionMethod = "Vendor command probing (LiteOn "
+				+ std::string(acceptsLiteOnF3 ? "0xF3" : "0xDF")
+				+ " accepted, Plextor 0xE9 rejected)";
+			info.confidencePercent = 95;
+		}
+		// Case 2: Drive is Plextor and accepts E9 → genuine Plextor
+		else if (info.family == ChipsetFamily::Plextor && acceptsPlextorE9) {
+			info.detectionMethod = "Vendor command probing (Plextor 0xE9 accepted)";
+			info.confidencePercent = 98;
+		}
+		// Case 3: Drive is Plextor, accepts D8 but not E9, no LiteOn response
+		else if (info.family == ChipsetFamily::Plextor && acceptsPlextorD8 &&
+			!acceptsLiteOnF3 && !acceptsLiteOnDF) {
+			info.detectionMethod = "Vendor command probing (Plextor 0xD8 accepted)";
+			info.confidencePercent = 85;
+		}
+		// Case 4: Table said LiteOn/MediaTek — confirm with probe
+		else if ((info.family == ChipsetFamily::LiteOn ||
+			info.family == ChipsetFamily::MediaTek) &&
+			(acceptsLiteOnF3 || acceptsLiteOnDF)) {
+			info.detectionMethod = "Vendor command probing (LiteOn "
+				+ std::string(acceptsLiteOnF3 ? "0xF3" : "0xDF")
+				+ " confirmed)";
+			info.confidencePercent = std::max(info.confidencePercent, 95);
+		}
+		// Case 5: Table said Pioneer — confirm with probe
+		else if (info.family == ChipsetFamily::Pioneer && acceptsPioneer) {
+			info.detectionMethod = "Vendor command probing (Pioneer 0x3C/0xE1 confirmed)";
+			info.confidencePercent = std::max(info.confidencePercent, 95);
+		}
+		// Case 6: Unknown drive that accepts LiteOn commands → MediaTek
+		else if (info.family == ChipsetFamily::Unknown &&
+			(acceptsLiteOnF3 || acceptsLiteOnDF)) {
+			info.family = ChipsetFamily::MediaTek;
+			info.chipsetName = "MediaTek (detected via LiteOn vendor commands)";
+			info.detectionMethod = "Vendor command probing (LiteOn "
+				+ std::string(acceptsLiteOnF3 ? "0xF3" : "0xDF") + " accepted)";
+			info.confidencePercent = 90;
+		}
+		// Case 7: Unknown drive that accepts Pioneer commands → Pioneer
+		else if (info.family == ChipsetFamily::Unknown && acceptsPioneer) {
+			info.family = ChipsetFamily::Pioneer;
+			info.chipsetName = "Pioneer Custom (detected via vendor commands)";
+			info.detectionMethod = "Vendor command probing (Pioneer 0x3C/0xE1 accepted)";
+			info.confidencePercent = 90;
+		}
+	}
+
 	// ── Step 5: Firmware-based heuristics for unknown drives ────────────
 	if (info.family == ChipsetFamily::Unknown) {
 		// MediaTek firmware often contains "MT" prefix or specific revision formats
