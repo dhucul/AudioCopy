@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="AudioCopy.vcxproj" Id="333b7655-96ae-4806-bc09-4734e7fc914c" />
+</Solution>
