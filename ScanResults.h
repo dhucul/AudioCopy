@@ -77,6 +77,9 @@ struct QCheckResult {
 	// Archival audio peak C1 assessment
 	std::string archivalC1Rating;              // Ideal / Good / Acceptable / Poor
 
+	// Pioneer E22 diagnostic rating (diagnostic only — not a copy trigger)
+	std::string pioneerE22Rating;              // Ideal / Good / Acceptable / Concerning
+
 	// Drive compatibility warning — zero C1 across entire disc suggests
 	// the drive accepted the vendor scan command but does not actually
 	// populate CIRC error statistics.  Not all drives that pass the
@@ -179,6 +182,7 @@ struct DiscRotAnalysis {
 	int pioneerE22Total = 0;                    // Pioneer vendor diagnostic E22, not counted as C2
 	double pioneerE22AvgPerSecond = 0.0;        // Average Pioneer E22 diagnostic count in Phase 0
 	int pioneerE22Peak = 0;                     // Peak Pioneer E22 diagnostic count in Phase 0
+	std::string pioneerE22Rating;               // Ideal / Good / Acceptable / Concerning
 
 	// Heuristic disc-rot pattern flags
 	bool edgeConcentration = false;             // Errors concentrated at inner/outer edges

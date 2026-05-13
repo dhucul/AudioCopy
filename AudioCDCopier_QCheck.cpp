@@ -33,12 +33,30 @@ bool IsPioneerScanMethod(const std::string& method) {
 	return method.find("Pioneer") != std::string::npos;
 }
 
-const char* PioneerE22BackgroundLevel(double avgPerSecond, int peakPerSecond) {
-	if (avgPerSecond < 0.25 && peakPerSecond < 25)
-		return "LOW BACKGROUND (normal on Pioneer scans)";
-	if (avgPerSecond < 1.0 && peakPerSecond < 100)
-		return "ELEVATED DIAGNOSTIC";
-	return "HIGH DIAGNOSTIC";
+// Classify the Pioneer E22 diagnostic counter into a 4-tier rating that
+// parallels archivalC1Rating.  E22 is a raw firmware counter exposed by
+// the vendor scan; it is *not* verified C2 and is not a copy trigger.  This
+// rating is purely informational — even "Concerning" does not by itself
+// mean the disc is uncopyable.
+//
+// Tiers:
+//   Ideal       total == 0                          — no E22 anywhere
+//   Good        avg < 0.25/s AND peak < 25          — normal background
+//   Acceptable  avg < 1.0/s  AND peak < 100         — elevated activity
+//   Concerning  above                               — heavy E22 activity
+const char* PioneerE22Rating(int total, double avg, int peak) {
+	if (total == 0) return "Ideal";
+	if (avg < 0.25 && peak < 25) return "Good";
+	if (avg < 1.0 && peak < 100) return "Acceptable";
+	return "Concerning";
+}
+
+// Short descriptor for the parenthetical after the rating word.
+const char* PioneerE22RatingDescription(const std::string& rating) {
+	if (rating == "Ideal")      return "no E22 reported";
+	if (rating == "Good")       return "low background, normal for Pioneer scans";
+	if (rating == "Acceptable") return "elevated diagnostic activity";
+	return "heavy diagnostic activity";
 }
 
 void RecalculateQCheckTotals(QCheckResult& result) {
@@ -121,6 +139,61 @@ private:
 	bool m_restore = false;
 	PureReadMode m_previousMode = PureReadMode::Off;
 };
+
+// Force the Pioneer drive into Performance speed mode (and CD_SPEED_MAX
+// spindle speed) for the duration of the Q-Check scan, then restore the
+// prior mode on destruction.  Pioneer CD BLER scans (0x3B/0x3C) report
+// per-second time slices; the drive's internal scan rate is firmware-set,
+// but bumping to Performance mode gives the firmware permission to scan
+// at the fastest speed it supports, which can shorten a full-disc scan
+// noticeably on drives that honor the setting.
+class PioneerPerformanceModeGuard {
+public:
+	explicit PioneerPerformanceModeGuard(ScsiDrive& drive, bool active)
+		: m_pioneer(drive), m_active(active) {
+		if (!m_active) return;
+
+		const auto& caps = m_pioneer.Capabilities();
+		// Match ApplyAudioExtractionPreset's gate: advancedQuietSupport (byte 45)
+		// is the official "speed mode is changeable" flag.  Some drives expose
+		// a valid current-mode byte without honoring writes, so byte 45 is the
+		// authoritative check.
+		if (!caps.valid || !caps.advancedQuietSupport)
+			return;
+
+		// Only attempt restore if the current-mode read-back is a known enum
+		// value.  0xFF means "not reported" and anything > 3 is an undocumented
+		// mode we shouldn't pretend to recognize.
+		BYTE current = caps.advancedQuietCurrent;
+		if (current > 3)
+			return;
+
+		m_previousMode = static_cast<PioneerSpeedMode>(current);
+		if (m_previousMode == PioneerSpeedMode::Performance)
+			return;  // Already in performance mode
+
+		if (m_pioneer.SetSpeedMode(PioneerSpeedMode::Performance, /*eepSave=*/false)) {
+			m_restore = true;
+			std::cout << "  [Pioneer] Performance speed mode enabled for scan.\n";
+		}
+	}
+
+	~PioneerPerformanceModeGuard() {
+		if (m_restore) {
+			m_pioneer.SetSpeedMode(m_previousMode, /*eepSave=*/false);
+			std::cout << "\n  [Pioneer] Speed mode restored after scan.\n";
+		}
+	}
+
+	PioneerPerformanceModeGuard(const PioneerPerformanceModeGuard&) = delete;
+	PioneerPerformanceModeGuard& operator=(const PioneerPerformanceModeGuard&) = delete;
+
+private:
+	PioneerVendor m_pioneer;
+	bool m_active = false;
+	bool m_restore = false;
+	PioneerSpeedMode m_previousMode = PioneerSpeedMode::Default;
+};
 }  // namespace
 
 // ============================================================================
@@ -142,6 +215,7 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 	bool usePlextor = m_drive.SupportsQCheck();
 	PioneerVendor pioneerProbe(m_drive);
 	PioneerPureReadOffGuard pioneerPureReadGuard(m_drive, pioneerProbe.IsPioneerDrive());
+	PioneerPerformanceModeGuard pioneerPerfGuard(m_drive, pioneerProbe.IsPioneerDrive());
 	bool usePioneer = false;
 	bool useLiteOn = false;
 
@@ -804,6 +878,15 @@ bool AudioCDCopier::RunQCheckScan(const DiscInfo& disc, QCheckResult& result, in
 	else
 		result.archivalC1Rating = "Poor";
 
+	// ── Pioneer E22 diagnostic rating ────────────────────────
+	// Only meaningful on Pioneer vendor scans; left empty otherwise.
+	if (IsPioneerScanMethod(result.scanMethod)) {
+		result.pioneerE22Rating = PioneerE22Rating(
+			result.totalPioneerE22,
+			result.avgPioneerE22PerSecond,
+			result.maxPioneerE22PerSecond);
+	}
+
 	// ── Flag potentially non-functional quality scan ─────────
 	// A real CD always has some C1 correction activity — even a pristine
 	// pressing produces a few C1 errors per second.  If the entire disc
@@ -964,8 +1047,16 @@ void AudioCDCopier::PrintQCheckReport(const QCheckResult& result) {
 		std::cout << "  Copy decision:          Use Disc Rot Phase 1 / C2 scan for yes-or-no C2.\n";
 		std::cout << "\n--- Pioneer E22 Diagnostic (Not a copy trigger) ---\n";
 		std::cout << "  Meaning: Raw Pioneer firmware counter; common at low levels.\n";
-		std::cout << "  Observed: " << PioneerE22BackgroundLevel(
-			result.avgPioneerE22PerSecond, result.maxPioneerE22PerSecond) << "\n";
+		std::cout << "  Rating:      ";
+		if (result.pioneerE22Rating == "Ideal" || result.pioneerE22Rating == "Good")
+			Console::SetColorRGB(Console::Theme::GreenR, Console::Theme::GreenG, Console::Theme::GreenB);
+		else if (result.pioneerE22Rating == "Acceptable")
+			Console::SetColorRGB(Console::Theme::YellowR, Console::Theme::YellowG, Console::Theme::YellowB);
+		else
+			Console::SetColorRGB(Console::Theme::RedR, Console::Theme::RedG, Console::Theme::RedB);
+		std::cout << result.pioneerE22Rating;
+		Console::Reset();
+		std::cout << " (" << PioneerE22RatingDescription(result.pioneerE22Rating) << ")\n";
 		std::cout << "  Total E22:   " << result.totalPioneerE22 << "\n";
 		std::cout << "  Avg E22/sec: " << std::fixed << std::setprecision(2)
 			<< result.avgPioneerE22PerSecond << "\n";
@@ -1289,10 +1380,16 @@ void AudioCDCopier::PrintQCheckReport(const QCheckResult& result) {
 			<< result.maxC2PerSecond << "/sec)\n";
 	}
 	if (pioneerE22Observed) {
-		std::cout << "  Pioneer E22:   "
-			<< PioneerE22BackgroundLevel(result.avgPioneerE22PerSecond,
-				result.maxPioneerE22PerSecond)
-			<< " (" << result.totalPioneerE22
+		std::cout << "  Pioneer E22:   ";
+		if (result.pioneerE22Rating == "Ideal" || result.pioneerE22Rating == "Good")
+			Console::SetColorRGB(Console::Theme::GreenR, Console::Theme::GreenG, Console::Theme::GreenB);
+		else if (result.pioneerE22Rating == "Acceptable")
+			Console::SetColorRGB(Console::Theme::YellowR, Console::Theme::YellowG, Console::Theme::YellowB);
+		else
+			Console::SetColorRGB(Console::Theme::RedR, Console::Theme::RedG, Console::Theme::RedB);
+		std::cout << result.pioneerE22Rating;
+		Console::Reset();
+		std::cout << " (" << result.totalPioneerE22
 			<< " total, peak " << result.maxPioneerE22PerSecond << "/sec)\n";
 	}
 	if (pioneerScan) {
@@ -1417,9 +1514,8 @@ bool AudioCDCopier::SaveQCheckLog(const QCheckResult& result, const std::wstring
 		log << "#\n";
 		log << "# --- Pioneer E22 Diagnostic (Not a copy trigger) ---\n";
 		log << "# Meaning:               Raw Pioneer firmware counter; common at low levels\n";
-		log << "# Observed:              "
-			<< PioneerE22BackgroundLevel(result.avgPioneerE22PerSecond,
-				result.maxPioneerE22PerSecond) << "\n";
+		log << "# Rating:                " << result.pioneerE22Rating
+			<< " (" << PioneerE22RatingDescription(result.pioneerE22Rating) << ")\n";
 		log << "# Total E22:             " << result.totalPioneerE22 << "\n";
 		log << "# Avg E22/sec:           " << std::fixed << std::setprecision(2)
 			<< result.avgPioneerE22PerSecond << "\n";

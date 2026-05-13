@@ -54,12 +54,21 @@ private:
 	PureReadMode m_previousMode = PureReadMode::Off;
 };
 
-const char* PioneerE22BackgroundLevel(double avgPerSecond, int peakPerSecond) {
-	if (avgPerSecond < 0.25 && peakPerSecond < 25)
-		return "LOW BACKGROUND (normal on Pioneer scans)";
-	if (avgPerSecond < 1.0 && peakPerSecond < 100)
-		return "ELEVATED DIAGNOSTIC";
-	return "HIGH DIAGNOSTIC";
+// 4-tier rating for the Pioneer E22 diagnostic counter.  Mirrors the
+// implementation in AudioCDCopier_QCheck.cpp; duplicated here to keep each
+// translation unit self-contained.  Tiers and thresholds must stay in sync.
+const char* PioneerE22Rating(int total, double avg, int peak) {
+	if (total == 0) return "Ideal";
+	if (avg < 0.25 && peak < 25) return "Good";
+	if (avg < 1.0 && peak < 100) return "Acceptable";
+	return "Concerning";
+}
+
+const char* PioneerE22RatingDescription(const std::string& rating) {
+	if (rating == "Ideal")      return "no E22 reported";
+	if (rating == "Good")       return "low background, normal for Pioneer scans";
+	if (rating == "Acceptable") return "elevated diagnostic activity";
+	return "heavy diagnostic activity";
 }
 }  // namespace
 
@@ -219,14 +228,23 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 				std::cout << "\r  C1 scan complete: " << c1Result.samples.size()
 				<< " samples, avg C1=" << std::fixed << std::setprecision(1)
 				<< c1Result.avgC1PerSecond << "/sec\n\n";
-			if (usePioneer && pioneerDiagnosticE22Total > 0) {
+			// Record Pioneer E22 stats whenever the Pioneer vendor scan ran, so
+			// the rating reaches "Ideal" (zero E22) instead of being omitted.
+			if (usePioneer) {
 				result.pioneerE22Total = pioneerDiagnosticE22Total;
 				result.pioneerE22Peak = pioneerDiagnosticE22Peak;
 				result.pioneerE22AvgPerSecond = c1Result.avgPioneerE22PerSecond;
+				result.pioneerE22Rating = PioneerE22Rating(
+					result.pioneerE22Total,
+					result.pioneerE22AvgPerSecond,
+					result.pioneerE22Peak);
+			}
+			// Verbose in-scan status only when there's actual E22 activity —
+			// printing zeros mid-scan is noise; the report still shows "Ideal".
+			if (usePioneer && pioneerDiagnosticE22Total > 0) {
 				std::cout << "  [Pioneer] E22 diagnostic (not a copy trigger): "
-					<< PioneerE22BackgroundLevel(result.pioneerE22AvgPerSecond,
-						result.pioneerE22Peak)
-					<< "\n"
+					<< result.pioneerE22Rating
+					<< " (" << PioneerE22RatingDescription(result.pioneerE22Rating) << ")\n"
 					<< "            total " << pioneerDiagnosticE22Total
 					<< ", avg " << std::fixed << std::setprecision(2)
 					<< result.pioneerE22AvgPerSecond << "/sec"
@@ -699,13 +717,19 @@ void AudioCDCopier::PrintDiscRotReport(const DiscRotAnalysis& analysis) {
 	printZone("Outer  (66-100%): ", analysis.zones.OuterErrorRate(),
 		analysis.zones.outerErrors, analysis.zones.outerSectors);
 
-	if (analysis.pioneerE22Total > 0) {
+	if (!analysis.pioneerE22Rating.empty()) {
 		std::cout << "\n";
 		Heading("  Pioneer E22 Diagnostic (Not a copy trigger)\n");
 		Reset();
 		std::cout << "  Meaning: Raw Pioneer firmware counter; common at low levels.\n";
-		std::cout << "  Observed: " << PioneerE22BackgroundLevel(
-			analysis.pioneerE22AvgPerSecond, analysis.pioneerE22Peak) << "\n";
+		std::cout << "  Rating:  ";
+		if (analysis.pioneerE22Rating == "Ideal" || analysis.pioneerE22Rating == "Good")
+			Success(analysis.pioneerE22Rating.c_str());
+		else if (analysis.pioneerE22Rating == "Acceptable")
+			Warning(analysis.pioneerE22Rating.c_str());
+		else
+			Error(analysis.pioneerE22Rating.c_str());
+		std::cout << " (" << PioneerE22RatingDescription(analysis.pioneerE22Rating) << ")\n";
 		std::cout << "  Total E22: " << analysis.pioneerE22Total
 			<< "  avg " << std::fixed << std::setprecision(2)
 			<< analysis.pioneerE22AvgPerSecond << "/sec"
@@ -819,11 +843,12 @@ bool AudioCDCopier::SaveDiscRotLog(const DiscRotAnalysis& analysis, const std::w
 		analysis.zones.OuterErrorRate(), analysis.zones.outerErrors, analysis.zones.outerSectors);
 	fprintf(f, "#\n");
 
-	if (analysis.pioneerE22Total > 0) {
+	if (!analysis.pioneerE22Rating.empty()) {
 		fprintf(f, "# --- Pioneer E22 Diagnostic (Not a copy trigger) ---\n");
 		fprintf(f, "# Meaning:               Raw Pioneer firmware counter; common at low levels\n");
-		fprintf(f, "# Observed:              %s\n",
-			PioneerE22BackgroundLevel(analysis.pioneerE22AvgPerSecond, analysis.pioneerE22Peak));
+		fprintf(f, "# Rating:                %s (%s)\n",
+			analysis.pioneerE22Rating.c_str(),
+			PioneerE22RatingDescription(analysis.pioneerE22Rating));
 		fprintf(f, "# Total E22:             %d\n", analysis.pioneerE22Total);
 		fprintf(f, "# Avg E22/sec:           %.2f\n", analysis.pioneerE22AvgPerSecond);
 		fprintf(f, "# Peak E22/sec:          %d\n", analysis.pioneerE22Peak);
