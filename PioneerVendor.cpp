@@ -104,6 +104,7 @@ bool PioneerVendor::ReadCapabilities(PioneerCapabilities& caps) {
     caps.ledOffOn                  = (r[24] == 1);
     caps.bdrHighSpeedSupport       = (r[26] != 0xFF);
     caps.bdrHighSpeedOn            = (r[26] == 1);
+    caps.realTimePureReadOn        = (r[28] != 0);
     caps.realTimePureReadSupport   = (r[29] != 0);
     caps.highSpeedDataReadSupport  = (r[41] != 0xFF);
     caps.advancedQuietSupport      = (r[45] != 0);
@@ -195,9 +196,8 @@ bool PioneerVendor::GetPureReadMode(PureReadMode& mode, bool& realTimeEnabled) {
     else if (r[5] == 254) mode = PureReadMode::Perfect;
     else mode = PureReadMode::Master;
 
-    // Notes don't document a current-state byte for Real-Time PureRead.
-    // Caller should infer it from PioneerRtPureReadStatus activity instead.
-    realTimeEnabled = false;
+    // Pioneer BD Drive Utility reads byte 28 as the Real-Time PureRead state.
+    realTimeEnabled = (r[28] != 0);
     return true;
 }
 
@@ -244,6 +244,19 @@ bool PioneerVendor::GetRealTimePureReadStatus(PioneerRtPureReadStatus& status) {
     status.playSectors  = LoadBE32(buf + 4);
     status.currentLBA   = LoadBE32(buf + 8);
     return true;
+}
+
+bool PioneerVendor::ClearRealTimePureReadStatus() {
+    if (!IsPioneerDrive()) return false;
+    const auto& caps = Capabilities();
+    if (!caps.realTimePureReadSupport) return false;
+
+    BYTE empty = 0;
+    BYTE cdb[10] = {};
+    cdb[0] = 0x3B;
+    cdb[1] = 0x02;
+    cdb[2] = PioneerBufId::RealTimePureRead;
+    return m_drive.SendSCSI(cdb, 10, &empty, 0, /*dataIn=*/false);
 }
 
 // ── Quiet / Performance ─────────────────────────────────────────────────────
@@ -401,6 +414,7 @@ bool PioneerVendor::CdCheckRead(PioneerCdCheckResult& result) {
     result.dataValid = (validity != 0xFFFFFFFFu);
     result.tePeak = LoadBE16(buf + 60);
     result.teIntegrationMax = LoadBE16(buf + 62);
+    result.teDataValid = (result.tePeak != 0xFFFF && result.teIntegrationMax != 0xFFFF);
     return true;
 }
 
@@ -725,6 +739,8 @@ void PioneerVendor::PrintCapabilitiesReport() {
     }
     std::cout << "\n";
     std::cout << "  Real-Time PureRead:    " << yn(caps.realTimePureReadSupport) << "\n";
+    if (caps.realTimePureReadSupport)
+        std::cout << "  Real-Time PR enabled:  " << yn(caps.realTimePureReadOn) << "\n";
     std::cout << "  Advanced Quiet:        " << yn(caps.advancedQuietSupport);
     if (caps.advancedQuietSupport && caps.advancedQuietCurrent != 0xFF)
         std::cout << "  (current=" << static_cast<int>(caps.advancedQuietCurrent) << ")";

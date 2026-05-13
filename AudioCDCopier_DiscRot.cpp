@@ -54,6 +54,47 @@ private:
 	PureReadMode m_previousMode = PureReadMode::Off;
 };
 
+class PioneerPerformanceModeGuard {
+public:
+	explicit PioneerPerformanceModeGuard(ScsiDrive& drive, bool active)
+		: m_pioneer(drive), m_active(active) {
+		if (!m_active) return;
+
+		const auto& caps = m_pioneer.Capabilities();
+		if (!caps.valid || !caps.advancedQuietSupport)
+			return;
+
+		BYTE current = caps.advancedQuietCurrent;
+		if (current > 3)
+			return;
+
+		m_previousMode = static_cast<PioneerSpeedMode>(current);
+		if (m_previousMode == PioneerSpeedMode::Performance)
+			return;
+
+		if (m_pioneer.SetSpeedMode(PioneerSpeedMode::Performance, /*eepSave=*/false)) {
+			m_restore = true;
+			std::cout << "  [Pioneer] Performance speed mode enabled for scan.\n";
+		}
+	}
+
+	~PioneerPerformanceModeGuard() {
+		if (m_restore) {
+			m_pioneer.SetSpeedMode(m_previousMode, /*eepSave=*/false);
+			std::cout << "\n  [Pioneer] Speed mode restored after scan.\n";
+		}
+	}
+
+	PioneerPerformanceModeGuard(const PioneerPerformanceModeGuard&) = delete;
+	PioneerPerformanceModeGuard& operator=(const PioneerPerformanceModeGuard&) = delete;
+
+private:
+	PioneerVendor m_pioneer;
+	bool m_active = false;
+	bool m_restore = false;
+	PioneerSpeedMode m_previousMode = PioneerSpeedMode::Default;
+};
+
 // 4-tier rating for the Pioneer E22 diagnostic counter.  Mirrors the
 // implementation in AudioCDCopier_QCheck.cpp; duplicated here to keep each
 // translation unit self-contained.  Tiers and thresholds must stay in sync.
@@ -69,6 +110,50 @@ const char* PioneerE22RatingDescription(const std::string& rating) {
 	if (rating == "Good")       return "low background, normal for Pioneer scans";
 	if (rating == "Acceptable") return "elevated diagnostic activity";
 	return "heavy diagnostic activity";
+}
+
+void RecalculateQCheckTotals(QCheckResult& result) {
+	result.totalC1 = 0;
+	result.totalC2 = 0;
+	result.totalCU = 0;
+	result.totalPioneerE22 = 0;
+	result.maxC1PerSecond = 0;
+	result.maxC1SecondIndex = -1;
+	result.maxC2PerSecond = 0;
+	result.maxC2SecondIndex = -1;
+	result.maxCUPerSecond = 0;
+	result.maxPioneerE22PerSecond = 0;
+	result.maxPioneerE22SecondIndex = -1;
+
+	for (int i = 0; i < static_cast<int>(result.samples.size()); i++) {
+		const auto& s = result.samples[i];
+		result.totalC1 += s.c1;
+		result.totalC2 += s.c2;
+		result.totalCU += s.cu;
+		result.totalPioneerE22 += s.pioneerE22;
+		if (s.c1 > result.maxC1PerSecond) {
+			result.maxC1PerSecond = s.c1;
+			result.maxC1SecondIndex = i;
+		}
+		if (s.c2 > result.maxC2PerSecond) {
+			result.maxC2PerSecond = s.c2;
+			result.maxC2SecondIndex = i;
+		}
+		if (s.cu > result.maxCUPerSecond)
+			result.maxCUPerSecond = s.cu;
+		if (s.pioneerE22 > result.maxPioneerE22PerSecond) {
+			result.maxPioneerE22PerSecond = s.pioneerE22;
+			result.maxPioneerE22SecondIndex = i;
+		}
+	}
+
+	DWORD sampleCount = static_cast<DWORD>(result.samples.size());
+	result.avgC1PerSecond = sampleCount > 0
+		? static_cast<double>(result.totalC1) / sampleCount : 0.0;
+	result.avgC2PerSecond = sampleCount > 0
+		? static_cast<double>(result.totalC2) / sampleCount : 0.0;
+	result.avgPioneerE22PerSecond = sampleCount > 0
+		? static_cast<double>(result.totalPioneerE22) / sampleCount : 0.0;
 }
 }  // namespace
 
@@ -113,6 +198,7 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 	PioneerVendor pioneerProbe(m_drive);
 	bool isPioneerDrive = pioneerProbe.IsPioneerDrive();
 	PioneerPureReadOffGuard pioneerPureReadGuard(m_drive, isPioneerDrive);
+	PioneerPerformanceModeGuard pioneerPerfGuard(m_drive, isPioneerDrive);
 
 	bool usePlextor = m_drive.SupportsQCheck();
 	bool usePioneer = false;
@@ -125,12 +211,16 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 	}
 
 	if (usePlextor || usePioneer || useLiteOn) {
+		c1Result.supported = true;
+		c1Result.scanMethod = usePlextor
+			? "Plextor Q-Check (0xE9/0xEB)"
+			: usePioneer ? "Pioneer (0x3B/0x3C)"
+			: "LiteOn/MediaTek (0xDF)";
+		c1Result.totalSectors = lastLBA - firstLBA + 1;
+		c1Result.totalSeconds = (c1Result.totalSectors + 74) / 75;
+
 		std::cout << "Phase 0: C1 quality scan (early degradation detection)...\n";
-		std::cout << "  Method: "
-			<< (usePlextor ? "Plextor Q-Check"
-				: usePioneer ? "Pioneer vendor scan"
-				: "LiteOn/MediaTek scan")
-			<< "\n";
+		std::cout << "  Method: " << c1Result.scanMethod << "\n";
 
 		if (useLiteOn)
 			m_drive.SetSpeed(scanSpeed);
@@ -144,8 +234,6 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 			bool scanDone = false;
 			bool c1Cancelled = false;
 			int sampleIndex = 0;
-			int pioneerDiagnosticE22Total = 0;
-			int pioneerDiagnosticE22Peak = 0;
 			DWORD lastReportedLBA = DWORD(-1);
 
 			while (!scanDone) {
@@ -166,13 +254,19 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 					? m_drive.PioneerScanPoll(c1, c2, cu, currentLBA, scanDone)
 					: m_drive.LiteOnScanPoll(c1, c2, cu, currentLBA, scanDone);
 
+				if (!pollOk && (usePlextor || usePioneer)) {
+					std::this_thread::sleep_for(std::chrono::milliseconds(200));
+					pollOk = usePlextor
+						? m_drive.PlextorQCheckPoll(c1, c2, cu, currentLBA, scanDone)
+						: m_drive.PioneerScanPoll(c1, c2, cu, currentLBA, scanDone);
+				}
 				if (!pollOk) break;
-				if (!usePioneer && currentLBA == 0 && c1 == 0 && c2 == 0 && !scanDone) continue;
+				if (!usePioneer && currentLBA == 0 && c1 == 0 && c2 == 0 && cu == 0 && !scanDone) continue;
 				if (currentLBA == lastReportedLBA && !scanDone) continue;
 				lastReportedLBA = currentLBA;
 
-				// Skip startup artifact
-				if ((useLiteOn || usePioneer) && sampleIndex < 3) { sampleIndex++; continue; }
+				// Match Q-Check: discard the first 3 startup/seek-settle samples.
+				if (sampleIndex < 3) { sampleIndex++; continue; }
 
 				if (useLiteOn && currentLBA >= lastLBA) scanDone = true;
 
@@ -182,9 +276,6 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 				if (usePioneer) {
 					sample.pioneerE22 = c2;
 					sample.c2 = 0;
-					pioneerDiagnosticE22Total += sample.pioneerE22;
-					if (sample.pioneerE22 > pioneerDiagnosticE22Peak)
-						pioneerDiagnosticE22Peak = sample.pioneerE22;
 				}
 				else {
 					sample.c2 = c2;
@@ -193,17 +284,32 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 				c1Result.samples.push_back(sample);
 				c1Result.totalC1 += sample.c1;
 				c1Result.totalC2 += sample.c2;
+				c1Result.totalCU += sample.cu;
 				c1Result.totalPioneerE22 += sample.pioneerE22;
-				if (c1 > c1Result.maxC1PerSecond) c1Result.maxC1PerSecond = c1;
-				if (sample.pioneerE22 > c1Result.maxPioneerE22PerSecond)
+				int idx = static_cast<int>(c1Result.samples.size()) - 1;
+				if (c1 > c1Result.maxC1PerSecond) {
+					c1Result.maxC1PerSecond = c1;
+					c1Result.maxC1SecondIndex = idx;
+				}
+				if (sample.c2 > c1Result.maxC2PerSecond) {
+					c1Result.maxC2PerSecond = sample.c2;
+					c1Result.maxC2SecondIndex = idx;
+				}
+				if (cu > c1Result.maxCUPerSecond)
+					c1Result.maxCUPerSecond = cu;
+				if (sample.pioneerE22 > c1Result.maxPioneerE22PerSecond) {
 					c1Result.maxPioneerE22PerSecond = sample.pioneerE22;
+					c1Result.maxPioneerE22SecondIndex = idx;
+				}
 				sampleIndex++;
 
-				double pct = (totalSectors > 0)
+				double pct = (totalSectors > 0 && currentLBA >= firstLBA)
 					? std::min(100.0, static_cast<double>(currentLBA - firstLBA) * 100.0 / totalSectors)
 					: 0.0;
 				std::cout << "\r  C1 scan... " << std::fixed << std::setprecision(1)
-					<< pct << "%  C1=" << c1 << "     " << std::flush;
+					<< pct << "%  C1=" << c1
+					<< (usePioneer ? " E22=" : " C2=") << c2
+					<< " CU=" << cu << "     " << std::flush;
 			}
 
 			if (usePlextor) m_drive.PlextorQCheckStop();
@@ -216,12 +322,46 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 				return false;
 			}
 
-			c1Result.totalSeconds = static_cast<DWORD>(c1Result.samples.size());
-			if (c1Result.totalSeconds > 0) {
-				c1Result.avgC1PerSecond = static_cast<double>(c1Result.totalC1) / c1Result.totalSeconds;
-				c1Result.avgPioneerE22PerSecond =
-					static_cast<double>(c1Result.totalPioneerE22) / c1Result.totalSeconds;
+			bool spikesTrimmed = false;
+			if (c1Result.samples.size() > 50) {
+				std::vector<int> allErrs;
+				allErrs.reserve(c1Result.samples.size());
+				for (const auto& s : c1Result.samples)
+					allErrs.push_back(s.c1 + s.c2 + s.cu);
+				std::sort(allErrs.begin(), allErrs.end());
+				int median = allErrs[allErrs.size() / 2];
+
+				size_t checkEnd = std::min<size_t>(30, c1Result.samples.size() / 2);
+				for (int i = static_cast<int>(checkEnd) - 1; i >= 0; i--) {
+					int err = c1Result.samples[i].c1 + c1Result.samples[i].c2 + c1Result.samples[i].cu;
+					if ((median == 0 && err > 10) || (median > 0 && err > median * 10)) {
+						c1Result.samples.erase(c1Result.samples.begin() + i);
+						spikesTrimmed = true;
+					}
+				}
 			}
+
+			bool pioneerCoupledSpikesTrimmed = false;
+			if (usePioneer && c1Result.samples.size() > 10) {
+				for (size_t i = 1; i + 1 < c1Result.samples.size(); i++) {
+					auto& s = c1Result.samples[i];
+					int neighbourC1 = std::max(c1Result.samples[i - 1].c1, c1Result.samples[i + 1].c1);
+					int neighbourE22 = std::max(c1Result.samples[i - 1].pioneerE22, c1Result.samples[i + 1].pioneerE22);
+					bool isolatedC1 = s.c1 > 100 && s.c1 > std::max(50, neighbourC1 * 8);
+					bool isolatedE22 = s.pioneerE22 > 0 && s.pioneerE22 > std::max(20, neighbourE22 * 8);
+					if (isolatedC1 && isolatedE22) {
+						s.c1 = std::max(c1Result.samples[i - 1].c1, c1Result.samples[i + 1].c1);
+						s.pioneerE22 = 0;
+						pioneerCoupledSpikesTrimmed = true;
+					}
+				}
+			}
+
+			RecalculateQCheckTotals(c1Result);
+			if (spikesTrimmed)
+				std::cout << "  Startup spike(s) trimmed from quality scan.\n";
+			if (pioneerCoupledSpikesTrimmed)
+				std::cout << "  [Pioneer] Suppressed isolated coupled C1/E22 spike(s) as vendor-scan artifacts.\n";
 
 			hasC1 = !c1Result.samples.empty();
 			if (hasC1)
@@ -231,8 +371,8 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 			// Record Pioneer E22 stats whenever the Pioneer vendor scan ran, so
 			// the rating reaches "Ideal" (zero E22) instead of being omitted.
 			if (usePioneer) {
-				result.pioneerE22Total = pioneerDiagnosticE22Total;
-				result.pioneerE22Peak = pioneerDiagnosticE22Peak;
+				result.pioneerE22Total = c1Result.totalPioneerE22;
+				result.pioneerE22Peak = c1Result.maxPioneerE22PerSecond;
 				result.pioneerE22AvgPerSecond = c1Result.avgPioneerE22PerSecond;
 				result.pioneerE22Rating = PioneerE22Rating(
 					result.pioneerE22Total,
@@ -241,14 +381,14 @@ bool AudioCDCopier::RunDiscRotScan(DiscInfo& disc, DiscRotAnalysis& result, int 
 			}
 			// Verbose in-scan status only when there's actual E22 activity —
 			// printing zeros mid-scan is noise; the report still shows "Ideal".
-			if (usePioneer && pioneerDiagnosticE22Total > 0) {
+			if (usePioneer && c1Result.totalPioneerE22 > 0) {
 				std::cout << "  [Pioneer] E22 diagnostic (not a copy trigger): "
 					<< result.pioneerE22Rating
 					<< " (" << PioneerE22RatingDescription(result.pioneerE22Rating) << ")\n"
-					<< "            total " << pioneerDiagnosticE22Total
+					<< "            total " << c1Result.totalPioneerE22
 					<< ", avg " << std::fixed << std::setprecision(2)
 					<< result.pioneerE22AvgPerSecond << "/sec"
-					<< ", peak " << pioneerDiagnosticE22Peak << "/sec\n"
+					<< ", peak " << c1Result.maxPioneerE22PerSecond << "/sec\n"
 					<< "            Phase 1 verified C2/read failures drive the rot decision.\n\n";
 			}
 		}

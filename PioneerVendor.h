@@ -79,6 +79,7 @@ struct PioneerCapabilities {
     // PureRead
     bool pureReadSupport = false;      // byte 9
     int  pureReadVersion = 0;          // byte 49 (1..4)
+    bool realTimePureReadOn = false;   // byte 28
     bool realTimePureReadSupport = false; // byte 29
 
     // Recording
@@ -149,6 +150,7 @@ struct PioneerCdCheckResult {
     bool dataValid = true;          // r[22..25] != 0xFFFFFFFF
     uint16_t tePeak = 0;            // r[60..61]
     uint16_t teIntegrationMax = 0;  // r[62..63]
+    bool teDataValid = false;       // TE fields are valid only when neither is 0xFFFF
 };
 
 class PioneerVendor {
@@ -176,6 +178,7 @@ public:
     bool SetPureReadMode(PureReadMode mode, bool realTimeEnabled = false,
         bool eepSave = true);
     bool GetRealTimePureReadStatus(PioneerRtPureReadStatus& status);
+    bool ClearRealTimePureReadStatus();
 
     // ── Quiet / Performance / SET CD SPEED vendor byte 10 ──────────
     // Writes byte 10 of SET CD SPEED with 0x80|mode (or 0xC0|mode if eepSave).

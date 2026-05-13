@@ -20,6 +20,26 @@
 
 namespace {
 
+enum class PioneerCdCheckGrade {
+    A,
+    B,
+    C,
+    D
+};
+
+PioneerCdCheckGrade GradePioneerCdCheckSample(const PioneerCdCheckResult& r) {
+    // Mirrors Pioneer BD Drive Utility's CInspectionResult::SetData.
+    if (r.teDataValid && r.teIntegrationMax > 1140 && r.tePeak >= 45)
+        return PioneerCdCheckGrade::D;
+    if (r.c2Uncorrectable > 15)
+        return PioneerCdCheckGrade::D;
+    if (r.c2Uncorrectable != 0)
+        return PioneerCdCheckGrade::C;
+    if (r.c1Uncorrectable > 25)
+        return PioneerCdCheckGrade::B;
+    return PioneerCdCheckGrade::A;
+}
+
 // Pioneer CD Check — vendor audio-quality measurement via WRITE/READ BUFFER
 // 0xE6 at offset 0x300000.  Reports C1 uncorrectable frame count, C2
 // uncorrectable byte count, and tracking-error (TE) figures.  Implementation
@@ -67,6 +87,12 @@ void RunPioneerCdCheck(AudioCDCopier& copier, DiscInfo& disc) {
     }
     DWORD totalSectors = endLBA - startLBA + 1;
     int seconds = static_cast<int>(totalSectors / 75);
+    constexpr DWORD kPioneerCdInnerAddressOffset = 0x6000 + 150;
+    constexpr DWORD kCdFrameAddressOffset = 150;
+    constexpr DWORD kPioneerCdCheckUnitSectors = 38;
+    const DWORD startFrameAddress = startLBA + kCdFrameAddressOffset;
+    const DWORD endFrameAddress = endLBA + kCdFrameAddressOffset;
+    const DWORD startInnerAddress = startLBA + kPioneerCdInnerAddressOffset;
 
     Console::Heading("\n=== Pioneer CD Check (audio quality) ===\n");
     Console::Info("Hardware-driven audio-CD quality measurement.\n");
@@ -75,7 +101,7 @@ void RunPioneerCdCheck(AudioCDCopier& copier, DiscInfo& disc) {
 
     {
         BYTE sk = 0, asc = 0, ascq = 0;
-        if (!pv.CdCheckStartWithSense(startLBA, totalSectors, sk, asc, ascq)) {
+        if (!pv.CdCheckStartWithSense(startInnerAddress, kPioneerCdCheckUnitSectors, sk, asc, ascq)) {
             Console::Error("CD Check start command failed.\n");
             char senseDbg[96];
             std::snprintf(senseDbg, sizeof(senseDbg),
@@ -100,9 +126,13 @@ void RunPioneerCdCheck(AudioCDCopier& copier, DiscInfo& disc) {
     prog.Start();
 
     PioneerCdCheckResult lastValid{};
-    DWORD lastEnd = startLBA;
+    PioneerCdCheckResult worstSample{};
+    PioneerCdCheckGrade worstGrade = PioneerCdCheckGrade::A;
+    DWORD lastEnd = startFrameAddress;
     int stallTicks = 0;
     bool sawProgress = false;
+    bool sawValidMeasurement = false;
+    bool sawInvalidMeasurement = false;
     // Worst case: full 80-minute audio CD scanned at 1x = ~75 minutes.
     // Cap at 90 minutes wall-clock to allow for slow drives + start-up latency.
     constexpr int kPollMs = 500;
@@ -114,12 +144,23 @@ void RunPioneerCdCheck(AudioCDCopier& copier, DiscInfo& disc) {
         std::this_thread::sleep_for(std::chrono::milliseconds(kPollMs));
         PioneerCdCheckResult r;
         if (!pv.CdCheckRead(r)) break;
-        if (r.dataValid) lastValid = r;
+        if (r.dataValid) {
+            lastValid = r;
+            sawValidMeasurement = true;
+            PioneerCdCheckGrade sampleGrade = GradePioneerCdCheckSample(r);
+            if (static_cast<int>(sampleGrade) > static_cast<int>(worstGrade)) {
+                worstGrade = sampleGrade;
+                worstSample = r;
+            }
+        }
+        else {
+            sawInvalidMeasurement = true;
+        }
 
         DWORD ea = r.endAddress;
-        if (ea > startLBA) {
+        if (ea > startFrameAddress) {
             sawProgress = true;
-            DWORD progress = std::min<DWORD>(ea - startLBA, totalSectors);
+            DWORD progress = std::min<DWORD>(ea - startFrameAddress, totalSectors);
             prog.Update(static_cast<int>(progress), static_cast<int>(totalSectors));
         }
 
@@ -133,7 +174,7 @@ void RunPioneerCdCheck(AudioCDCopier& copier, DiscInfo& disc) {
             stallTicks = 0;
             lastEnd = ea;
         }
-        if (sawProgress && ea >= endLBA) break;
+        if (sawProgress && ea >= endFrameAddress) break;
     }
 
     prog.Finish(sawProgress);
@@ -144,28 +185,63 @@ void RunPioneerCdCheck(AudioCDCopier& copier, DiscInfo& disc) {
         return;
     }
 
+    if (!sawValidMeasurement) {
+        Console::Error("CD Check produced progress but no valid measurement data.\n");
+        return;
+    }
+
     // Report
     std::cout << "\n  C1 uncorrectable frames: " << lastValid.c1Uncorrectable << "\n";
     std::cout << "  C2 uncorrectable bytes:  " << lastValid.c2Uncorrectable << "\n";
-    std::cout << "  Tracking-Error peak:     " << lastValid.tePeak << "\n";
-    std::cout << "  Tracking-Error integ.:   " << lastValid.teIntegrationMax << "\n";
-    if (!lastValid.dataValid) {
-        Console::Warning("  (last measurement reported invalid data)\n");
+    if (lastValid.teDataValid) {
+        std::cout << "  Tracking-Error peak:     " << lastValid.tePeak << "\n";
+        std::cout << "  Tracking-Error integ.:   " << lastValid.teIntegrationMax << "\n";
+    } else {
+        std::cout << "  Tracking-Error:          unavailable\n";
+    }
+    if (sawInvalidMeasurement) {
+        Console::Warning("  (one or more measurements reported invalid data)\n");
     }
 
-    // Classification per Pioneer utility's UI text.
-    if (lastValid.c2Uncorrectable > 0) {
-        Console::Error("\nCondition: BAD\n");
-        Console::Info("  The disc might not be played back in some CD players.\n");
-    } else if (lastValid.c1Uncorrectable > 0) {
+    std::cout << "  Pioneer grade:           ";
+    switch (worstGrade) {
+    case PioneerCdCheckGrade::A:
+        std::cout << "Level A\n";
+        Console::Success("\nCondition: GOOD\n");
+        Console::Info("  Good condition.\n");
+        break;
+    case PioneerCdCheckGrade::B:
+        std::cout << "Level B";
+        if (worstSample.valid)
+            std::cout << "  (worst C1=" << worstSample.c1Uncorrectable << ")";
+        std::cout << "\n";
+        Console::Success("\nCondition: NORMAL\n");
+        Console::Info("  Some part may be unable to read smoothly, though the disc remains\n");
+        Console::Info("  playable as original sound in most CD players.\n");
+        break;
+    case PioneerCdCheckGrade::C:
+        std::cout << "Level C";
+        if (worstSample.valid)
+            std::cout << "  (worst C2=" << worstSample.c2Uncorrectable << ")";
+        std::cout << "\n";
         Console::Warning("\nCondition: LOW\n");
         Console::Info("  The disc remains playable in most CD players, though its data may be\n");
         Console::Info("  incorporated. PureRead can help recover original sound by duplicating\n");
         Console::Info("  the disc.\n");
-    } else {
-        Console::Success("\nCondition: NORMAL\n");
-        Console::Info("  Some part may be unable to read smoothly, though the disc remains\n");
-        Console::Info("  playable as original sound in most CD players.\n");
+        break;
+    case PioneerCdCheckGrade::D:
+        std::cout << "Level D";
+        if (worstSample.valid) {
+            std::cout << "  (worst C2=" << worstSample.c2Uncorrectable;
+            if (worstSample.teDataValid)
+                std::cout << ", TE peak=" << worstSample.tePeak
+                    << ", TE integ=" << worstSample.teIntegrationMax;
+            std::cout << ")";
+        }
+        std::cout << "\n";
+        Console::Error("\nCondition: BAD\n");
+        Console::Info("  The disc might not be played back in some CD players.\n");
+        break;
     }
 }
 
