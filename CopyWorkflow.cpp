@@ -75,6 +75,18 @@ bool RunCopyWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstring& 
 
 			TryApplyPioneerAudioPreset(copier);
 
+			// Pioneer C2-enabled READ CD returns audio shifted from the bare 0xF8
+			// read path that the AccurateRip-published drive offset was calibrated
+			// against. Force C2 off on Pioneer for non-burst rips so the audio
+			// matches AccurateRip; multi-pass hashing still provides verification.
+			if (!isBurstMode && disc.enableC2Detection) {
+				PioneerVendor pioneer(copier.GetDriveRef());
+				if (pioneer.IsPioneerDrive()) {
+					disc.enableC2Detection = false;
+					Console::Info("Pioneer drive — disabling C2 for AccurateRip-compatible reads.\n");
+				}
+			}
+
 			if (hasAccurateStream && !isBurstMode) {
 				Console::Info("Drive supports Accurate Stream (jitter-free reads).\n");
 

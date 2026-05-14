@@ -364,6 +364,14 @@ bool RunTrackRipWorkflow(AudioCDCopier& copier, DiscInfo& disc, const std::wstri
 						pv.ApplyAudioExtractionPreset(/*persist=*/false)) {
 						Console::Info(" Pioneer audio preset applied (PureRead Master + Quiet + Fragile CD).\n");
 					}
+					// Pioneer C2-enabled READ CD shifts audio off the AccurateRip-
+					// calibrated offset. Disable C2 here so safe rips match AccurateRip.
+					if (disc.enableC2Detection) {
+						disc.enableC2Detection = false;
+						secureConfig.useC2 = false;
+						secureConfig.c2Guided = false;
+						Console::Info(" Pioneer drive — disabling C2 for AccurateRip-compatible reads.\n");
+					}
 				}
 			}
 			if (caps.supportsAccurateStream) {
