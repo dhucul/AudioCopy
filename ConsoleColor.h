@@ -39,33 +39,63 @@ namespace Console {
 		// background
 		constexpr int BgR = 10, BgG = 10, BgB = 11;
 
-		// standard text
+		// primary foreground text
 		constexpr int FgR = 188, FgG = 184, FgB = 176;
 
-		// bright metallic text
+		// bright metallic highlight
 		constexpr int WhiteR = 228, WhiteG = 224, WhiteB = 218;
 
-		// inactive / dim
+		// inactive / disabled text
 		constexpr int DimR = 92, DimG = 88, DimB = 84;
 
-		// menu / active UI highlight
+		// primary orange accent
 		constexpr int MenuR = 242;
 		constexpr int MenuG = 156;
 		constexpr int MenuB = 52;
 
-		// secondary amber
+		// deep amber accent
 		constexpr int YellowR = 218;
 		constexpr int YellowG = 118;
 		constexpr int YellowB = 32;
 
-		// steel-blue accent
+		// steel blue technical accent
 		constexpr int CyanR = 76, CyanG = 118, CyanB = 142;
 
-		// muted green
+		// muted olive success color
 		constexpr int GreenR = 134, GreenG = 148, GreenB = 116;
 
-		// copper-red
+		// copper red warning/error
 		constexpr int RedR = 152, RedG = 82, RedB = 60;
+
+		// panel border / separators
+		constexpr int BorderR = 38;
+		constexpr int BorderG = 40;
+		constexpr int BorderB = 44;
+
+		// soft glow highlight
+		constexpr int GlowR = 255;
+		constexpr int GlowG = 196;
+		constexpr int GlowB = 96;
+
+		// dark panel background
+		constexpr int PanelR = 18;
+		constexpr int PanelG = 18;
+		constexpr int PanelB = 20;
+
+		// metallic silver accent
+		constexpr int SilverR = 164;
+		constexpr int SilverG = 168;
+		constexpr int SilverB = 172;
+
+		// waveform / graph accent
+		constexpr int WaveR = 120;
+		constexpr int WaveG = 128;
+		constexpr int WaveB = 136;
+
+		// subtle orange line accent
+		constexpr int LineR = 196;
+		constexpr int LineG = 104;
+		constexpr int LineB = 28;
 
 	}
 
