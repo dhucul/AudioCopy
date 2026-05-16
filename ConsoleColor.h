@@ -34,34 +34,38 @@ namespace Console {
 	inline void SetBgRGB(int bgR, int bgG, int bgB) {
 		std::cout << "\033[48;2;" << bgR << ";" << bgG << ";" << bgB << "m";
 	}
-	// Refined theme colors (RGB) — tuned specifically for the darker
-// black / copper cinematic console background
-
 	namespace Theme {
 
-		// deep neutral-black fallback
+		// background
 		constexpr int BgR = 10, BgG = 10, BgB = 11;
 
-		// primary UI text — softer silver with warmth
-		constexpr int FgR = 214, FgG = 208, FgB = 198;
+		// standard text
+		constexpr int FgR = 188, FgG = 184, FgB = 176;
 
-		// cyan accent — darker industrial steel-blue
+		// bright metallic text
+		constexpr int WhiteR = 228, WhiteG = 224, WhiteB = 218;
+
+		// inactive / dim
+		constexpr int DimR = 92, DimG = 88, DimB = 84;
+
+		// menu / active UI highlight
+		constexpr int MenuR = 242;
+		constexpr int MenuG = 156;
+		constexpr int MenuB = 52;
+
+		// secondary amber
+		constexpr int YellowR = 218;
+		constexpr int YellowG = 118;
+		constexpr int YellowB = 32;
+
+		// steel-blue accent
 		constexpr int CyanR = 76, CyanG = 118, CyanB = 142;
 
-		// green accent — muted olive-sage
+		// muted green
 		constexpr int GreenR = 134, GreenG = 148, GreenB = 116;
 
-		// red accent — cinematic copper-red
+		// copper-red
 		constexpr int RedR = 152, RedG = 82, RedB = 60;
-
-		// orange highlight — softened amber glow
-		constexpr int YellowR = 218, YellowG = 118, YellowB = 32;
-
-		// bright metallic text — brushed aluminum
-		constexpr int WhiteR = 202, WhiteG = 198, WhiteB = 194;
-
-		// inactive/dim text — warm graphite
-		constexpr int DimR = 92, DimG = 88, DimB = 84;
 
 	}
 
